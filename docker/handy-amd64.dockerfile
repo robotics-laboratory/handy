@@ -1,3 +1,4 @@
+# Intentionally use 18.04 image to compatibility with jetson boards.
 FROM ubuntu:18.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -14,11 +15,11 @@ WORKDIR /tmp
 
 RUN apt-get update -q && \
     apt-get install -yq --no-install-recommends \
-        software-properties-common \
-        apt-transport-https \
-        ca-certificates \
-        gnupg \
-        wget \
+    software-properties-common \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    wget \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 RUN wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc | apt-key add - \
@@ -35,7 +36,7 @@ RUN apt-get update -q && \
     apt-get install -yq --no-install-recommends \
         build-essential \
         gfortran \
-        make \
+        cmake \
         git \
         file \
         libatlas-base-dev \
@@ -64,6 +65,10 @@ RUN apt-get update -q && \
         libxine2-dev \
         libxvidcore-dev \
         libx264-dev \
+        python3-dev \
+        python3-numpy \
+        python3-setuptools \
+        python3-pip \
         tar \
         zlib1g-dev \
         wget \
@@ -82,7 +87,7 @@ RUN wget -qO - https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSI
         -DBUILD_EXAMPLES=OFF \
         -DBUILD_opencv_apps=OFF \
         -DBUILD_opencv_python2=OFF \
-        -DBUILD_opencv_python3=OFF \
+        -DBUILD_opencv_python3=ON \
         -DBUILD_opencv_java=OFF \
         -DCMAKE_INSTALL_PREFIX=/usr/local \
         -DEIGEN_INCLUDE_PATH=/usr/include/eigen3 \
@@ -99,6 +104,15 @@ RUN wget -qO - https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSI
         -DBUILD_TESTS=OFF \
     && make -j$(nproc) install \
     && rm -rf /tmp/*
+
+### INSTALL REALSENSE2
+
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE \
+    && add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo $(lsb_release -cs) main" -u \
+    && apt-get update -q \
+    && apt-get install -yq --no-install-recommends \
+        librealsense2-dev \
+    && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 
 ### INSTALL ROS2
@@ -128,6 +142,7 @@ RUN apt-get update -q \
         libtinyxml-dev \
         locales \
         python3-bson \
+        python3-colcon-mixin \
         python3-colcon-common-extensions \
         python3-flake8 \
         python3-numpy \
@@ -139,6 +154,8 @@ RUN apt-get update -q \
         python3-pip \
         libtinyxml2-dev \
         libcunit1-dev \
+    && colcon mixin add default https://raw.githubusercontent.com/colcon/colcon-mixin-repository/master/index.yaml \
+    && colcon mixin update default \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 ENV LANG=en_US.UTF-8
@@ -168,10 +185,16 @@ RUN mkdir -p ${ROS_ROOT} \
     && mkdir -p ${ROS_TMP} && cd ${ROS_TMP} \
     && rosinstall_generator \
             --rosdistro ${ROS_DISTRO} \
+            --exclude librealsense2 \
             --deps \
         ament_cmake_clang_format \
+        compressed_depth_image_transport \
+        compressed_image_transport \
         cv_bridge \
         foxglove_msgs \
+        image_geometry \
+        image_transport \
+        image_rotate \
         gazebo_ros_pkgs \
         gazebo_ros2_control \
         geometry_msgs \
@@ -180,7 +203,8 @@ RUN mkdir -p ${ROS_ROOT} \
         joy_linux \
         launch_xml \
         launch_yaml \
-        moveit \ 
+        moveit \
+        realsense2_camera \
         ros_base \
         ros2_control \
         ros2_controllers \
@@ -191,7 +215,7 @@ RUN mkdir -p ${ROS_ROOT} \
         urdf \
         urdfdom \
         vision_opencv \
-        visualization_msgs \
+        visualization_msgs \   
     > ${ROS_ROOT}/ros2.rosinstall \
     && vcs import ${ROS_TMP} < ${ROS_ROOT}/ros2.rosinstall > /dev/null
 
@@ -207,17 +231,23 @@ RUN apt-get update -q \
         --skip-keys libopencv-dev \
         --skip-keys libopencv-contrib-dev \
         --skip-keys libopencv-imgproc-dev \
+        --skip-keys librealsense2 \
         --skip-keys python3-opencv \
         --skip-keys rti-connext-dds-5.3.1 \
         --skip-keys urdfdom_headers \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
+
+# create /usr/lib/include to hack build issue
 RUN cd ${ROS_TMP} \
+    && mkdir -p /usr/lib/include \
     && colcon build \
+        --mixin release \
         --merge-install \
         --install-base ${ROS_ROOT} \
         --cmake-args -DBUILD_TESTING=OFF \ 
         --catkin-skip-building-tests \
+    && rm -rf /usr/lib/include \
     && rm -rf /tmp/*
 
 RUN printf "export ROS_ROOT=${ROS_ROOT}\nexport ROS_DISTRO=${ROS_DISTRO}\nsource ${ROS_ROOT}/setup.bash" >> /root/.bashrc
@@ -265,11 +295,7 @@ RUN apt-get update -q \
         tmux \
         vim \
         wget \
-        ssh \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
-
-RUN printf "PermitRootLogin yes\nPort 2222" >> /etc/ssh/sshd_config \
-    && echo 'root:root' | chpasswd
 
 ### SETUP ENTRYPOINT
 
