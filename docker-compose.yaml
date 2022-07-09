@@ -1,0 +1,15 @@
+version: "3.5"
+
+services:
+  handy-amd64:
+    container_name: handy
+    image: cr.yandex/crp8hpfj5tuhlaodm4dl/hadny:amd64-0.1.0
+    stdin_open: true
+    tty: true
+    build:
+      dockerfile: docker/handy-amd64.dockerfile
+      context: .
+    ports:
+    - "9090:9090"
+    volumes:
+      - "${HOME}/handy:/handy"
