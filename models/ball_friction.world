@@ -1,14 +1,24 @@
-<?xml version="1.0"?>
+<sdf version="1.4">
+  <world name="ball_friction">
 
-<sdf version="1.6">
-<model name="ball">
-    <link name="link">
-      <pose>0 0 0 0 0 0</pose>
-      
-      <velocity_decay>
-        <linear>0</linear>
-        <angular>0.001</angular>
-      </velocity_decay>
+    <!-- Ground Plane -->
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <include>
+      <uri>model://sun</uri>
+    </include>
+
+    <model name="ball">
+      <plugin name='BallAerodynamicsPlugin' filename='libball_aerodynamics.so'>
+        <link_name>link</link_name>
+        <c_linear_force>4</c_linear_force>
+        <c_angular_force>0.2</c_angular_force>
+        <velocity_pow>2</velocity_pow>
+      </plugin>
+      <pose>0 0 1 0 0 0</pose>
+      <link name="link">
       <inertial>
         <mass>0.0027</mass>
         <inertia>
@@ -29,8 +39,8 @@
         <surface>
           <friction>
             <ode>
-              <mu>0.25</mu>
-              <mu2>0.25</mu2>
+              <mu>20</mu>
+              <mu2>20</mu2>
             </ode>
           </friction>
           <bounce>
@@ -58,7 +68,6 @@
             </script>
         </material>
       </visual>
-      
-    </link>
-  </model>
+    </model>
+  </world>
 </sdf>
