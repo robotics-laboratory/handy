@@ -1,0 +1,137 @@
+\documentclass[border=0cm]{article}
+ 
+\usepackage{pgfplots}
+\usepackage{tikz-3dplot}
+\usepackage{amsmath}
+ 
+\tdplotsetmaincoords{60}{115}
+\pgfplotsset{compat=newest}
+ 
+\begin{document}
+\part*{Ball's aerodynamycs}
+
+\begin{tikzpicture}[tdplot_main_coords, scale = 1.5]
+
+% Axes in 3d coordinate system
+% \draw[-stealth] (0,0,0) -- (4,0,0) 
+%     node[below left] {$x$};
+% \draw[-stealth] (0,0,0) -- (0,8,0)
+%     node[below right] {$y$};
+% \draw[-stealth] (0,0,0) -- (0,0,8)
+%     node[above] {$z$};
+ 
+ 
+% Create points 
+\coordinate (Arc_x) at (0, 3, 4);
+\coordinate (Arc_y) at (1, 4, 4);
+
+\coordinate (O) at (1, 3, 4);
+\coordinate (F_mg) at (1, 3, 1);
+\coordinate (F_air_resistance) at (1.75, 0.75, 2.5);
+\coordinate (F_Magnus) at (-1.33, 0.5, 3.92);
+\coordinate (Vel_lin) at (0, 6, 6);
+\coordinate (Vel_ang_begin) at (0, 3.5, 3);
+\coordinate (Vel_ang_end) at (2.5, 2.25, 5.5);
+
+
+% Draw vectors
+\draw[fill = red] (O) circle (1pt);
+\draw[->, black, thick] (O) -- (F_mg) node[black, right] {$F_{gravity}$};
+\draw[->, red, thick] (O) -- (F_air_resistance) node[red, below] {$F_{resistance}$};
+\draw[->, black!30!green, thick] (O) -- (Vel_lin) node[black!30!green, right] {$\upsilon$, linear velocity};
+\draw[->, white!30!blue, dashed] (Vel_ang_begin) -- (Vel_ang_end) node[white!30!blue, left] {$\omega$, angular velocity};
+\draw[->, cyan, thick] (O) -- (F_Magnus) node[cyan, right] {$F_{Magnus}$};
+
+
+% Draw ball
+\shade[ball color = lightgray,
+    opacity = 0.5
+] (O) circle (1cm);
+ 
+% draw arcs 
+\tdplotsetrotatedcoords{0}{0}{0};
+\draw[dashed,
+    tdplot_rotated_coords,
+    gray
+] (O) circle (1);
+
+\tdplotsetrotatedcoords{90}{90}{90};
+\draw[dashed,
+    tdplot_rotated_coords,
+    gray
+] (Arc_x) arc (0:180:1);
+
+\tdplotsetrotatedcoords{0}{90}{90};
+\draw[dashed,
+    tdplot_rotated_coords,
+    gray
+] (Arc_y) arc (0:180:1);
+ 
+\end{tikzpicture}
+
+\section*{Main forses}
+\begin{flalign*}
+    &F_{gravity} = mg& \\
+    &F_{resistance} = \alpha {\upsilon}^2 - \textit{a force acting opposite to the relative motion of a moving ball.}& \\
+    &F_{Magnus} = \beta \begin{bmatrix} \vec \omega \times \vec v \end{bmatrix} - \textit{a force arising from the pressure difference on the walls of the ball.}& 
+\end{flalign*}
+
+\section*{Dynamics of the system}
+\subsection*{Newton's laws of motion:}
+
+\begin{flalign*}
+&
+m \begin{bmatrix}
+\ddot x \\
+\ddot y \\
+\ddot z \\
+\end{bmatrix}
+= - \alpha \begin{bmatrix}
+{\dot x}^2 \\
+{\dot y}^2 \\
+{\dot z}^2 \\
+\end{bmatrix} -\beta \begin{bmatrix}
+\vec \omega \times \vec v \\
+\end{bmatrix} - m \begin{bmatrix}
+0 \\
+0 \\
+g \\
+\end{bmatrix}& \\
+&
+\begin{bmatrix}
+\vec \omega \times \vec v \\
+\end{bmatrix} 
+= \det \begin{bmatrix}
+\vec i & \vec j & \vec k \\
+\omega_x & \omega_y &\omega_z \\
+\dot x & \dot y & \dot z \\
+\end{bmatrix} = \begin{bmatrix}
+0 \cdot \dot x - \omega_z \dot y +\omega_y \dot z \\
+\omega_z \dot x + 0 \cdot \dot y  - \omega_x \dot z \\
+- \omega_y \dot x + \omega_x \dot y + 0\cdot \dot z \\
+\end{bmatrix} & 
+\end{flalign*}
+
+\begin{flalign*}
+&
+m \begin{bmatrix}
+\ddot x \\
+\ddot y \\
+\ddot z \\
+\end{bmatrix} 
+= - \begin{bmatrix}
+\alpha {\dot x}^2 - \beta \omega_z \dot y + \beta \omega_y \dot z \\
+\beta \omega_z \dot x + \alpha {\dot y}^2  - \beta \omega_x \dot z \\
+- \beta \omega_y \dot x + \beta \omega_x \dot y + \alpha {\dot z}^2 \\
+\end{bmatrix} - m \begin{bmatrix}
+0 \\
+0 \\
+g \\
+\end{bmatrix}
+&
+\end{flalign*}
+
+
+
+ 
+\end{document}
