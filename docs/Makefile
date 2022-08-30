@@ -6,5 +6,5 @@ build_dir:
 	mkdir -p build
 
 handy_svg: build_dir
-	latex -output-directory build tex/handy.tex
-	dvisvgm --no-fonts build/handy.dvi -o svg/handy.svg
+	latex -output-directory build tex/ball_dynamics.tex
+	dvisvgm --no-fonts build/ball_dynamics.dvi -o svg/ball_dynamics.svg

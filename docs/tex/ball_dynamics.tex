@@ -1,6 +1,7 @@
-\documentclass[border=0cm]{article}
+\documentclass[dvisvgm, border=5mm]{minimal}
  
 \usepackage{pgfplots}
+\usepackage{tikz}
 \usepackage{tikz-3dplot}
 \usepackage{amsmath}
  
@@ -8,17 +9,16 @@
 \pgfplotsset{compat=newest}
  
 \begin{document}
-\part*{Ball's aerodynamycs}
 
-\begin{tikzpicture}[tdplot_main_coords, scale = 1.5]
+\begin{tikzpicture}[tdplot_main_coords, scale = 1]
 
-% Axes in 3d coordinate system
-% \draw[-stealth] (0,0,0) -- (4,0,0) 
-%     node[below left] {$x$};
-% \draw[-stealth] (0,0,0) -- (0,8,0)
-%     node[below right] {$y$};
-% \draw[-stealth] (0,0,0) -- (0,0,8)
-%     node[above] {$z$};
+
+\draw[-stealth] (0,0,0) -- (4,0,0) 
+    node[below left] {$x$};
+\draw[-stealth] (0,0,0) -- (0,8,0)
+    node[below right] {$y$};
+\draw[-stealth] (0,0,0) -- (0,0,8)
+    node[above] {$z$};
  
  
 % Create points 
@@ -69,15 +69,11 @@
  
 \end{tikzpicture}
 
-\section*{Main forses}
 \begin{flalign*}
     &F_{gravity} = mg& \\
-    &F_{resistance} = \alpha {\upsilon}^2 - \textit{a force acting opposite to the relative motion of a moving ball.}& \\
-    &F_{Magnus} = \beta \begin{bmatrix} \vec \omega \times \vec v \end{bmatrix} - \textit{a force arising from the pressure difference on the walls of the ball.}& 
+    &F_{resistance} = \alpha {\upsilon}^2 & \\
+    &F_{Magnus} = \beta \begin{bmatrix} \vec \omega \times \vec v \end{bmatrix} & 
 \end{flalign*}
-
-\section*{Dynamics of the system}
-\subsection*{Newton's laws of motion:}
 
 \begin{flalign*}
 &
