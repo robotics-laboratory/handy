@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(rs2_node)
+project(detector)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -9,20 +9,20 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(realsense2 REQUIRED)
-
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
-add_executable(rs2_node src/main.cpp)
-ament_target_dependencies(rs2_node rclcpp sensor_msgs OpenCV cv_bridge realsense2)
-target_link_libraries(rs2_node realsense2)
+add_executable(detector src/main.cpp)
+ament_target_dependencies(detector visualization_msgs rclcpp sensor_msgs OpenCV cv_bridge realsense2)
+target_link_libraries(detector realsense2)
 
 install(TARGETS
-  rs2_node
+  detector
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)

@@ -14,7 +14,7 @@ class RS2Node : public rclcpp::Node
 {
   public:
     RS2Node()
-    : Node("image_publisher")
+    : Node("rs2_node")
     {
       cfg_.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16);
       colorize_.set_option(RS2_OPTION_HISTOGRAM_EQUALIZATION_ENABLED, 0);
