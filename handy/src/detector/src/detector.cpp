@@ -21,8 +21,8 @@ class DetectorNode : public rclcpp::Node
         DetectorNode() : Node("detector")
         {
         subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
-        "imgtopic", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
-        publisher_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("topic", 10);
+        "/device_0/sensor_1/Color_0/image/data", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
+        publisher_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("detection", 10);
         }
 
     private:
