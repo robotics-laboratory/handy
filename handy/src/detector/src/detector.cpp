@@ -21,7 +21,7 @@ class DetectorNode : public rclcpp::Node
         DetectorNode() : Node("detector")
         {
         subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
-        "/device_0/sensor_1/Color_0/image/data", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
+        "imgtopic", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
         publisher_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("detection", 10);
         }
 
@@ -45,7 +45,13 @@ class DetectorNode : public rclcpp::Node
             auto bbox = visualization_msgs::msg::ImageMarker();
             bbox.id = 0;
             bbox.type = 3;
-            bbox.action = 3;
+            bbox.action = 0;
+            bbox.filled = 1;
+            bbox.outline_color.r = 1;
+            bbox.outline_color.a = 1;
+            bbox.fill_color.r = 1;
+            bbox.fill_color.a = 0.5;
+            bbox.lifetime.nanosec = 100;
 
             geometry_msgs::msg::Point a, b, c, d;
             a.x = min_rect.x;
