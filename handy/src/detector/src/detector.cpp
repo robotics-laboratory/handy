@@ -5,12 +5,21 @@
 
 #include <librealsense2/rs.hpp>
 #include "rclcpp/rclcpp.hpp"
+
 #include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/camera_info.hpp"
+
 #include "visualization_msgs/msg/image_marker.hpp"
+#include "visualization_msgs/msg/marker.hpp"
+#include "geometry_msgs/msg/pose.hpp"
+
 #include "cv_bridge/cv_bridge.h"
 #include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 
 using std::placeholders::_1;
+
+const static int kCV_64FSize = 8;
 
 
 
@@ -18,11 +27,15 @@ class DetectorNode : public rclcpp::Node
 {
 
     public:
-        DetectorNode() : Node("detector")
+        DetectorNode() : Node("detector"), P_(3, 4, CV_64F)
         {
-        subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
+        subscription_image_ = this->create_subscription<sensor_msgs::msg::Image>(
         "imgtopic", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
-        publisher_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("detection", 10);
+        subscription_params_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+        "/device_0/sensor_1/Color_0/info/camera_info", 10, std::bind(&DetectorNode::info_callback, this, _1));
+        publisher_bbox_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("detection", 10);
+        publisher_pose_ = this->create_publisher<geometry_msgs::msg::Pose>("/ball/pose", 10);
+        publisher_marker_ = this->create_publisher<visualization_msgs::msg::Marker>("/ball/visualization", 10);
         }
 
     private:
@@ -66,14 +79,51 @@ class DetectorNode : public rclcpp::Node
             bbox.points.push_back(b);
             bbox.points.push_back(c);
             bbox.points.push_back(d);
-            publisher_->publish(bbox);
+            publisher_bbox_->publish(bbox);
+
+            if (P_.empty()) {
+                cv::Mat inversed_P(4, 3, CV_32FC1);
+                cv::invert(P_, inversed_P);
+                cv::Vec3f bottom_point = {min_rect.x + min_rect.width/2, min_rect.y, 1}, 
+                            top_point = {min_rect.x + min_rect.width/2, min_rect.y + min_rect.height, 1};
+                cv::Vec4f bottom_beam = inversed_P.dot(bottom_point), top_beam = inversed_P.dot(top_point);
+                float k = (bottom_beam[1] - top_beam[1]) / BALL_WIDTH;
+                cv::Vec4f ball_point = (bottom_beam + top_beam) * (k/2);
+
+                geometry_msgs::msg::Pose pose;
+                pose.position.x = ball_point[0];
+                pose.position.y = ball_point[1];
+                pose.position.z = ball_point[2];
+                pose.orientation.w = 1;
+
+                visualization_msgs::msg::Marker marker;
+                marker.id = 1;
+                marker.type = 2;
+                marker.action = 0;
+                marker.pose = pose;
+                marker.color = bbox.fill_color;
+                marker.lifetime = bbox.lifetime;
+                publisher_pose_->publish(pose);
+                publisher_marker_->publish(marker);
+            }
         }
-        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_;
-        rclcpp::Publisher<visualization_msgs::msg::ImageMarker>::SharedPtr publisher_;
+
+        void info_callback(const sensor_msgs::msg::CameraInfo& info_msg)
+        {
+            std::memcpy(P_.data, info_msg.p.data(), 3 * 4 * kCV_64FSize);
+        }
+
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_image_;
+        rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr subscription_params_;
+        rclcpp::Publisher<visualization_msgs::msg::ImageMarker>::SharedPtr publisher_bbox_;
+        rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr publisher_pose_;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr publisher_marker_;
+        cv::Mat P_;
 
         int minHue = 22, maxHue = 30;
         int minSat = 120, maxSat = 255;
         int minVal = 140, maxVal = 255;
+        float BALL_WIDTH = 4;
 };
 
 int main(int argc, char * argv[])
