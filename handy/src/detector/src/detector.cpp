@@ -81,12 +81,13 @@ class DetectorNode : public rclcpp::Node
             bbox.points.push_back(d);
             publisher_bbox_->publish(bbox);
 
-            if (P_.empty()) {
+            if (!P_.empty()) {
                 cv::Mat inversed_P(4, 3, CV_32FC1);
-                cv::invert(P_, inversed_P);
+                cv::invert(P_, inversed_P, cv::DECOMP_SVD);
                 cv::Vec3f bottom_point = {min_rect.x + min_rect.width/2, min_rect.y, 1}, 
                             top_point = {min_rect.x + min_rect.width/2, min_rect.y + min_rect.height, 1};
-                cv::Vec4f bottom_beam = inversed_P.dot(bottom_point), top_beam = inversed_P.dot(top_point);
+                cv::Mat bottom_beam_mat = inversed_P * cv::Mat(bottom_point), top_beam_mat = inversed_P * cv::Mat(top_point);
+                cv::Vec4f bottom_beam(bottom_beam_mat.reshape(4).at<cv::Vec4f>()), top_beam(top_beam_mat.reshape(4).at<cv::Vec4f>());
                 float k = (bottom_beam[1] - top_beam[1]) / BALL_WIDTH;
                 cv::Vec4f ball_point = (bottom_beam + top_beam) * (k/2);
 
@@ -95,7 +96,6 @@ class DetectorNode : public rclcpp::Node
                 pose.position.y = ball_point[1];
                 pose.position.z = ball_point[2];
                 pose.orientation.w = 1;
-
                 visualization_msgs::msg::Marker marker;
                 marker.id = 1;
                 marker.type = 2;
@@ -128,8 +128,8 @@ class DetectorNode : public rclcpp::Node
 
 int main(int argc, char * argv[])
 {
-rclcpp::init(argc, argv);
-rclcpp::spin(std::make_shared<DetectorNode>());
-rclcpp::shutdown();
-return 0;
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<DetectorNode>());
+    rclcpp::shutdown();
+    return 0;
 }
