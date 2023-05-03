@@ -19,7 +19,7 @@
 
 using std::placeholders::_1;
 
-const static int kCV_64FSize = 8;
+const static int kCV_64FSize = 4;
 
 
 
@@ -27,12 +27,12 @@ class DetectorNode : public rclcpp::Node
 {
 
     public:
-        DetectorNode() : Node("detector"), P_(3, 4, CV_64F)
+        DetectorNode() : Node("detector"), P_(3, 4, CV_32FC1)
         {
         subscription_image_ = this->create_subscription<sensor_msgs::msg::Image>(
-        "imgtopic", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
+        "/color/image_raw", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
         subscription_params_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-        "/device_0/sensor_1/Color_0/info/camera_info", 10, std::bind(&DetectorNode::info_callback, this, _1));
+        "/color/camera_info", 10, std::bind(&DetectorNode::info_callback, this, _1));
         publisher_bbox_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("detection", 10);
         publisher_pose_ = this->create_publisher<geometry_msgs::msg::Pose>("/ball/pose", 10);
         publisher_marker_ = this->create_publisher<visualization_msgs::msg::Marker>("/ball/visualization", 10);
@@ -84,12 +84,17 @@ class DetectorNode : public rclcpp::Node
             if (!P_.empty()) {
                 cv::Mat inversed_P(4, 3, CV_32FC1);
                 cv::invert(P_, inversed_P, cv::DECOMP_SVD);
+                
                 cv::Vec3f bottom_point = {min_rect.x + min_rect.width/2, min_rect.y, 1}, 
                             top_point = {min_rect.x + min_rect.width/2, min_rect.y + min_rect.height, 1};
-                cv::Mat bottom_beam_mat = inversed_P * cv::Mat(bottom_point), top_beam_mat = inversed_P * cv::Mat(top_point);
+                cv::Mat bottom_beam_mat = inversed_P * cv::Mat(bottom_point, CV_32FC1), top_beam_mat = inversed_P * cv::Mat(top_point, CV_32FC1);
                 cv::Vec4f bottom_beam(bottom_beam_mat.reshape(4).at<cv::Vec4f>()), top_beam(top_beam_mat.reshape(4).at<cv::Vec4f>());
-                float k = (bottom_beam[1] - top_beam[1]) / BALL_WIDTH;
+                bottom_beam /= bottom_beam[2];
+                top_beam /= top_beam[2];
+                float k = BALL_WIDTH / (top_beam[1] - bottom_beam[1]);
                 cv::Vec4f ball_point = (bottom_beam + top_beam) * (k/2);
+
+
 
                 geometry_msgs::msg::Pose pose;
                 pose.position.x = ball_point[0];
@@ -110,7 +115,11 @@ class DetectorNode : public rclcpp::Node
 
         void info_callback(const sensor_msgs::msg::CameraInfo& info_msg)
         {
-            std::memcpy(P_.data, info_msg.p.data(), 3 * 4 * kCV_64FSize);
+            for (size_t i = 0; i < 3; ++i) {
+                for (size_t j = 0; j < 4; ++j) {
+                    P_.at<float>(i,j) = info_msg.p[i * 4 + j];
+                }
+            }
         }
 
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_image_;
