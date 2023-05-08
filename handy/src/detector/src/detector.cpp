@@ -44,6 +44,7 @@ class DetectorNode : public rclcpp::Node
             const std::string type = "bgr8";
             cv_bridge::CvImagePtr cv_image = cv_bridge::toCvCopy(img_msg, type);
             cv::Mat imageHSV;
+            //TODO:: change color detection
             cv::cvtColor(cv_image->image, imageHSV, cv::COLOR_BGR2HSV);
             cv::Mat mask;
             cv::inRange(
