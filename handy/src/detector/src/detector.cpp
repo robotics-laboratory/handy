@@ -1,3 +1,5 @@
+
+
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -12,6 +14,7 @@
 #include "visualization_msgs/msg/image_marker.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 #include "geometry_msgs/msg/pose.hpp"
+#include "tf2_msgs/msg/tf_message.hpp"
 
 #include "cv_bridge/cv_bridge.h"
 #include <opencv2/opencv.hpp>
@@ -36,6 +39,7 @@ class DetectorNode : public rclcpp::Node
         publisher_bbox_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("detection", 10);
         publisher_pose_ = this->create_publisher<geometry_msgs::msg::Pose>("/ball/pose", 10);
         publisher_marker_ = this->create_publisher<visualization_msgs::msg::Marker>("/ball/visualization", 10);
+        publisher_tf_ = this->create_publisher<tf2_msgs::msg::TFMessage>("/tf", 10);
         }
 
     private:
@@ -45,16 +49,42 @@ class DetectorNode : public rclcpp::Node
             cv_bridge::CvImagePtr cv_image = cv_bridge::toCvCopy(img_msg, type);
             cv::Mat imageHSV;
             cv::cvtColor(cv_image->image, imageHSV, cv::COLOR_BGR2HSV);
+            cv::Mat gray;
+            cv::cvtColor(cv_image->image, gray, cv::COLOR_BGR2GRAY);
+
             cv::Mat mask;
-            cv::inRange(
-                imageHSV, 
-                cv::Scalar(minHue, minSat, minVal), 
-                cv::Scalar(maxHue, maxSat, maxVal), 
-                mask
-            );
+            cv::inRange(imageHSV, cv::Scalar(minHue, minSat, minVal), cv::Scalar(maxHue, maxSat, maxVal), mask);
             cv::Mat nonZeroCoordinates;
             cv::findNonZero(mask, nonZeroCoordinates);
             cv::Rect min_rect = cv::boundingRect(nonZeroCoordinates);
+            cv::Rect possible_roi(std::max(cvRound(min_rect.x - min_rect.width * 0.5), 0), std::max(cvRound(min_rect.y - min_rect.height * 0.5), 0), 
+                                        (cvRound(min_rect.x + min_rect.width * 1.25) < gray.cols) ? cvRound(min_rect.width * 1.5) : gray.cols - min_rect.x,
+                                        (cvRound(min_rect.y + min_rect.height * 1.25) < gray.rows) ? cvRound(min_rect.height * 1.5) : gray.rows - min_rect.y);
+            
+            cv::Point max_center(0, 0);
+            int max_rad = 0;
+            std::vector<cv::Vec3f> circles;
+            if (!gray(possible_roi).empty()) {
+                cv::HoughCircles(gray(possible_roi), circles, cv::HOUGH_GRADIENT_ALT, 1, 40, 400, 0.95, cvRound(min_rect.height*0.2), cvRound(min_rect.height*1.2));
+            }
+            for (size_t i = 0; i < circles.size(); i++)
+            {
+                cv::Point center(cvRound(circles[i][0]) + possible_roi.x, cvRound(circles[i][1]) + possible_roi.y);
+                int radius = cvRound(circles[i][2]);
+                if (min_rect.x <= center.x && center.x <= min_rect.x + min_rect.width && 
+                        min_rect.y <= center.y && center.y <= min_rect.y + min_rect.height) {
+                    if (radius > max_rad) {
+                        max_rad = radius;
+                        max_center = center;
+                    }
+                }
+            }
+
+            if (max_rad > 0) {
+                cv::Rect roi(max_center.x - max_rad, max_center.y - max_rad, 2 * max_rad, 2 * max_rad);
+                min_rect = roi;
+            }
+
             auto bbox = visualization_msgs::msg::ImageMarker();
             bbox.id = 0;
             bbox.type = 3;
@@ -99,6 +129,7 @@ class DetectorNode : public rclcpp::Node
                 pose.position.z = ball_point[2];
                 pose.orientation.w = 1;
                 visualization_msgs::msg::Marker marker;
+                marker.header.frame_id = "camera_color_optical_frame";
                 marker.id = 1;
                 marker.type = 2;
                 marker.action = 0;
@@ -107,6 +138,18 @@ class DetectorNode : public rclcpp::Node
                 marker.lifetime = bbox.lifetime;
                 publisher_pose_->publish(pose);
                 publisher_marker_->publish(marker);
+
+                tf2_msgs::msg::TFMessage result;
+                geometry_msgs::msg::TransformStamped msg;
+                msg.header.frame_id = "camera_color_optical_frame";
+                msg.child_frame_id = "ball";
+
+                msg.transform.translation.x = ball_point[0];
+                msg.transform.translation.y = ball_point[1];
+                msg.transform.translation.z = ball_point[2];
+                msg.transform.rotation = pose.orientation;
+                result.transforms.push_back(msg);
+                publisher_tf_->publish(result);
             }
         }
 
@@ -125,12 +168,13 @@ class DetectorNode : public rclcpp::Node
         rclcpp::Publisher<visualization_msgs::msg::ImageMarker>::SharedPtr publisher_bbox_;
         rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr publisher_pose_;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr publisher_marker_;
+        rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr publisher_tf_;
         cv::Mat P_;
         cv::Mat inversed_P;
 
-        int minHue = 22, maxHue = 30;
-        int minSat = 120, maxSat = 255;
-        int minVal = 140, maxVal = 255;
+        int minHue = 20, maxHue = 40;
+        int minSat = 110, maxSat = 255;
+        int minVal = 110, maxVal = 255;
         float BALL_WIDTH = 4;
 };
 

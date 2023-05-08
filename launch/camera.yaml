@@ -8,7 +8,7 @@ launch:
 
     param:
     - {name: "initial_reset", value: True}
-    - {name: "enable_sync", value: True}
+    - {name: "enable_sync", value: False}
     - {name: "publish_tf", value: True}
 
     - {name: "enable_color", value: True}

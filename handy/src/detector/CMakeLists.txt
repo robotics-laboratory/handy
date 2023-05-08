@@ -13,6 +13,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(realsense2 REQUIRED)
+find_package(tf2_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -27,7 +28,7 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME})
 
 add_executable(detector src/detector.cpp)
-ament_target_dependencies(detector visualization_msgs rclcpp sensor_msgs OpenCV cv_bridge realsense2)
+ament_target_dependencies(detector visualization_msgs rclcpp sensor_msgs OpenCV cv_bridge realsense2 tf2_msgs)
 
 
 install(TARGETS

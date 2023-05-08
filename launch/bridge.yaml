@@ -4,3 +4,6 @@ launch:
     exec: "foxglove_bridge"
     name: "foxglove_bridge"
     output: "log"
+
+    param:
+    - {name: "port", value: 8754}
