@@ -27,12 +27,12 @@ class DetectorNode : public rclcpp::Node
 {
 
     public:
-        DetectorNode() : Node("detector"), P_(3, 4, CV_32FC1)
+        DetectorNode() : Node("detector"), P_(3, 4, CV_32FC1), inversed_P(4, 3, CV_32FC1)
         {
         subscription_image_ = this->create_subscription<sensor_msgs::msg::Image>(
-        "/color/image_raw", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
+        "/camera/color/image_raw", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
         subscription_params_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-        "/color/camera_info", 10, std::bind(&DetectorNode::info_callback, this, _1));
+        "/camera/color/camera_info", 10, std::bind(&DetectorNode::info_callback, this, _1));
         publisher_bbox_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("detection", 10);
         publisher_pose_ = this->create_publisher<geometry_msgs::msg::Pose>("/ball/pose", 10);
         publisher_marker_ = this->create_publisher<visualization_msgs::msg::Marker>("/ball/visualization", 10);
@@ -82,9 +82,6 @@ class DetectorNode : public rclcpp::Node
             publisher_bbox_->publish(bbox);
 
             if (!P_.empty()) {
-                cv::Mat inversed_P(4, 3, CV_32FC1);
-                cv::invert(P_, inversed_P, cv::DECOMP_SVD);
-                
                 cv::Vec3f bottom_point = {min_rect.x + min_rect.width/2, min_rect.y, 1}, 
                             top_point = {min_rect.x + min_rect.width/2, min_rect.y + min_rect.height, 1};
                 cv::Mat bottom_beam_mat = inversed_P * cv::Mat(bottom_point, CV_32FC1), top_beam_mat = inversed_P * cv::Mat(top_point, CV_32FC1);
@@ -120,6 +117,7 @@ class DetectorNode : public rclcpp::Node
                     P_.at<float>(i,j) = info_msg.p[i * 4 + j];
                 }
             }
+            cv::invert(P_, inversed_P, cv::DECOMP_SVD);
         }
 
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_image_;
@@ -128,6 +126,7 @@ class DetectorNode : public rclcpp::Node
         rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr publisher_pose_;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr publisher_marker_;
         cv::Mat P_;
+        cv::Mat inversed_P;
 
         int minHue = 22, maxHue = 30;
         int minSat = 120, maxSat = 255;
