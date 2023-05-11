@@ -44,12 +44,12 @@ void cutRect(cv::Rect& rect, int cols, int rows) {
         rect.height = rows - rect.y;
     }
 
-    if (rect.width == 0) {
-        rect.width = 1;
+    if (rect.width < 0) {
+        rect.width = 0;
     }
 
-    if (rect.height == 0) {
-        rect.height = 1;
+    if (rect.height < 0) {
+        rect.height = 0;
     }
 }
 
@@ -153,7 +153,10 @@ class DetectorNode : public rclcpp::Node
 
                 cv::Point corner1 = prev_center + shift, corner2 = prev_center - shift;
                 cv::Rect borders(std::min(corner1.x, corner2.x), std::min(corner1.y, corner2.y), std::abs(corner1.x - corner2.x), std::abs(corner1.y - corner2.y));
-                history_based_roi = resize(borders, 1.5, gray.cols, gray.rows);
+                borders = resize(borders, 1.5, gray.cols, gray.rows);
+                if (borders.width > 0 && borders.height > 0) {
+                    history_based_roi = borders;
+                }
                 publish_bbox(publisher_bbox_hist_, history_based_roi, 0, 1, 0, 1);
             }
 
@@ -228,6 +231,9 @@ class DetectorNode : public rclcpp::Node
                 marker.pose = pose;
                 marker.color.r = 1;
                 marker.color.a = 1;
+                marker.scale.x = 2;
+                marker.scale.y = 2;
+                marker.scale.z = 2;
                 marker.lifetime.nanosec = 100;
                 publisher_pose_->publish(pose);
                 publisher_marker_->publish(marker);
