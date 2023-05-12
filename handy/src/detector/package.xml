@@ -3,7 +3,7 @@
 <package format="3">
   <name>detector</name>
   <version>0.0.0</version>
-  <description>Publishes BoundingBox message containing bounding box for a ping-pong ball.</description>
+  <description>Publishes BoundingBox message containing bounding box for a ping-pong ball and marker of its position in 3D space.</description>
   <maintainer email="danny.paleyev@gmail.com">Daniel Paleyev</maintainer>
   <license>TODO: License declaration</license>
 

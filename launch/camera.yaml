@@ -32,3 +32,4 @@ launch:
     - {name: "enable_infra", value: False}
     - {name: "enable_infra1", value: False}
     - {name: "enable_infra2", value: False}
+    - {name: "controls-color-white-balance-manual", value: 4750}

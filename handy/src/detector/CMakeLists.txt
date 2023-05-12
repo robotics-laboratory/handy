@@ -19,20 +19,11 @@ find_package(tf2_msgs REQUIRED)
 # find_package(<dependency> REQUIRED)
 
 
-add_executable(rs2_node src/rs2_node.cpp)
-ament_target_dependencies(rs2_node rclcpp sensor_msgs OpenCV cv_bridge realsense2)
-target_link_libraries(rs2_node realsense2)
-
-install(TARGETS
-  rs2_node
-  DESTINATION lib/${PROJECT_NAME})
-
 add_executable(detector src/detector.cpp)
 ament_target_dependencies(detector visualization_msgs rclcpp sensor_msgs OpenCV cv_bridge realsense2 tf2_msgs)
 
 
 install(TARGETS
-  rs2_node
   detector
   DESTINATION lib/${PROJECT_NAME})
 
