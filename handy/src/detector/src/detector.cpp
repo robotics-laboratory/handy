@@ -23,7 +23,6 @@
 
 using std::placeholders::_1;
 
-const static int kCV_64FSize = 4;
 
 void cutRect(cv::Rect& rect, int cols, int rows) {
     if (rect.x < 0) {
@@ -54,8 +53,7 @@ void cutRect(cv::Rect& rect, int cols, int rows) {
 }
 
 cv::Rect resize(cv::Rect& rect, float coef, int cols, int rows) {
-    cv::Rect result(cvRound(rect.x - rect.width * (coef - 1) * 0.5) - 10, cvRound(rect.y - rect.height * (coef - 1) * 0.5) - 10, 
-                                        cvRound(rect.width * coef) + 20, cvRound(rect.height * coef) + 20);
+    cv::Rect result;
     if (rect.width * (coef - 1) <= 20) {
         result = cv::Rect(rect.x - 10, rect.y - 10, rect.width + 20, rect.height + 20);
     } else {
@@ -63,7 +61,6 @@ cv::Rect resize(cv::Rect& rect, float coef, int cols, int rows) {
                                         cvRound(rect.width * coef), cvRound(rect.height * coef));
     }
 
-    
     cutRect(result, cols, rows);
     return result;
 }
@@ -71,8 +68,8 @@ cv::Rect resize(cv::Rect& rect, float coef, int cols, int rows) {
 void publish_bbox(rclcpp::Publisher<visualization_msgs::msg::ImageMarker>::SharedPtr publisher, cv::Rect rect, float r_c, float b_c, float g_c, int id) {
     auto bbox = visualization_msgs::msg::ImageMarker();
     bbox.id = id;
-    bbox.type = 3;
-    bbox.action = 0;
+    bbox.type = visualization_msgs::msg::ImageMarker::POLYGON;
+    bbox.action = visualization_msgs::msg::ImageMarker::ADD;
     bbox.filled = 1;
     bbox.outline_color.r = r_c;
     bbox.outline_color.g = g_c;
