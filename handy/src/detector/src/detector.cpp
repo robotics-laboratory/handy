@@ -274,7 +274,7 @@ class DetectorNode : public rclcpp::Node
         int minHue = 20, maxHue = 40;
         int minSat = 105, maxSat = 255;
         int minVal = 105, maxVal = 255;
-        float BALL_WIDTH = 4;
+        float BALL_WIDTH = 0.04;
         size_t HISTORY_SIZE = 4;
 };
 
