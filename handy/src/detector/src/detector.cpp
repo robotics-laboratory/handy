@@ -65,8 +65,10 @@ cv::Rect resize(cv::Rect& rect, float coef, int cols, int rows) {
     return result;
 }
 
-void publish_bbox(rclcpp::Publisher<visualization_msgs::msg::ImageMarker>::SharedPtr publisher, cv::Rect rect, float r_c, float b_c, float g_c, int id) {
+void publish_bbox(rclcpp::Publisher<visualization_msgs::msg::ImageMarker>::SharedPtr publisher, cv::Rect rect, float r_c, float b_c, float g_c, int id, const sensor_msgs::msg::Image& img_msg) {
     auto bbox = visualization_msgs::msg::ImageMarker();
+    bbox.header.frame_id = "camera_color_optical_frame";
+    bbox.header.stamp = img_msg.header.stamp;
     bbox.id = id;
     bbox.type = visualization_msgs::msg::ImageMarker::POLYGON;
     bbox.action = visualization_msgs::msg::ImageMarker::ADD;
@@ -110,6 +112,7 @@ class DetectorNode : public rclcpp::Node
         subscription_params_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
         "/camera/color/camera_info", 10, std::bind(&DetectorNode::info_callback, this, _1));
         publisher_bbox_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/detection", 10);
+        publisher_bbox_center_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/detection_center", 10);
         publisher_bbox_hist_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/history_roi", 10);
         publisher_bbox_color_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/color_detection", 10);
         publisher_bbox_poss_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/possible_roi", 10);
@@ -154,7 +157,7 @@ class DetectorNode : public rclcpp::Node
                 if (borders.width > 0 && borders.height > 0) {
                     history_based_roi = borders;
                 }
-                publish_bbox(publisher_bbox_hist_, history_based_roi, 0, 1, 0, 1);
+                publish_bbox(publisher_bbox_hist_, history_based_roi, 0, 1, 0, 1, img_msg);
             }
 
             cv::Mat mask;
@@ -164,11 +167,11 @@ class DetectorNode : public rclcpp::Node
             cv::Rect min_rect = cv::boundingRect(nonZeroCoordinates);
             min_rect.x += history_based_roi.x;
             min_rect.y += history_based_roi.y;
-            publish_bbox(publisher_bbox_color_, min_rect, 0, 0, 1, 2);
+            publish_bbox(publisher_bbox_color_, min_rect, 0, 0, 1, 2, img_msg);
 
 
-            cv::Rect possible_roi = resize(min_rect, 1.5, gray.cols, gray.rows);
-            publish_bbox(publisher_bbox_poss_, possible_roi, 0, 1, 1, 3);
+            cv::Rect possible_roi = resize(min_rect, 2.5, gray.cols, gray.rows);
+            publish_bbox(publisher_bbox_poss_, possible_roi, 0, 1, 1, 3, img_msg);
             cv::Point max_center(0, 0);
             int max_rad = 0;
             std::vector<cv::Vec3f> circles;
@@ -193,7 +196,7 @@ class DetectorNode : public rclcpp::Node
                 min_rect = roi;
             }
 
-            publish_bbox(publisher_bbox_, min_rect, 1, 0, 0, 0);
+            publish_bbox(publisher_bbox_, min_rect, 1, 0, 0, 0, img_msg);
 
             if (min_rect.width != 0 && min_rect.height != 0) {
                 prev_detection.push_back(min_rect);
@@ -214,6 +217,25 @@ class DetectorNode : public rclcpp::Node
                 float k = BALL_WIDTH / (top_beam[1] - bottom_beam[1]);
                 cv::Vec4f ball_point = (bottom_beam + top_beam) * (k/2);
 
+                auto bbox = visualization_msgs::msg::ImageMarker();
+                bbox.header.frame_id = "camera_color_optical_frame";
+                bbox.header.stamp = img_msg.header.stamp;
+                bbox.id = 5;
+                bbox.type = visualization_msgs::msg::ImageMarker::CIRCLE;
+                bbox.action = visualization_msgs::msg::ImageMarker::ADD;
+                bbox.scale = 1;
+                bbox.filled = 1;
+                bbox.outline_color.g = 1;
+                bbox.outline_color.a = 1;
+                bbox.fill_color.g = 1;
+                bbox.fill_color.a = 1;
+                bbox.lifetime.nanosec = 100;
+
+                geometry_msgs::msg::Point center;
+                center.x = min_rect.x + min_rect.width/2;
+                center.y = min_rect.y + min_rect.height/2;
+                bbox.position = center;
+                publisher_bbox_center_->publish(bbox);
 
                 geometry_msgs::msg::Pose pose;
                 pose.position.x = ball_point[0];
@@ -228,9 +250,9 @@ class DetectorNode : public rclcpp::Node
                 marker.pose = pose;
                 marker.color.r = 1;
                 marker.color.a = 1;
-                marker.scale.x = 2;
-                marker.scale.y = 2;
-                marker.scale.z = 2;
+                marker.scale.x = 0.02;
+                marker.scale.y = 0.02;
+                marker.scale.z = 0.02;
                 marker.lifetime.nanosec = 100;
                 publisher_pose_->publish(pose);
                 publisher_marker_->publish(marker);
@@ -261,7 +283,7 @@ class DetectorNode : public rclcpp::Node
 
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_image_;
         rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr subscription_params_;
-        rclcpp::Publisher<visualization_msgs::msg::ImageMarker>::SharedPtr publisher_bbox_, publisher_bbox_hist_, publisher_bbox_color_, publisher_bbox_poss_;
+        rclcpp::Publisher<visualization_msgs::msg::ImageMarker>::SharedPtr publisher_bbox_, publisher_bbox_hist_, publisher_bbox_color_, publisher_bbox_poss_, publisher_bbox_center_;
         rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr publisher_pose_;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr publisher_marker_;
         rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr publisher_tf_;
@@ -271,8 +293,8 @@ class DetectorNode : public rclcpp::Node
         std::deque<cv::Rect> prev_detection;
 
 
-        int minHue = 20, maxHue = 40;
-        int minSat = 105, maxSat = 255;
+        int minHue = 50, maxHue = 80;
+        int minSat = 90, maxSat = 255;
         int minVal = 105, maxVal = 255;
         float BALL_WIDTH = 0.04;
         size_t HISTORY_SIZE = 4;
