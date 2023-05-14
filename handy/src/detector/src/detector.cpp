@@ -105,12 +105,13 @@ class DetectorNode : public rclcpp::Node
 {
 
     public:
-        DetectorNode() : Node("detector"), P_(3, 4, CV_32FC1), inversed_P(4, 3, CV_32FC1)
+        DetectorNode() : Node("detector"), P_(3, 4, CV_32FC1), inversed_P_(4, 3, CV_32FC1), camera_matrix_(3, 3, CV_32F), distortion_coeffs_(5, 1, CV_32F)
         {
         subscription_image_ = this->create_subscription<sensor_msgs::msg::Image>(
         "/camera/color/image_raw", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
         subscription_params_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
         "/camera/color/camera_info", 10, std::bind(&DetectorNode::info_callback, this, _1));
+        publisher_rectified_image_ = this->create_publisher<sensor_msgs::msg::CompressedImage>("/rectified_image", 10);
         publisher_bbox_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/detection", 10);
         publisher_bbox_center_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/detection_center", 10);
         publisher_bbox_hist_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/history_roi", 10);
@@ -128,6 +129,16 @@ class DetectorNode : public rclcpp::Node
         {
             const std::string type = "bgr8";
             cv_bridge::CvImagePtr cv_image = cv_bridge::toCvCopy(img_msg, type);
+
+            cv::Mat rectified_image;
+            cv::Mat new_camera_matrix = cv::getOptimalNewCameraMatrix(camera_matrix_, distortion_coeffs_, cv::Size(img_msg.width, img_msg.height), 1);
+            cv::undistort(cv_image->image, rectified_image, camera_matrix_, distortion_coeffs_, new_camera_matrix);
+            sensor_msgs::msg::CompressedImage about_compr_;
+            about_compr_.header.stamp = img_msg.header.stamp; 
+            about_compr_.header.frame_id = "rectified_image";
+            sensor_msgs::msg::CompressedImage::SharedPtr compr_msg = cv_bridge::CvImage(about_compr_.header, "bgr8", rectified_image).toCompressedImageMsg(cv_bridge::Format::JPEG);
+            publisher_rectified_image_->publish(*compr_msg.get());
+
             cv::Mat imageHSV;
             cv::cvtColor(cv_image->image, imageHSV, cv::COLOR_BGR2HSV);
             cv::Mat gray;
@@ -210,7 +221,7 @@ class DetectorNode : public rclcpp::Node
             if (!P_.empty()) {
                 cv::Vec3f bottom_point = {min_rect.x + min_rect.width/2, min_rect.y, 1}, 
                             top_point = {min_rect.x + min_rect.width/2, min_rect.y + min_rect.height, 1};
-                cv::Mat bottom_beam_mat = inversed_P * cv::Mat(bottom_point, CV_32FC1), top_beam_mat = inversed_P * cv::Mat(top_point, CV_32FC1);
+                cv::Mat bottom_beam_mat = inversed_P_ * cv::Mat(bottom_point, CV_32FC1), top_beam_mat = inversed_P_ * cv::Mat(top_point, CV_32FC1);
                 cv::Vec4f bottom_beam(bottom_beam_mat.reshape(4).at<cv::Vec4f>()), top_beam(top_beam_mat.reshape(4).at<cv::Vec4f>());
                 bottom_beam /= bottom_beam[2];
                 top_beam /= top_beam[2];
@@ -278,18 +289,27 @@ class DetectorNode : public rclcpp::Node
                     P_.at<float>(i,j) = info_msg.p[i * 4 + j];
                 }
             }
-            cv::invert(P_, inversed_P, cv::DECOMP_SVD);
+            for (size_t i = 0; i < 3; ++i) {
+                for (size_t j = 0; j < 3; ++j) {
+                    camera_matrix_.at<float>(i,j) = info_msg.k[i * 3 + j];
+                }
+            }
+            for (size_t i = 0; i < 5; ++i) {
+                distortion_coeffs_.at<float>(i) = info_msg.d[i];
+            }
+            cv::invert(P_, inversed_P_, cv::DECOMP_SVD);
+            RCLCPP_INFO_STREAM(this->get_logger(), "matrix" << camera_matrix_);
+
         }
 
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_image_;
         rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr subscription_params_;
+        rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr publisher_rectified_image_;
         rclcpp::Publisher<visualization_msgs::msg::ImageMarker>::SharedPtr publisher_bbox_, publisher_bbox_hist_, publisher_bbox_color_, publisher_bbox_poss_, publisher_bbox_center_;
         rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr publisher_pose_;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr publisher_marker_;
         rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr publisher_tf_;
-        cv::Mat P_;
-        cv::Mat inversed_P;
-
+        cv::Mat P_, inversed_P_, camera_matrix_, distortion_coeffs_;
         std::deque<cv::Rect> prev_detection;
 
 
