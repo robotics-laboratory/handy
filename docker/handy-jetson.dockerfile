@@ -267,6 +267,41 @@ RUN printf "export ROS_ROOT=${ROS_ROOT}\n" >> /root/.bashrc \
     && printf "export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}\n" >> /root/.bashrc \
     && printf "source ${ROS_ROOT}/setup.bash\n" >> /root/.bashrc
 
+### INSTALL PYTORCH
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libopenblas-dev \
+        libopenmpi-dev \
+        libomp-dev \
+        gfortran \
+        libjpeg-dev \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/* apt-get clean
+
+RUN pip3 install --no-cache-dir \
+    Cython \
+    wheel \
+    numpy \
+    pillow
+
+ARG PYTORCH_URL="https://developer.download.nvidia.com/compute/redist/jp/v50/pytorch/torch-1.12.0a0+2c916ef.nv22.3-cp38-cp38-linux_aarch64.whl"
+ARG PYTORCH_WHL="torch-1.12.0a0+2c916ef.nv22.3-cp38-cp38-linux_aarch64.whl"
+
+RUN wget --no-check-certificate -qO ${PYTORCH_WHL} ${PYTORCH_URL} \
+    && pip3 install --no-cache-dir ${PYTORCH_WHL} \ 
+    && rm -rf /tmp/*
+
+ARG TORCHVISION_VERSION=0.11.0
+
+RUN wget -qO - https://github.com/pytorch/vision/archive/refs/tags/v${TORCHVISION_VERSION}.tar.gz | tar -xz \
+    && cd vision-${TORCHVISION_VERSION} \
+    && python3 setup.py install \
+    && rm -rf /tmp/*
+
+ENV PYTORCH_PATH="/usr/local/lib/python3.8/dist-packages/torch"
+ENV LD_LIBRARY_PATH="${PYTORCH_PATH}/lib:${LD_LIBRARY_PATH}"
+
 ### INSTALL DEV PKGS
 
 RUN apt-get update -q \

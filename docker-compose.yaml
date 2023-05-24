@@ -3,7 +3,7 @@ version: "3.5"
 services:
   handy-amd64:
     container_name: handy-amd64
-    image: cr.yandex/crp8hpfj5tuhlaodm4dl/handy:amd64-0.2.0
+    image: cr.yandex/crp8hpfj5tuhlaodm4dl/handy:amd64-0.3.0
     stdin_open: true
     tty: true
     build:
@@ -15,7 +15,7 @@ services:
 
   handy-jetson:
     container_name: handy-jetson
-    image: cr.yandex/crp8hpfj5tuhlaodm4dl/handy:jetson-0.2.0
+    image: cr.yandex/crp8hpfj5tuhlaodm4dl/handy:jetson-0.3.0
     stdin_open: true
     privileged: true
     tty: true
