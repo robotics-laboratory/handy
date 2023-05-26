@@ -20,6 +20,8 @@
 #include "cv_bridge/cv_bridge.h"
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
+#include <torch/script.h>
+#include <torch/cuda.h>
 
 using std::placeholders::_1;
 
@@ -111,12 +113,11 @@ class DetectorNode : public rclcpp::Node
         "/camera/color/image_raw", 10, std::bind(&DetectorNode::imgtopic_callback, this, _1));
         subscription_params_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
         "/camera/color/camera_info", 10, std::bind(&DetectorNode::info_callback, this, _1));
-        publisher_rectified_image_ = this->create_publisher<sensor_msgs::msg::CompressedImage>("/rectified_image", 10);
+        //publisher_rectified_image_ = this->create_publisher<sensor_msgs::msg::CompressedImage>("/rectified_image", 10);
         publisher_bbox_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/detection", 10);
         publisher_bbox_center_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/detection_center", 10);
         publisher_bbox_hist_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/history_roi", 10);
         publisher_bbox_color_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/color_detection", 10);
-        publisher_bbox_poss_ = this->create_publisher<visualization_msgs::msg::ImageMarker>("/possible_roi", 10);
         publisher_pose_ = this->create_publisher<geometry_msgs::msg::Pose>("/ball/pose", 10);
         publisher_marker_ = this->create_publisher<visualization_msgs::msg::Marker>("/ball/visualization", 10);
         publisher_tf_ = this->create_publisher<tf2_msgs::msg::TFMessage>("/tf", 10);
@@ -130,22 +131,21 @@ class DetectorNode : public rclcpp::Node
             const std::string type = "bgr8";
             cv_bridge::CvImagePtr cv_image = cv_bridge::toCvCopy(img_msg, type);
 
-            cv::Mat rectified_image;
+            /*cv::Mat rectified_image;
             cv::Mat new_camera_matrix = cv::getOptimalNewCameraMatrix(camera_matrix_, distortion_coeffs_, cv::Size(img_msg.width, img_msg.height), 1);
             cv::undistort(cv_image->image, rectified_image, camera_matrix_, distortion_coeffs_, new_camera_matrix);
             sensor_msgs::msg::CompressedImage about_compr_;
             about_compr_.header.stamp = img_msg.header.stamp; 
             about_compr_.header.frame_id = "rectified_image";
             sensor_msgs::msg::CompressedImage::SharedPtr compr_msg = cv_bridge::CvImage(about_compr_.header, "bgr8", rectified_image).toCompressedImageMsg(cv_bridge::Format::JPEG);
-            publisher_rectified_image_->publish(*compr_msg.get());
+            publisher_rectified_image_->publish(*compr_msg.get());*/
 
-            cv::Mat imageHSV;
+            cv::Mat imageHSV, imageRGB;
             cv::cvtColor(cv_image->image, imageHSV, cv::COLOR_BGR2HSV);
-            cv::Mat gray;
-            cv::cvtColor(cv_image->image, gray, cv::COLOR_BGR2GRAY);
+            cv::cvtColor(cv_image->image, imageRGB, cv::COLOR_BGR2RGB);
 
 
-            cv::Rect history_based_roi(0, 0, gray.cols, gray.rows);
+            cv::Rect history_based_roi(0, 0, imageHSV.cols, imageHSV.rows);
             if (prev_detection.size() == HISTORY_SIZE) {
                 cv::Rect prev_frame = prev_detection.back();
                 cv::Rect last_frame = prev_detection.front();
@@ -164,7 +164,7 @@ class DetectorNode : public rclcpp::Node
 
                 cv::Point corner1 = prev_center + shift, corner2 = prev_center - shift;
                 cv::Rect borders(std::min(corner1.x, corner2.x), std::min(corner1.y, corner2.y), std::abs(corner1.x - corner2.x), std::abs(corner1.y - corner2.y));
-                borders = resize(borders, 1.5, gray.cols, gray.rows);
+                borders = resize(borders, 2, imageHSV.cols, imageHSV.rows);
                 if (borders.width > 0 && borders.height > 0) {
                     history_based_roi = borders;
                 }
@@ -173,44 +173,54 @@ class DetectorNode : public rclcpp::Node
 
             cv::Mat mask;
             cv::inRange(imageHSV(history_based_roi), cv::Scalar(minHue, minSat, minVal), cv::Scalar(maxHue, maxSat, maxVal), mask);
-            cv::Mat nonZeroCoordinates;
-            cv::findNonZero(mask, nonZeroCoordinates);
-            cv::Rect min_rect = cv::boundingRect(nonZeroCoordinates);
+            cv::Rect min_rect = cv::boundingRect(mask);
             min_rect.x += history_based_roi.x;
             min_rect.y += history_based_roi.y;
             publish_bbox(publisher_bbox_color_, min_rect, 0, 0, 1, 2, img_msg);
 
+            cv::Mat labels, stats, centroids_nouse;
+            int n_comps = cv::connectedComponentsWithStats(mask, labels, stats, centroids_nouse, 8);
+            int max_size = 8;
+            cv::Rect max_rect(0, 0, 0, 0);
+            for (int k=1; k<n_comps; k++) {
+                int size = stats.at<int>(k, cv::CC_STAT_AREA);
 
-            cv::Rect possible_roi = resize(min_rect, 2.5, gray.cols, gray.rows);
-            publish_bbox(publisher_bbox_poss_, possible_roi, 0, 1, 1, 3, img_msg);
-            cv::Point max_center(0, 0);
-            int max_rad = 0;
-            std::vector<cv::Vec3f> circles;
-            if (!gray(possible_roi).empty()) {
-                cv::HoughCircles(gray(possible_roi), circles, cv::HOUGH_GRADIENT_ALT, 1, std::max(1, std::min(min_rect.width, min_rect.height) / 10), 600, 0.85, std::max(1, std::min(min_rect.width, min_rect.height) / 3), std::max(1, cvRound(std::max(min_rect.width, min_rect.height) / 1.5)));
-            }
-            for (size_t i = 0; i < circles.size(); i++)
-            {
-                cv::Point center(cvRound(circles[i][0]) + possible_roi.x, cvRound(circles[i][1]) + possible_roi.y);
-                int radius = cvRound(circles[i][2]);
-                if (min_rect.x <= center.x && center.x <= min_rect.x + min_rect.width && 
-                        min_rect.y <= center.y && center.y <= min_rect.y + min_rect.height) {
-                    if (radius > max_rad) {
-                        max_rad = radius;
-                        max_center = center;
-                    }
+                if (size > max_size) {
+                    max_size = size;
+                    int x = stats.at<int>(k,cv::CC_STAT_LEFT);
+                    int y = stats.at<int>(k,cv::CC_STAT_TOP);
+                    int w = stats.at<int>(k,cv::CC_STAT_WIDTH);
+                    int h = stats.at<int>(k,cv::CC_STAT_HEIGHT);
+                    max_rect = cv::Rect(x, y, w, h);
                 }
             }
 
-            if (max_rad > 0) {
-                cv::Rect roi(max_center.x - max_rad, max_center.y - max_rad, 2 * max_rad, 2 * max_rad);
-                min_rect = roi;
-            }
+            max_rect.x += history_based_roi.x;
+            max_rect.y += history_based_roi.y;
 
-            publish_bbox(publisher_bbox_, min_rect, 1, 0, 0, 0, img_msg);
+            cv::Rect prob_segm_bbox = resize(max_rect, 2, imageHSV.cols, imageHSV.rows);
+            cv::Mat prob_seg = imageRGB(prob_segm_bbox);
 
-            if (min_rect.width != 0 && min_rect.height != 0) {
-                prev_detection.push_back(min_rect);
+            //model running
+            torch::jit::script::Module module = torch::jit::load("/handy/handy/handy/src/detector/seg_model.pth", torch::kCUDA);
+            RCLCPP_INFO_STREAM(this->get_logger(), "download");
+
+            torch::Tensor tensor_img = torch::from_blob(prob_seg.data, { prob_seg.rows, prob_seg.cols, 3 }, torch::kByte).cuda();
+            RCLCPP_INFO_STREAM(this->get_logger(), "image");
+            at::Tensor output = module.forward({ tensor_img }).toTensor().cpu();
+            RCLCPP_INFO_STREAM(this->get_logger(), "run");
+            cv::Mat prediction(cv::Size(prob_seg.cols, prob_seg.rows), CV_32FC1, output.data_ptr());
+            cv::Mat segm_mask;
+            cv::threshold(prediction, segm_mask, 0.5, 1, cv::THRESH_BINARY);
+            max_rect = cv::boundingRect(segm_mask);
+            max_rect.x += prob_segm_bbox.x;
+            max_rect.y += prob_segm_bbox.y;
+
+
+            publish_bbox(publisher_bbox_, max_rect, 1, 0, 0, 0, img_msg);
+
+            if (max_rect.width != 0 && max_rect.height != 0) {
+                prev_detection.push_back(max_rect);
             } else {
                 prev_detection.clear();
             }
@@ -219,8 +229,8 @@ class DetectorNode : public rclcpp::Node
             }
 
             if (!P_.empty()) {
-                cv::Vec3f bottom_point = {min_rect.x + min_rect.width/2, min_rect.y, 1}, 
-                            top_point = {min_rect.x + min_rect.width/2, min_rect.y + min_rect.height, 1};
+                cv::Vec3f bottom_point = {max_rect.x + max_rect.width/2, max_rect.y, 1}, 
+                            top_point = {max_rect.x + max_rect.width/2, max_rect.y + max_rect.height, 1};
                 cv::Mat bottom_beam_mat = inversed_P_ * cv::Mat(bottom_point, CV_32FC1), top_beam_mat = inversed_P_ * cv::Mat(top_point, CV_32FC1);
                 cv::Vec4f bottom_beam(bottom_beam_mat.reshape(4).at<cv::Vec4f>()), top_beam(top_beam_mat.reshape(4).at<cv::Vec4f>());
                 bottom_beam /= bottom_beam[2];
@@ -241,10 +251,9 @@ class DetectorNode : public rclcpp::Node
                 bbox.fill_color.g = 1;
                 bbox.fill_color.a = 1;
                 bbox.lifetime.nanosec = 100;
-
                 geometry_msgs::msg::Point center;
-                center.x = min_rect.x + min_rect.width/2;
-                center.y = min_rect.y + min_rect.height/2;
+                center.x = max_rect.x + max_rect.width/2;
+                center.y = max_rect.y + max_rect.height/2;
                 bbox.position = center;
                 publisher_bbox_center_->publish(bbox);
 
@@ -255,6 +264,7 @@ class DetectorNode : public rclcpp::Node
                 pose.orientation.w = 1;
                 visualization_msgs::msg::Marker marker;
                 marker.header.frame_id = "camera_color_optical_frame";
+                marker.header.stamp = img_msg.header.stamp;
                 marker.id = 1;
                 marker.type = 2;
                 marker.action = 0;
@@ -271,6 +281,7 @@ class DetectorNode : public rclcpp::Node
                 tf2_msgs::msg::TFMessage result;
                 geometry_msgs::msg::TransformStamped msg;
                 msg.header.frame_id = "camera_color_optical_frame";
+                msg.header.stamp = img_msg.header.stamp;
                 msg.child_frame_id = "ball";
 
                 msg.transform.translation.x = ball_point[0];
@@ -284,11 +295,13 @@ class DetectorNode : public rclcpp::Node
 
         void info_callback(const sensor_msgs::msg::CameraInfo& info_msg)
         {
+            cv::Mat p(3, 4, CV_32FC1);
             for (size_t i = 0; i < 3; ++i) {
                 for (size_t j = 0; j < 4; ++j) {
                     P_.at<float>(i,j) = info_msg.p[i * 4 + j];
                 }
             }
+            /*
             for (size_t i = 0; i < 3; ++i) {
                 for (size_t j = 0; j < 3; ++j) {
                     camera_matrix_.at<float>(i,j) = info_msg.k[i * 3 + j];
@@ -297,9 +310,10 @@ class DetectorNode : public rclcpp::Node
             for (size_t i = 0; i < 5; ++i) {
                 distortion_coeffs_.at<float>(i) = info_msg.d[i];
             }
+            */
+            
             cv::invert(P_, inversed_P_, cv::DECOMP_SVD);
-            RCLCPP_INFO_STREAM(this->get_logger(), "matrix" << camera_matrix_);
-
+            
         }
 
         rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_image_;
@@ -313,9 +327,9 @@ class DetectorNode : public rclcpp::Node
         std::deque<cv::Rect> prev_detection;
 
 
-        int minHue = 50, maxHue = 80;
-        int minSat = 90, maxSat = 255;
-        int minVal = 105, maxVal = 255;
+        int minHue = 30, maxHue = 70;
+        int minSat = 60, maxSat = 255;
+        int minVal = 80, maxVal = 255;
         float BALL_WIDTH = 0.04;
         size_t HISTORY_SIZE = 4;
 };

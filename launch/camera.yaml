@@ -12,10 +12,11 @@ launch:
     - {name: "publish_tf", value: True}
 
     - {name: "enable_color", value: True}
-    - {name: "rgb_camera.profile", value: "640x480x60"}
+    - {name: "rgb_camera.profile", value: "1280x720x30"}
+    - {name: "rgb_camera.exposure", value: 40}
+    - {name: "rgb_camera.gain", value: 128}
 
     - {name: "enable_depth", value: False}
-    - {name: "depth_moduel.profile", value: "848x480x30"}
 
     - {name: "enable_accel", value: True}
     - {name: "accel_fps", value: 200}
@@ -32,4 +33,3 @@ launch:
     - {name: "enable_infra", value: False}
     - {name: "enable_infra1", value: False}
     - {name: "enable_infra2", value: False}
-    - {name: "controls-color-white-balance-manual", value: 4750}

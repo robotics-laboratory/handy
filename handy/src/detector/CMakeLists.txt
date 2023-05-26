@@ -5,6 +5,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+set(Torch_DIR "/usr/local/lib/python3.8/dist-packages/torch/share/cmake/Torch")
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -14,13 +16,17 @@ find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(realsense2 REQUIRED)
 find_package(tf2_msgs REQUIRED)
+find_package(Torch REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -O3 ${TORCH_CXX_FLAGS}")
+
 
 add_executable(detector src/detector.cpp)
-ament_target_dependencies(detector visualization_msgs rclcpp sensor_msgs OpenCV cv_bridge realsense2 tf2_msgs)
+ament_target_dependencies(detector visualization_msgs rclcpp sensor_msgs OpenCV Torch cv_bridge realsense2 tf2_msgs)
+target_link_libraries(detector "${TORCH_LIBRARIES}")
 
 
 install(TARGETS
