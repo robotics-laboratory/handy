@@ -367,6 +367,28 @@ RUN printf "export ROS_ROOT=${ROS_ROOT}\n" >> /root/.bashrc \
     && printf "export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}\n" >> /root/.bashrc \
     && printf "source ${ROS_ROOT}/setup.bash\n" >> /root/.bashrc
 
+### INSTALL PYTORCH
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libopenblas-dev \
+        libopenmpi-dev \
+        libomp-dev \
+        gfortran \
+        libjpeg-dev \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/* apt-get clean
+
+ENV TORCH_VERSION=1.12.0
+ENV TORCHVISION_VERSION=0.11.0
+
+RUN pip3 install --no-cache-dir \
+    torch==${TORCH_VERSION} \
+    torchvision==${TORCHVISION_VERSION}
+
+ENV PYTORCH_PATH="/usr/local/lib/python3.8/dist-packages/torch"
+ENV LD_LIBRARY_PATH="${PYTORCH_PATH}/lib:${LD_LIBRARY_PATH}"
+
 ### INSTALL DEV PKGS
 
 RUN apt-get update -q \
