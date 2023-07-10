@@ -9,9 +9,15 @@
 
 using namespace cv;
 
-unsigned char *g_pRgbBuffer;     //Processed data cache
-
 int main() {
+    unsigned char *g_pRgbBuffer[10];
+
+    g_pRgbBuffer[0] = (unsigned char *)malloc(1024 * 1280 * 3);
+    g_pRgbBuffer[1] = (unsigned char *)malloc(1024 * 1280 * 3);
+
+
+
+
 
     int iCameraCounts = 1;
     int iStatus = -1;
@@ -20,7 +26,7 @@ int main() {
     tSdkCameraCapbility tCapability;      //Device description information
     tSdkFrameHead sFrameInfo;
     BYTE *pbyBuffer;
-    int iDisplayFrames = 10000;
+    int iDisplayFrames = 2;
     cv::Mat *iplImage = NULL;
     int channel = 3;
 
@@ -55,13 +61,18 @@ int main() {
     // возможные разрешение: 1280 * 1024 и 640 * 480 ROI
     // Camera output image format: Bayer GB 8bit (1Bpp) 17301514, последнее - код; Bayer GR 12bit Packed (1.5Bpp) 17563690
 
-    //
-    g_pRgbBuffer = (unsigned char *) malloc(
-            tCapability.sResolutionRange.iHeightMax * tCapability.sResolutionRange.iWidthMax * 3);
+    
+    //g_pRgbBuffer = (unsigned char *) malloc(
+            //tCapability.sResolutionRange.iHeightMax * tCapability.sResolutionRange.iWidthMax * 3);
+    // g_pRgbBuffer[0] = (unsigned char *) malloc(
+    //         tCapability.sResolutionRange.iHeightMax * tCapability.sResolutionRange.iWidthMax * 3);
+    // g_pRgbBuffer[1] = (unsigned char *) malloc(
+    //         tCapability.sResolutionRange.iHeightMax * tCapability.sResolutionRange.iWidthMax * 3);
+
     pbyBuffer = (unsigned char *) malloc(
             tCapability.sResolutionRange.iHeightMax * tCapability.sResolutionRange.iWidthMax * 3 * 4);
 
-    //g_readBuf = (unsigned char*)malloc(tCapability.sResolutionRange.iHeightMax*tCapability.sResolutionRange.iWidthMax*3);
+    // g_readBuf = (unsigned char*)malloc(tCapability.sResolutionRange.iHeightMax*tCapability.sResolutionRange.iWidthMax*3);
 
     /*Put the SDK into working mode and start receiving images from the camera
      data. If the current camera is in trigger mode, it needs to receive
@@ -88,28 +99,27 @@ int main() {
     //Cycle through 1000 frames of images
     while (iDisplayFrames--) {
         if (CameraGetImageBuffer(hCamera, &sFrameInfo, &pbyBuffer, 1000) == CAMERA_STATUS_SUCCESS) {
-            std::ofstream file("raw_data.bin", std::ios::binary);
+            //std::ofstream file("raw_data.bin", std::ios::binary);
             //file.write(data, 100);
-            for (int i = 0 ; i < 1024*1280; ++i) {
+            //for (int i = 0 ; i < 1024*1280; ++i) {
                 //std::cout << static_cast<int>(*(pbyBuffer + i)) << ' ';
-                file << *(pbyBuffer + i);
-            }
+                //file << *(pbyBuffer + i);
+            //}
 
-            std::cout << '\n';
+            //std::cout << "====" << g_pRgbBuffer[0] << ' ' << g_pRgbBuffer[1] << '\n';
 
-            CameraImageProcess(hCamera, pbyBuffer, g_pRgbBuffer, &sFrameInfo);
+            CameraImageProcess(hCamera, pbyBuffer, g_pRgbBuffer[2-iDisplayFrames - 1], &sFrameInfo);
 
             cv::Mat matImage(
                     std::vector < int > {sFrameInfo.iHeight, sFrameInfo.iWidth},
                     sFrameInfo.uiMediaType == CAMERA_MEDIA_TYPE_MONO8 ? CV_8UC1 : CV_8UC3, // 8-bit unsigned 3-channel
-                    g_pRgbBuffer
+                    g_pRgbBuffer[2-iDisplayFrames - 1]
             );
             printf("%d  %d  \n", matImage.rows, matImage.cols);
-            imwrite("test_1.png", matImage);
+            imwrite(std::to_string(iDisplayFrames) + ".png", matImage);
 
-            break;
 
-            waitKey(5);
+            //waitKey(5);
 
             // After successfully calling CameraGetImageBuffer, you must call CameraReleaseImageBuffer to release the obtained buffer.
             //Otherwise, when calling CameraGetImageBuffer again, the program will be suspended and blocked until other threads call CameraReleaseImageBuffer to release the buffer
@@ -120,11 +130,9 @@ int main() {
 
     CameraUnInit(hCamera);
     //Note that after deinitialization, free
-    free(g_pRgbBuffer);
+    free(g_pRgbBuffer[0]);
+    free(g_pRgbBuffer[1]);
 
 
     return 0;
 }
-
-// сначала читаем буфер и только затем преобразуем. То есть можем сразу передавать в топик сырой буфер, это будет быстрее
-// одновременно можем преобразовывать и в стандартное rgb. По нему уже детекция и калибровка
