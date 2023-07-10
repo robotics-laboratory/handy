@@ -4,6 +4,8 @@
 #include <opencv2/core/mat.hpp>
 #include "opencv2/highgui/highgui.hpp"
 #include <stdio.h>
+#include <fstream>
+#include <iostream>
 
 using namespace cv;
 
@@ -22,7 +24,7 @@ int main() {
     cv::Mat *iplImage = NULL;
     int channel = 3;
 
-    CameraSdkInit(1);
+    CameraSdkInit(0); // 0 - is English language select
 
     //Enumerate devices and create a device list
     iStatus = CameraEnumerateDevice(&tCameraEnumList, &iCameraCounts);
@@ -49,9 +51,16 @@ int main() {
     // Determines the parameters of the relevant function
     CameraGetCapability(hCamera, &tCapability);
 
+
+    // возможные разрешение: 1280 * 1024 и 640 * 480 ROI
+    // Camera output image format: Bayer GB 8bit (1Bpp) 17301514, последнее - код; Bayer GR 12bit Packed (1.5Bpp) 17563690
+
     //
     g_pRgbBuffer = (unsigned char *) malloc(
             tCapability.sResolutionRange.iHeightMax * tCapability.sResolutionRange.iWidthMax * 3);
+    pbyBuffer = (unsigned char *) malloc(
+            tCapability.sResolutionRange.iHeightMax * tCapability.sResolutionRange.iWidthMax * 3 * 4);
+
     //g_readBuf = (unsigned char*)malloc(tCapability.sResolutionRange.iHeightMax*tCapability.sResolutionRange.iWidthMax*3);
 
     /*Put the SDK into working mode and start receiving images from the camera
@@ -79,11 +88,20 @@ int main() {
     //Cycle through 1000 frames of images
     while (iDisplayFrames--) {
         if (CameraGetImageBuffer(hCamera, &sFrameInfo, &pbyBuffer, 1000) == CAMERA_STATUS_SUCCESS) {
+            std::ofstream file("raw_data.bin", std::ios::binary);
+            //file.write(data, 100);
+            for (int i = 0 ; i < 1024*1280; ++i) {
+                //std::cout << static_cast<int>(*(pbyBuffer + i)) << ' ';
+                file << *(pbyBuffer + i);
+            }
+
+            std::cout << '\n';
+
             CameraImageProcess(hCamera, pbyBuffer, g_pRgbBuffer, &sFrameInfo);
 
             cv::Mat matImage(
                     std::vector < int > {sFrameInfo.iHeight, sFrameInfo.iWidth},
-                    sFrameInfo.uiMediaType == CAMERA_MEDIA_TYPE_MONO8 ? CV_8UC1 : CV_8UC3,
+                    sFrameInfo.uiMediaType == CAMERA_MEDIA_TYPE_MONO8 ? CV_8UC1 : CV_8UC3, // 8-bit unsigned 3-channel
                     g_pRgbBuffer
             );
             printf("%d  %d  \n", matImage.rows, matImage.cols);
@@ -108,3 +126,5 @@ int main() {
     return 0;
 }
 
+// сначала читаем буфер и только затем преобразуем. То есть можем сразу передавать в топик сырой буфер, это будет быстрее
+// одновременно можем преобразовывать и в стандартное rgb. По нему уже детекция и калибровка
