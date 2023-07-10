@@ -428,11 +428,11 @@ typedef struct
     char acDescription[32]; // 描述信息
 } tSdkColorTemperatureDes;
 
-//相机帧率描述信息
+//Camera frame rate description information
 typedef struct
 {
-    INT  iIndex;             // 帧率索引号，一般0对应于低速模式，1对应于普通模式，2对应于高速模式
-    char acDescription[32];  // 描述信息
+    INT  iIndex;             // Frame rate index number, generally 0 corresponds to low speed mode, 1 corresponds to normal mode, 2 corresponds to high speed mode
+    char acDescription[32];  // Description
 } tSdkFrameSpeed;
 
 //相机曝光功能范围定义
@@ -476,11 +476,11 @@ typedef struct
     char acDescription[32];     //描述信息
 } tSdkAeAlgorithm;
 
-//RAW转RGB算法描述
+//RAW to RGB algorithm description
 typedef struct
 {
-    INT  iIndex;                //编号
-    char acDescription[32];     //描述信息
+    INT  iIndex;                //serial number
+    char acDescription[32];     //Description
 } tSdkBayerDecodeAlgorithm;
 
 
@@ -492,12 +492,12 @@ typedef struct
     INT iLost;          //当前丢帧的数量
 } tSdkFrameStatistic;
 
-//相机输出的图像数据格式
+//Image data format for camera output
 typedef struct
 {
-  INT     iIndex;             //格式种类编号
-  char    acDescription[32];  //描述信息
-  UINT    iMediaType;         //对应的图像格式编码，如CAMERA_MEDIA_TYPE_BAYGR8，在本文件中有定义。
+  INT     iIndex;             //format type number
+  char    acDescription[32];  //Description
+  UINT    iMediaType;         //The corresponding image format encoding, such as CAMERA_MEDIA_TYPE_BAYGR8, is defined in this document.
 } tSdkMediaType;
 
 //伽马的设定范围
@@ -514,7 +514,7 @@ typedef struct
     INT iMax;   //最大值
 } tContrastRange;
 
-//RGB三通道数字增益的设定范围
+//Setting range of RGB three-channel digital gain
 typedef struct
 {
     INT iRGainMin;    //红色增益的最小值
@@ -553,58 +553,58 @@ typedef struct
     BOOL bZoomHD;           //相机硬件是否支持图像缩放输出(只能是缩小)。
 } tSdkIspCapacity;
 
-/* 定义整合的设备描述信息，这些信息可以用于动态构建UI */
+/* Define integrated device description information that can be used to dynamically build UIs */
 typedef struct
 {
 
-  tSdkTrigger   *pTriggerDesc;          // 触发模式
-  INT           iTriggerDesc;           // 触发模式的个数，即pTriggerDesc数组的大小
+  tSdkTrigger   *pTriggerDesc;          // режим триггера
+  INT           iTriggerDesc;           // The number of trigger modes, that is, the size of the pTriggerDesc array
 
-  tSdkImageResolution   *pImageSizeDesc;// 预设分辨率选择
-  INT                   iImageSizeDesc; // 预设分辨率的个数，即pImageSizeDesc数组的大小
+  tSdkImageResolution   *pImageSizeDesc;// Preset resolution selection
+  INT                   iImageSizeDesc; // The number of preset resolutions, that is, the size of the pImageSizeDesc array
 
-  tSdkColorTemperatureDes *pClrTempDesc;// 预设色温模式，用于白平衡
+  tSdkColorTemperatureDes *pClrTempDesc;// Preset color temperature mode for white balance
   INT                     iClrTempDesc;
 
-  tSdkMediaType     *pMediaTypeDesc;    // 相机输出图像格式
-  INT               iMediaTypdeDesc;    // 相机输出图像格式的种类个数，即pMediaTypeDesc数组的大小。
+  tSdkMediaType     *pMediaTypeDesc;    // Camera output image format
+  INT               iMediaTypdeDesc;    // The number of types of camera output image formats, that is, the size of the pMediaTypeDesc array.
 
-  tSdkFrameSpeed    *pFrameSpeedDesc;   // 可调节帧速类型，对应界面上普通 高速 和超级三种速度设置
-  INT               iFrameSpeedDesc;    // 可调节帧速类型的个数，即pFrameSpeedDesc数组的大小。
+  tSdkFrameSpeed    *pFrameSpeedDesc;   // Adjustable frame rate type, corresponding to three speed settings on the interface: normal, high speed and super
+  INT               iFrameSpeedDesc;    // The number of frame rate types can be adjusted, that is, the size of the pFrameSpeedDesc array.
 
-  tSdkPackLength    *pPackLenDesc;      // 传输包长度，一般用于网络设备
-  INT               iPackLenDesc;       // 可供选择的传输分包长度的个数，即pPackLenDesc数组的大小。
+  tSdkPackLength    *pPackLenDesc;      // Transmission packet length, generally used in network equipment
+  INT               iPackLenDesc;       // The number of optional transmission packet lengths, that is, the size of the pPackLenDesc array.
 
-  INT           iOutputIoCounts;        // 可编程输出IO的个数
-  INT           iInputIoCounts;         // 可编程输入IO的个数
+  INT           iOutputIoCounts;        // The number of programmable output IO
+  INT           iInputIoCounts;         // The number of programmable output IO
 
-  tSdkPresetLut  *pPresetLutDesc;       // 相机预设的LUT表
-  INT            iPresetLut;            // 相机预设的LUT表的个数，即pPresetLutDesc数组的大小
+  tSdkPresetLut  *pPresetLutDesc;       // LUT tables for camera presets
+  INT            iPresetLut;            // The number of camera preset LUT tables, that is, the size of the pPresetLutDesc array
 
-  INT           iUserDataMaxLen;        // 指示该相机中用于保存用户数据区的最大长度。为0表示无。
-  BOOL          bParamInDevice;         // 指示该设备是否支持从设备中读写参数组。1为支持，0不支持。
+  INT           iUserDataMaxLen;        // Indicates the maximum length of the user data area in this camera. 0 means none.
+  BOOL          bParamInDevice;         // Indicates whether the device supports reading and writing parameter groups from the device. 1 is supported, 0 is not supported.
 
-  tSdkAeAlgorithm   *pAeAlmSwDesc;      // 软件自动曝光算法描述
-  int                iAeAlmSwDesc;      // 软件自动曝光算法个数
+  tSdkAeAlgorithm   *pAeAlmSwDesc;      // Software automatic exposure algorithm description
+  int                iAeAlmSwDesc;      // Number of software automatic exposure algorithms
 
-  tSdkAeAlgorithm    *pAeAlmHdDesc;     // 硬件自动曝光算法描述，为NULL表示不支持硬件自动曝光
-  int                iAeAlmHdDesc;      // 硬件自动曝光算法个数，为0表示不支持硬件自动曝光
+  tSdkAeAlgorithm    *pAeAlmHdDesc;     // Hardware auto-exposure algorithm description, NULL means hardware auto-exposure is not supported
+  int                iAeAlmHdDesc;      // The number of hardware auto-exposure algorithms, 0 means hardware auto-exposure is not supported
 
-  tSdkBayerDecodeAlgorithm   *pBayerDecAlmSwDesc; // 软件Bayer转换为RGB数据的算法描述
-  int                        iBayerDecAlmSwDesc;  // 软件Bayer转换为RGB数据的算法个数
+  tSdkBayerDecodeAlgorithm   *pBayerDecAlmSwDesc; // Algorithm description of software Bayer conversion to RGB data
+  int                        iBayerDecAlmSwDesc;  // Number of algorithms for software Bayer conversion to RGB data
 
-  tSdkBayerDecodeAlgorithm   *pBayerDecAlmHdDesc; // 硬件Bayer转换为RGB数据的算法描述，为NULL表示不支持
-  int                        iBayerDecAlmHdDesc;  // 硬件Bayer转换为RGB数据的算法个数，为0表示不支持
+  tSdkBayerDecodeAlgorithm   *pBayerDecAlmHdDesc; // Algorithm description of hardware Bayer conversion to RGB data, if it is NULL, it does not support
+  int                        iBayerDecAlmHdDesc;  // The number of algorithms for hardware Bayer conversion to RGB data, 0 means not supported
 
-  /* 图像参数的调节范围定义,用于动态构建UI*/
-  tSdkExpose            sExposeDesc;      // 曝光的范围值
-  tSdkResolutionRange   sResolutionRange; // 分辨率范围描述
-  tRgbGainRange         sRgbGainRange;    // 图像数字增益范围描述
-  tSaturationRange      sSaturationRange; // 饱和度范围描述
-  tGammaRange           sGammaRange;      // 伽马范围描述
-  tContrastRange        sContrastRange;   // 对比度范围描述
-  tSharpnessRange       sSharpnessRange;  // 锐化范围描述
-  tSdkIspCapacity       sIspCapacity;     // ISP能力描述
+  /* Adjustment range definition of image parameters for dynamic construction of UI */
+  tSdkExpose            sExposeDesc;      // Exposure range value
+  tSdkResolutionRange   sResolutionRange; // Description of resolution range
+  tRgbGainRange         sRgbGainRange;    // Image Digital Gain Range Description
+  tSaturationRange      sSaturationRange; // Saturation range description
+  tGammaRange           sGammaRange;      // Gamma Range Description
+  tContrastRange        sContrastRange;   // Contrast range description
+  tSharpnessRange       sSharpnessRange;  // Sharpening Range Description
+  tSdkIspCapacity       sIspCapacity;     // ISP Capability Description
 
 
 } tSdkCameraCapbility;

@@ -381,6 +381,24 @@ MVSDK_API CameraSdkStatus  CameraSetDisplaySize(
 //            否则返回非0值的错误码,请参考CameraStatus.h
 //            中错误码的定义。
 /******************************************************/
+
+// Function name: CameraGetImageBuffer
+// Function description: Get a frame of image data. In order to improve efficiency, the SDK adopts a zero-copy mechanism when capturing images.
+// CameraGetImageBuffer actually obtains a buffer address in the kernel,
+// After this function is successfully called, you must call CameraReleaseImageBuffer to release the
+// The buffer obtained by CameraGetImageBuffer, so that the kernel can continue to use
+// The buffer.
+// Parameters: hCamera The handle of the camera, obtained by the CameraInit function.
+// pFrameInfo The frame header information pointer of the image.
+// pbyBuffer points to the buffer pointer of the image's data. because
+// A zero-copy mechanism is used to improve efficiency, so
+// A pointer to pointer is used here.
+// UINT wTimes Timeout time for grabbing images. The unit is milliseconds. exist
+// The image has not been obtained within the time of wTimes, then this function
+// Will return timeout information.
+// Return value: when successful, return CAMERA_STATUS_SUCCESS (0);
+// Otherwise return a non-zero error code, please refer to CameraStatus.h
+// Definition of error codes in .
 MVSDK_API CameraSdkStatus  CameraGetImageBuffer(
     CameraHandle        hCamera,
     tSdkFrameHead*      pFrameInfo,
@@ -1685,6 +1703,16 @@ MVSDK_API CameraSdkStatus  CameraSetLightFrequency(
 //            否则返回非0值的错误码,请参考CameraStatus.h
 //            中错误码的定义。
 /******************************************************/
+// Function name: CameraSetFrameSpeed
+// Function description: Set the frame rate of the camera output image. The available frame rate modes of the camera are determined by
+// iFrameSpeedDesc in the information structure obtained by CameraGetCapability
+// Indicates the number of maximum frame rate selection modes.
+// Parameters: hCamera The handle of the camera, obtained by the CameraInit function.
+// The frame rate mode index number selected by iFrameSpeed, ranging from 0 to
+// iFrameSpeedDesc - 1 in the information structure obtained by CameraGetCapability
+// Return value: when successful, return CAMERA_STATUS_SUCCESS (0);
+// Otherwise return a non-zero error code, please refer to CameraStatus.h
+// Definition of error codes in .
 MVSDK_API CameraSdkStatus  CameraSetFrameSpeed(
     CameraHandle    hCamera,
     int             iFrameSpeed
