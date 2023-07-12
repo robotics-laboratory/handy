@@ -40,6 +40,12 @@ CameraNode::CameraNode() : Node("main_camera_node") {
 
     RCLCPP_INFO_STREAM(this->get_logger(), "init done");
 
+    tSdkCameraCapbility cap;
+    CameraGetCapability(camera_handles_[0], &cap);
+
+    applyCameraParameters();
+
+
 }
 
 CameraNode::~CameraNode() {
@@ -121,6 +127,122 @@ std_msgs::msg::Header CameraNode::getHeader(rclcpp::Time timestamp, int camera_i
 
     return header;
 }
+
+
+void CameraNode::applyCameraParameters() {
+    const std::string param_names[] = {"exposure time", "contrast", "gain_R", "gain_G", "gain_B",
+                                       "gamma", "saturation", "sharpness"};
+    std::string current_param;                                       
+    for (int i = 0; i < num_of_cameras_; ++i) {
+        for (const std::string& param : param_names) {
+            current_param = param + '_' + std::to_string(i + 1);
+            applyParamsToCamera(camera_handles_[i], param, current_param);
+        }
+    }
+    //RCLCPP_INFO_STREAM(this->get_logger(), "exposure: " << params["exposure"]);
+}
+
+void CameraNode::applyParamsToCamera(int camera_handle, const std::string &param_type, std::string &param_name) {
+    int status;
+    int i_num;
+    double d_num;
+    if (param_type == "exposure time") {
+        status = CameraSetExposureTime(camera_handle, this->declare_parameter<double>(param_name));
+
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Setting arameter " << param_name << " failed with code: " << status);
+            return;
+        }
+        CameraGetExposureTime(camera_handle, &d_num);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << d_num);
+
+    } else if (param_type == "contrast") {
+        status = CameraSetContrast(camera_handle, this->declare_parameter<int>(param_name));
+
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Setting arameter " << param_name << " failed with code: " << status);
+            return;
+        }
+        CameraGetContrast(camera_handle, &i_num);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << i_num);
+
+
+    } else if (param_type == "gain_R") {
+        int r, g, b;
+        CameraGetGain(camera_handle, &r, &g, &b);
+        status = CameraSetGain(camera_handle, this->declare_parameter<int>(param_name), g, b);
+
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Setting arameter " << param_name << " failed with code: " << status);
+            return;
+        }
+        CameraGetGain(camera_handle, &r, &g, &b);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << r);
+
+
+    } else if (param_type == "gain_G") {
+        int r, g, b;
+        CameraGetGain(camera_handle, &r, &g, &b);
+        status = CameraSetGain(camera_handle, r, this->declare_parameter<int>(param_name), b);
+
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Setting arameter " << param_name << " failed with code: " << status);
+            return;
+        }
+        CameraGetGain(camera_handle, &r, &g, &b);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << g);
+
+    } else if (param_type == "gain_B") {
+        int r, g, b;
+        CameraGetGain(camera_handle, &r, &g, &b);
+        status = CameraSetGain(camera_handle, r, g, this->declare_parameter<int>(param_name));
+
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Setting arameter " << param_name << " failed with code: " << status);
+            return;
+        }
+        CameraGetGain(camera_handle, &r, &g, &b);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << b);
+    } else if (param_type == "gamma") {
+        status = CameraSetGamma(camera_handle, this->declare_parameter<int>(param_name));
+
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Setting arameter " << param_name << " failed with code: " << status);
+            return;
+        }
+        CameraGetGamma(camera_handle, &i_num);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << i_num);
+
+
+    } else if (param_type == "saturation") {
+        status = CameraSetSaturation(camera_handle, this->declare_parameter<int>(param_name));
+
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Setting arameter " << param_name << " failed with code: " << status);
+            return;
+        }
+        CameraGetSaturation(camera_handle, &i_num);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << i_num);
+
+
+    } else if (param_type == "sharpness") {
+        status = CameraSetSharpness(camera_handle, this->declare_parameter<int>(param_name));
+
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(), "Setting arameter " << param_name << " failed with code: " << status);
+            return;
+        }
+        CameraGetSharpness(camera_handle, &i_num);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << i_num);
+
+
+    } else {
+        RCLCPP_ERROR_STREAM(this->get_logger(), "Unknown parameter: " << param_name);
+        return;
+    }
+}
+
+
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);

@@ -6,6 +6,7 @@
 #include <opencv2/core/mat.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include "opencv2/highgui/highgui.hpp"
+#include <yaml-cpp/yaml.h>
 
 #include <sensor_msgs/msg/image.hpp>
 #include <cv_bridge/cv_bridge.h>
@@ -44,7 +45,9 @@ class CameraNode : public rclcpp::Node {
 
         void loadCalibrationParams(std::string &path);
         void applyDistortion();
-        void applyCameraParameters(int camera_id);
+        void applyCameraParameters();
+        void applyParamsToCamera(int camera_handle, const std::string &param_type, std::string &param_name);
+        void handleParamStatus(int camera_handle, const std::string &param_type, const std::string &param_name, int status);
 
         void allocateBuffersMemory();
 

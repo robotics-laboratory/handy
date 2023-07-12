@@ -1,0 +1,33 @@
+launch:
+- arg:
+    name: "calibration_file_path"
+    default: ""
+- node:
+    pkg: "industrial_camera"
+    exec: "industrial_camera"
+    name: "industrial_camera"
+    param:
+
+    # camera №1
+    - {name: "exposure time_1", value: 10000.}     #(in microseconds) default: 10000, range: ...
+    - {name: "contrast_1", value: 100}            # default: 100, range: 0-100
+    - {name: "gain_R_1", value: 100}              # defalt: 100, range: 0-400
+    - {name: "gain_G_1" , value: 100}              # defalt: 100, range: 0-400
+    - {name: "gain_B_1", value: 100}              # defalt: 100, range: 0-400
+    - {name: "gamma_1", value: 100}               #default: 100, range: 0-250
+    - {name: "saturation_1", value: 100}         # default: 100, range: 0-200
+    - {name: "sharpness_1", value: 0}            # default: 0, range: 0-100
+
+    # camera №2
+    - {name: "exposure time_2", value: 10000.}     #(in microseconds) default: 10000, range: ...
+    - {name: "contrast_2", value: 100}            # default: 100, range: 0-100
+    - {name: "gain_R_2", value: 100}              # defalt: 100, range: 0-400
+    - {name: "gain_G_2", value: 100}              # defalt: 100, range: 0-400
+    - {name: "gain_B_2", value: 100}              # defalt: 100, range: 0-400
+    - {name: "gamma_2", value: 100}               #default: 100, range: 0-250
+    - {name: "saturation_2", value: 100}         # default: 100, range: 0-200
+    - {name: "sharpness_2", value: 0}            # default: 0, range: 0-100
+
+    
+
+    #- {name: "auto_expose", value: 1} # 1 == True, 0 == False
