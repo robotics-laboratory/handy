@@ -3,6 +3,7 @@ project(industrial_camera)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wno-dev)
 
+
 find_package(cv_bridge REQUIRED)
 find_package(foxglove_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -16,6 +17,8 @@ include_directories( ${OpenCV_INCLUDE_DIRS} ../../include)
 
 add_library( mvsdk SHARED IMPORTED )
 #set_target_properties( mvsdk PROPERTIES IMPORTED_LOCATION lib/libMVSDK.so )
+# /handy/packages/industrial_camera/lib/arm64/libMVSDK.so
+# packages/industrial_camera/lib/arm64/libMVSDK.so
 set_target_properties( mvsdk PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/lib/arm64/libMVSDK.so")
 
 add_executable( industrial_camera src/main.cpp )
