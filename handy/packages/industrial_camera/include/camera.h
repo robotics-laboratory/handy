@@ -1,24 +1,37 @@
 #include "CameraApi.h"
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/time.hpp>
 #include <opencv2/core/core.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include "opencv2/highgui/highgui.hpp"
+
 #include <sensor_msgs/msg/image.hpp>
+#include <cv_bridge/cv_bridge.h>
 #include <string>
+#include <fstream>
 #include <stdint.h>
 
+using namespace std::chrono_literals;
 
 constexpr unsigned int MAX_NUM_OF_CAMERAS = 10;
 
 class CameraNode : public rclcpp::Node {
     public:
         CameraNode();
+        ~CameraNode();
+
     
     private:
-        int num_of_cameras;
-        int camera_handles;
-        BYTE *raw_buffer[MAX_NUM_OF_CAMERAS];
-        //BYTE *converted_buffer[MAX_NUM_OF_CAMERAS];
-        rclcpp::Logger logger_;
+        int num_of_cameras_ = MAX_NUM_OF_CAMERAS;
+        int camera_handles_[MAX_NUM_OF_CAMERAS];
+        BYTE *raw_buffer_[MAX_NUM_OF_CAMERAS];
+        BYTE *converted_buffer_[MAX_NUM_OF_CAMERAS];
+        tSdkFrameHead frame_info_[MAX_NUM_OF_CAMERAS];
+        rclcpp::Time last_frame_timestamps_[MAX_NUM_OF_CAMERAS];
+
+        rclcpp::Clock::SharedPtr clock_;
 
 
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr converted_img_pub_;
@@ -30,14 +43,14 @@ class CameraNode : public rclcpp::Node {
 
         void loadCalibrationParams(std::string &path);
         void applyDistortion();
-        void applyCameraParameters(int camera_handle);
+        void applyCameraParameters(int camera_id);
 
         void allocateBuffersMemory();
 
-        void publishRawImage(BYTE *buffer, uint32 timestamp, int camera_handle);
-        void publishConvertedImage(BYTE *buffer, uint32 timestamp, int camera_handle, bool publish_preview=false);
-        void publishPreviewImage(cv::Mat &converted_image, uint32 timestamp, int camera_handle);
-        void publishPreviewImage(BYTE *buffer, uint32 timestamp, int camera_handle);
+        void publishRawImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id);
+        void publishConvertedImage(BYTE **buffer, rclcpp::Time timestamp, int camera_id, bool publish_preview);
+        void publishPreviewImage(cv::Mat &converted_image, rclcpp::Time timestamp, int camera_id);
+        void publishPreviewImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id);
 
         void handleCameraOnTimer();
 
