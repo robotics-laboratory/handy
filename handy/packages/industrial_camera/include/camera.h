@@ -40,6 +40,7 @@ class CameraNode : public rclcpp::Node {
 
         rclcpp::TimerBase::SharedPtr timer_;
         cv::Size frame_size_;
+        cv::Size preview_frame_size_;
 
         void loadCalibrationParams(std::string &path);
         void applyDistortion();
@@ -48,9 +49,11 @@ class CameraNode : public rclcpp::Node {
         void allocateBuffersMemory();
 
         void publishRawImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id);
-        void publishConvertedImage(BYTE **buffer, rclcpp::Time timestamp, int camera_id, bool publish_preview);
+        void publishConvertedImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id, bool publish_preview);
         void publishPreviewImage(cv::Mat &converted_image, rclcpp::Time timestamp, int camera_id);
         void publishPreviewImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id);
+
+        std_msgs::msg::Header getHeader(rclcpp::Time timestamp, int camera_id);
 
         void handleCameraOnTimer();
 
