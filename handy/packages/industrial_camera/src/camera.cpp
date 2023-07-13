@@ -1,7 +1,6 @@
 #include "camera.h"
 #include "CameraApi.h"
 
-
 CameraNode::CameraNode() : Node("main_camera_node") {
     int st = CameraSdkInit(0);
     RCLCPP_INFO_STREAM(this->get_logger(), "init status: " << st);
@@ -32,20 +31,31 @@ CameraNode::CameraNode() : Node("main_camera_node") {
     preview_frame_size_ = cv::Size(640, 480);
 
     RCLCPP_INFO_STREAM(this->get_logger(), "publishers created");
+
     allocateBuffersMemory();
     RCLCPP_INFO_STREAM(this->get_logger(), "buffer allocated");
 
-
     applyCameraParameters();
-    
-    RCLCPP_INFO_STREAM(this->get_logger(), "start at");
-    
 
-    for (size_t i = 0; i < 100; ++i) {
-        rclcpp::Time start_time = this->get_clock()->now();
-        int status =
-            CameraGetImageBuffer(camera_handles_[0], &frame_info_[0], &raw_buffer_[0], 50);
-        //RCLCPP_INFO_STREAM(this->get_logger(), (this->get_clock()->now() - start_time).seconds());
+    measureFPS();
+
+    timer_ = this->create_wall_timer(500ms, std::bind(&CameraNode::handleCameraOnTimer, this));
+    save_raw_ = this->declare_parameter<bool>("save_raw_frames_on_timer", false);
+    save_converted_ = this->declare_parameter<bool>("save_converted_frames_on_timer", false);
+    if (save_raw_ || save_converted_) {
+        initSnapper();
+    }
+
+    RCLCPP_INFO_STREAM(this->get_logger(), "initialisation finished");
+}
+
+void CameraNode::measureFPS() {
+    rclcpp::Time start_time = this->get_clock()->now();
+    const int num_of_frames = 100;
+    for (size_t i = 0; i < num_of_frames; ++i) {
+        int status = CameraGetImageBuffer(camera_handles_[0], &frame_info_[0], &raw_buffer_[0], 50);
+        // RCLCPP_INFO_STREAM(this->get_logger(), (this->get_clock()->now() -
+        // start_time).seconds());
         if (status == CAMERA_STATUS_TIME_OUT) {
             RCLCPP_ERROR_STREAM(this->get_logger(), "ERROR: timeout, waiting for raw buffer");
         } else if (status != CAMERA_STATUS_SUCCESS) {
@@ -54,13 +64,9 @@ CameraNode::CameraNode() : Node("main_camera_node") {
         }
         CameraReleaseImageBuffer(camera_handles_[0], raw_buffer_[0]);
     }
-    RCLCPP_INFO_STREAM(this->get_logger(), "stop at");
-
-    timer_ = this->create_wall_timer(500ms, std::bind(&CameraNode::handleCameraOnTimer, this));
-
-    RCLCPP_INFO_STREAM(this->get_logger(), "initialisation finished");
-
-
+    RCLCPP_INFO_STREAM(
+        this->get_logger(),
+        "measured FPS is: " << num_of_frames / (this->get_clock()->now() - start_time).seconds());
 }
 
 CameraNode::~CameraNode() {
@@ -113,6 +119,14 @@ void CameraNode::publishRawImage(BYTE *buffer, rclcpp::Time timestamp, int camer
     signals_.raw_img_pub->publish(img_msg);
 }
 
+void CameraNode::saveBufferToFile(BYTE *buffer, cv::Size size, std::string &path) {
+    std::ofstream file(path);
+    for (size_t i = 0; i < size.width * size.height; ++i) {
+        file << *(buffer + i);
+    }
+    file.close();
+}
+
 void CameraNode::handleCameraOnTimer() {
     for (size_t i = 0; i < num_of_cameras_; ++i) {
         int status =
@@ -144,6 +158,55 @@ std_msgs::msg::Header CameraNode::getHeader(rclcpp::Time timestamp, int camera_i
     return header;
 }
 
+void CameraNode::initSnapper() {
+    int timer_period = this->declare_parameter<int>("timer_period");
+    path_to_file_save = this->declare_parameter<std::string>("path_to_save");
+    std::chrono::milliseconds time(timer_period * 1000);
+    snap_timer_ = this->create_wall_timer(time, std::bind(&CameraNode::saveAllFramesOnTimer, this));
+
+    RCLCPP_INFO_STREAM(this->get_logger(), "snapper initialised");
+}
+
+void CameraNode::saveAllFramesOnTimer() {
+    if (!save_image_id_) {
+        ++save_image_id_;
+        return;
+    }
+    std::string current_path;
+    // saving raw as binary
+    if (save_raw_) {
+        for (int i = 0; i < num_of_cameras_; ++i) {
+            
+            current_path = path_to_file_save + "/raw_image_" + std::to_string(i) + '_' +
+                        std::to_string(save_image_id_) + ".bin";
+
+            std::ofstream file(current_path);
+
+            for (size_t j = 0; j < frame_size_.height * frame_size_.width; ++j) {
+                file << *(raw_buffer_[i] + j);
+            }
+
+            file.close();
+            RCLCPP_INFO_STREAM(this->get_logger(), "Image " << current_path << " saved");
+        }
+    }
+
+    if (save_converted_) {
+        // saving converted
+        for (int i = 0; i < num_of_cameras_; ++i) {
+            current_path = path_to_file_save + "/image_" + std::to_string(i) + '_' +
+                        std::to_string(save_image_id_) + ".png";
+            cv::Mat cv_image(
+                std::vector<int>{frame_info_[i].iHeight, frame_info_[i].iWidth},
+                CV_8UC3,
+                converted_buffer_[i]);
+            cv::imwrite(current_path, cv_image);
+            RCLCPP_INFO_STREAM(this->get_logger(), "Image " << current_path << " saved");
+        }
+    }
+    ++save_image_id_;
+}
+
 void CameraNode::applyCameraParameters() {
     const std::string param_names[] = {
         "exposure time",
@@ -162,7 +225,6 @@ void CameraNode::applyCameraParameters() {
             applyParamsToCamera(camera_handles_[i], param, current_param);
         }
     }
-    // RCLCPP_INFO_STREAM(this->get_logger(), "exposure: " << params["exposure"]);
 }
 
 void CameraNode::applyParamsToCamera(
