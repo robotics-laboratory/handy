@@ -45,4 +45,9 @@ target_link_libraries( industrial_camera ${OpenCV_LIBS} mvsdk )
 install(TARGETS industrial_camera
    DESTINATION lib/${PROJECT_NAME})
 
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 ament_package()

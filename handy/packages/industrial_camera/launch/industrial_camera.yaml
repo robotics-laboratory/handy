@@ -9,14 +9,15 @@ launch:
     param:
 
     # camera №1
-    - {name: "exposure time_1", value: 10000.}     #(in microseconds) default: 10000, range: ...
+    - {name: "exposure time_1", value: 6000.}     #(in microseconds) default: 10000, range: ...
     - {name: "contrast_1", value: 100}            # default: 100, range: 0-100
-    - {name: "gain_R_1", value: 100}              # defalt: 100, range: 0-400
-    - {name: "gain_G_1" , value: 100}              # defalt: 100, range: 0-400
-    - {name: "gain_B_1", value: 100}              # defalt: 100, range: 0-400
-    - {name: "gamma_1", value: 100}               #default: 100, range: 0-250
+    - {name: "gain_R_1", value: 150}              # defalt: 100, range: 0-400
+    - {name: "gain_G_1" , value: 150}              # defalt: 100, range: 0-400
+    - {name: "gain_B_1", value: 150}              # defalt: 100, range: 0-400
+    - {name: "gamma_1", value: 60}               #default: 100, range: 0-250
     - {name: "saturation_1", value: 100}         # default: 100, range: 0-200
     - {name: "sharpness_1", value: 0}            # default: 0, range: 0-100
+    - {name: "auto_exposure_1", value: False}
 
     # camera №2
     - {name: "exposure time_2", value: 10000.}     #(in microseconds) default: 10000, range: ...
@@ -27,7 +28,7 @@ launch:
     - {name: "gamma_2", value: 100}               #default: 100, range: 0-250
     - {name: "saturation_2", value: 100}         # default: 100, range: 0-200
     - {name: "sharpness_2", value: 0}            # default: 0, range: 0-100
+    - {name: "auto_exposure_2", value: True}
+
 
     
-
-    #- {name: "auto_expose", value: 1} # 1 == True, 0 == False
