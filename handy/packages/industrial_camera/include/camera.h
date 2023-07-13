@@ -36,6 +36,10 @@ class CameraNode : public rclcpp::Node {
         int status);
 
     void allocateBuffersMemory();
+    void initSnapper();
+    void saveAllFramesOnTimer();
+    void measureFPS();
+    void saveBufferToFile(BYTE *buffer, cv::Size size, std::string &path);
 
     void publishRawImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id);
     void publishConvertedImage(
@@ -60,9 +64,14 @@ class CameraNode : public rclcpp::Node {
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr converted_img_pub = nullptr;
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr raw_img_pub = nullptr;
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr small_preview_img_pub = nullptr;
+
     } signals_;
 
     rclcpp::TimerBase::SharedPtr timer_ = nullptr;
+    rclcpp::TimerBase::SharedPtr snap_timer_ = nullptr;
     cv::Size frame_size_;
     cv::Size preview_frame_size_;
+    int save_image_id_ = 0;
+    std::string path_to_file_save;
+    bool save_raw_, save_converted_;
 };

@@ -8,6 +8,12 @@ launch:
     name: "industrial_camera"
     param:
 
+    #global params
+    - {name: "save_converted_frames_on_timer", value: False}
+    - {name: "save_raw_frames_on_timer", value: False}
+    - {name: "path_to_save", value: "/handy/handy/packages/industrial_camera/saved_images"}
+    - {name: "timer_period", value: 5} # in seconds
+
     # camera №1
     - {name: "exposure time_1", value: 6000.}     #(in microseconds) default: 10000, range: ...
     - {name: "contrast_1", value: 100}            # default: 100, range: 0-100
