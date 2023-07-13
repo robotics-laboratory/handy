@@ -21,7 +21,7 @@ add_library( mvsdk SHARED IMPORTED )
 # packages/industrial_camera/lib/arm64/libMVSDK.so
 set_target_properties( mvsdk PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/lib/arm64/libMVSDK.so")
 
-add_executable( industrial_camera src/main.cpp )
+add_executable( industrial_camera src/main.cpp  src/camera.cpp)
 target_include_directories(industrial_camera PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>")
