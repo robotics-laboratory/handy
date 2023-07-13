@@ -1,3 +1,5 @@
+#pragma once
+
 #include "CameraApi.h"
 
 #include <rclcpp/rclcpp.hpp>
