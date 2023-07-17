@@ -2,15 +2,12 @@
 
 #include "CameraApi.h"
 
-// #include "opencv2/highgui/highgui.hpp"
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/core/core.hpp>
-// #include <opencv2/core/mat.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/time.hpp>
 #include <sensor_msgs/msg/image.hpp>
-// #include <yaml-cpp/yaml.h>
 
 #include <fstream>
 #include <vector>
