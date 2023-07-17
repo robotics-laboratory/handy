@@ -1,29 +1,21 @@
-version: "3.5"
+version: "3"
 
 services:
-  handy-amd64:
-    container_name: handy-amd64
-    image: cr.yandex/crp8hpfj5tuhlaodm4dl/handy:amd64-0.3.0
+  handy:
+    container_name: handy-${NAME:-$USER}
+    image: registry.robotics-lab.ru/handy"
     stdin_open: true
     tty: true
     build:
-      dockerfile: docker/handy-amd64.dockerfile
+      dockerfile: Dockerfile
       context: .
-    network_mode: "host"
-    volumes:
-      - "${HOME}/handy:/handy"
-
-  handy-jetson:
-    container_name: handy-jetson
-    image: cr.yandex/crp8hpfj5tuhlaodm4dl/handy:jetson-0.3.0
-    stdin_open: true
-    privileged: true
-    tty: true
-    build:
-      dockerfile: docker/handy-jetson.dockerfile
-      context: .
+      tags:
+          - "registry.robotics-lab.ru/handy:latest"
+          - "registry.robotics-lab.ru/handy:0.3.0"
+      x-bake:
+        platforms: [linux/arm64, linux/amd64]
     ports:
-    - "9090:9090"
-    - "8765:8765"
+      - "${FOXGLOVE_PORT:-8765}:8765"
+    runtime: ${DOCKER_RUNTIME:-""}
     volumes:
-      - "${HOME}/handy:/handy"
+      - "${PWD}:/handy"
