@@ -13,12 +13,8 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
-include_directories( ${OpenCV_INCLUDE_DIRS} ../../include)
-
 add_library( mvsdk SHARED IMPORTED )
 #set_target_properties( mvsdk PROPERTIES IMPORTED_LOCATION lib/libMVSDK.so )
-# /handy/packages/industrial_camera/lib/arm64/libMVSDK.so
-# packages/industrial_camera/lib/arm64/libMVSDK.so
 set_target_properties( mvsdk PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/lib/arm64/libMVSDK.so")
 
 add_executable( industrial_camera src/main.cpp  src/camera.cpp)
@@ -40,7 +36,7 @@ ament_target_dependencies(
     visualization_msgs)
 
 
-target_link_libraries( industrial_camera ${OpenCV_LIBS} mvsdk )
+target_link_libraries( industrial_camera mvsdk )
 
 install(TARGETS industrial_camera
    DESTINATION lib/${PROJECT_NAME})

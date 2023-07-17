@@ -1,23 +1,34 @@
 #include "camera.h"
-#include "CameraApi.h"
 
-CameraNode::CameraNode() : Node("main_camera_node") {
+CameraNode::CameraNode() : Node("camera_node") {
     int st = CameraSdkInit(0);
     RCLCPP_INFO_STREAM(this->get_logger(), "init status: " << st);
     tSdkCameraDevInfo cameras_list;
-    CameraEnumerateDevice(&cameras_list, &num_of_cameras_);
+    CameraEnumerateDevice(&cameras_list, &param_.num_of_cameras_);
 
-    RCLCPP_INFO_STREAM(this->get_logger(), "Num of cameras attached: " << num_of_cameras_);
+    RCLCPP_INFO_STREAM(this->get_logger(), "Num of cameras attached: " << param_.num_of_cameras_);
 
     int status = CameraInit(&cameras_list, -1, -1, camera_handles_);
     if (status != CAMERA_STATUS_SUCCESS) {
-        RCLCPP_ERROR_STREAM(
-            this->get_logger(), "ERROR occured during cameras initialisation, code: " << status);
+        RCLCPP_ERROR_STREAM(this->get_logger(),
+                            "ERROR occured during cameras initialisation, code: " << status);
+        abort();
     }
 
-    for (const int handle : camera_handles_) {
-        CameraPlay(handle);
-        CameraSetIspOutFormat(handle, CAMERA_MEDIA_TYPE_BGR8);
+    for (int i = 0; i < param_.num_of_cameras_; ++i) {
+        int status = CameraSetIspOutFormat(camera_handles_[i], CAMERA_MEDIA_TYPE_BGR8);
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(
+                this->get_logger(),
+                "Camera " << i << " couldn't set media format with code: " << status);
+            abort();
+        }
+        status = CameraPlay(camera_handles_[i]);
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Camera " << i << " failed to play with code: " << status);
+            abort();
+        }
     }
     RCLCPP_INFO_STREAM(this->get_logger(), "cameras started");
 
@@ -27,9 +38,6 @@ CameraNode::CameraNode() : Node("main_camera_node") {
     signals_.small_preview_img_pub =
         this->create_publisher<sensor_msgs::msg::Image>("/camera/preview_image", 10);
 
-    frame_size_ = cv::Size(1280, 1024);
-    preview_frame_size_ = cv::Size(640, 480);
-
     RCLCPP_INFO_STREAM(this->get_logger(), "publishers created");
 
     allocateBuffersMemory();
@@ -37,16 +45,33 @@ CameraNode::CameraNode() : Node("main_camera_node") {
 
     applyCameraParameters();
 
-    measureFPS();
-
-    timer_ = this->create_wall_timer(500ms, std::bind(&CameraNode::handleCameraOnTimer, this));
-    save_raw_ = this->declare_parameter<bool>("save_raw_frames_on_timer", false);
-    save_converted_ = this->declare_parameter<bool>("save_converted_frames_on_timer", false);
-    if (save_raw_ || save_converted_) {
+    int desired_fps = this->declare_parameter<int>("fps", 20);
+    int latency = 1000 / desired_fps;
+    warnLatency(latency);
+    timer_ = this->create_wall_timer(std::chrono::milliseconds(latency),
+                                     std::bind(&CameraNode::handleCameraOnTimer, this));
+    RCLCPP_INFO_STREAM(this->get_logger(),
+                       "Cameras timer started with latency of " << latency << "ms");
+    param_.save_raw_ = this->declare_parameter<bool>("save_raw_frames_on_timer", false);
+    param_.save_converted_ = this->declare_parameter<bool>("save_converted_frames_on_timer", false);
+    param_.publish_preview = this->declare_parameter<bool>("publish_preview", false);
+    if (param_.save_raw_ || param_.save_converted_) {
         initSnapper();
     }
 
     RCLCPP_INFO_STREAM(this->get_logger(), "initialisation finished");
+}
+
+void CameraNode::warnLatency(int latency) {
+    for (int i = 0; i < param_.num_of_cameras_; ++i) {
+        double d_num = latency;
+        CameraGetExposureTime(camera_handles_[i], &d_num);
+        if (d_num / 1000 > latency) {
+            RCLCPP_WARN_STREAM(this->get_logger(),
+                               "Desired FPS is not possible due to exposure of "
+                                   << d_num / 1000 << "ms exposure of camera " << i);
+        }
+    }
 }
 
 void CameraNode::measureFPS() {
@@ -54,13 +79,12 @@ void CameraNode::measureFPS() {
     const int num_of_frames = 100;
     for (size_t i = 0; i < num_of_frames; ++i) {
         int status = CameraGetImageBuffer(camera_handles_[0], &frame_info_[0], &raw_buffer_[0], 50);
-        // RCLCPP_INFO_STREAM(this->get_logger(), (this->get_clock()->now() -
-        // start_time).seconds());
         if (status == CAMERA_STATUS_TIME_OUT) {
             RCLCPP_ERROR_STREAM(this->get_logger(), "ERROR: timeout, waiting for raw buffer");
         } else if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(), "ERROR occured in handleCameraOnTimer, error code: " << status);
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "ERROR occured in handleCameraOnTimer, error code: " << status);
+            abort();
         }
         CameraReleaseImageBuffer(camera_handles_[0], raw_buffer_[0]);
     }
@@ -70,24 +94,23 @@ void CameraNode::measureFPS() {
 }
 
 CameraNode::~CameraNode() {
-    for (size_t i = 0; i < num_of_cameras_; ++i) {
-        free(converted_buffer_[i]);
-        // free(raw_buffer_[i]);
+    for (int i = 0; i < param_.num_of_cameras_; ++i) {
+        delete[] converted_buffer_[i];
     }
     RCLCPP_INFO_STREAM(this->get_logger(), "uninit done");
 }
 
 void CameraNode::allocateBuffersMemory() {
-    for (size_t i = 0; i < num_of_cameras_; ++i) {
-        raw_buffer_[i] = (unsigned char *)malloc(frame_size_.height * frame_size_.width);
-        converted_buffer_[i] = (unsigned char *)malloc(frame_size_.height * frame_size_.width * 3);
+    for (int i = 0; i < param_.num_of_cameras_; ++i) {
+        // raw_buffer_[i] = new uint8_t[param_.frame_size_.height * param_.frame_size_.width];
+        converted_buffer_[i] =
+            new uint8_t[param_.frame_size_.height * param_.frame_size_.width * 3];
     }
 }
 
 int CameraNode::getHandle(int i) { return camera_handles_[i]; }
 
-void CameraNode::publishConvertedImage(
-    BYTE *buffer, rclcpp::Time timestamp, int camera_id, bool publish_preview = false) {
+void CameraNode::publishConvertedImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id) {
     int state = CameraImageProcess(
         camera_handles_[camera_id], buffer, converted_buffer_[camera_id], &frame_info_[camera_id]);
 
@@ -100,8 +123,8 @@ void CameraNode::publishConvertedImage(
     cv_bridge::CvImage cv_img(getHeader(timestamp, camera_id), "bgr8", cv_image);
     cv_img.toImageMsg(img_msg);
     signals_.converted_img_pub->publish(img_msg);
-    if (publish_preview) {
-        cv::resize(cv_img.image, cv_img.image, preview_frame_size_);
+    if (param_.publish_preview) {
+        cv::resize(cv_img.image, cv_img.image, param_.preview_frame_size_);
         cv_img.toImageMsg(img_msg);
         signals_.small_preview_img_pub->publish(img_msg);
     }
@@ -119,33 +142,25 @@ void CameraNode::publishRawImage(BYTE *buffer, rclcpp::Time timestamp, int camer
     signals_.raw_img_pub->publish(img_msg);
 }
 
-void CameraNode::saveBufferToFile(BYTE *buffer, cv::Size size, std::string &path) {
-    std::ofstream file(path);
-    for (size_t i = 0; i < size.width * size.height; ++i) {
-        file << *(buffer + i);
-    }
-    file.close();
-}
-
 void CameraNode::handleCameraOnTimer() {
-    for (size_t i = 0; i < num_of_cameras_; ++i) {
+    for (int i = 0; i < param_.num_of_cameras_; ++i) {
         int status =
             CameraGetImageBuffer(camera_handles_[i], &frame_info_[i], &raw_buffer_[i], 100);
         if (status == CAMERA_STATUS_TIME_OUT) {
             RCLCPP_ERROR_STREAM(this->get_logger(), "ERROR: timeout, waiting for raw buffer");
             return;
         } else if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(), "ERROR occured in handleCameraOnTimer, error code: " << status);
-            return;
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "ERROR occured in handleCameraOnTimer, error code: " << status);
+            abort();
         }
-        last_frame_timestamps_[i] = this->get_clock()->now();
+        state_.last_frame_timestamps_[i] = this->get_clock()->now();
     }
-    for (size_t i = 0; i < num_of_cameras_; ++i) {
-        publishRawImage(raw_buffer_[i], last_frame_timestamps_[i], i);
-        publishConvertedImage(raw_buffer_[i], last_frame_timestamps_[i], i, true);
+    for (int i = 0; i < param_.num_of_cameras_; ++i) {
+        publishRawImage(raw_buffer_[i], state_.last_frame_timestamps_[i], i);
+        publishConvertedImage(raw_buffer_[i], state_.last_frame_timestamps_[i], i);
     }
-    for (size_t i = 0; i < num_of_cameras_; ++i) {
+    for (int i = 0; i < param_.num_of_cameras_; ++i) {
         CameraReleaseImageBuffer(camera_handles_[i], raw_buffer_[i]);
     }
 }
@@ -153,14 +168,14 @@ void CameraNode::handleCameraOnTimer() {
 std_msgs::msg::Header CameraNode::getHeader(rclcpp::Time timestamp, int camera_id) {
     std_msgs::msg::Header header;
     header.stamp = timestamp;
-    header.frame_id = std::to_string(camera_id);
+    header.frame_id = "Camera #" + std::to_string(camera_id);
 
     return header;
 }
 
 void CameraNode::initSnapper() {
     int timer_period = this->declare_parameter<int>("timer_period");
-    path_to_file_save = this->declare_parameter<std::string>("path_to_save");
+    param_.path_to_file_save = this->declare_parameter<std::string>("path_to_save");
     std::chrono::milliseconds time(timer_period * 1000);
     snap_timer_ = this->create_wall_timer(time, std::bind(&CameraNode::saveAllFramesOnTimer, this));
 
@@ -168,196 +183,168 @@ void CameraNode::initSnapper() {
 }
 
 void CameraNode::saveAllFramesOnTimer() {
-    if (!save_image_id_) {
-        ++save_image_id_;
+    if (!state_.save_image_id_) {
+        ++state_.save_image_id_;
         return;
     }
     std::string current_path;
     // saving raw as binary
-    if (save_raw_) {
-        for (int i = 0; i < num_of_cameras_; ++i) {
-            
-            current_path = path_to_file_save + "/raw_image_" + std::to_string(i) + '_' +
-                        std::to_string(save_image_id_) + ".bin";
+    if (param_.save_raw_) {
+        for (int i = 0; i < param_.num_of_cameras_; ++i) {
+            current_path = param_.path_to_file_save + "/raw_image_" + std::to_string(i) + '_' +
+                           std::to_string(state_.save_image_id_) + ".bin";
 
-            std::ofstream file(current_path);
-
-            for (size_t j = 0; j < frame_size_.height * frame_size_.width; ++j) {
-                file << *(raw_buffer_[i] + j);
-            }
-
+            std::ofstream file(current_path, std::ios::binary);
+            file.write((char *)raw_buffer_[i],
+                       param_.frame_size_.height * param_.frame_size_.width);
             file.close();
+
             RCLCPP_INFO_STREAM(this->get_logger(), "Image " << current_path << " saved");
         }
     }
 
-    if (save_converted_) {
+    if (param_.save_converted_) {
         // saving converted
-        for (int i = 0; i < num_of_cameras_; ++i) {
-            current_path = path_to_file_save + "/image_" + std::to_string(i) + '_' +
-                        std::to_string(save_image_id_) + ".png";
-            cv::Mat cv_image(
-                std::vector<int>{frame_info_[i].iHeight, frame_info_[i].iWidth},
-                CV_8UC3,
-                converted_buffer_[i]);
+        for (int i = 0; i < param_.num_of_cameras_; ++i) {
+            current_path = param_.path_to_file_save + "/image_" + std::to_string(i) + '_' +
+                           std::to_string(state_.save_image_id_) + ".png";
+            cv::Mat cv_image(std::vector<int>{frame_info_[i].iHeight, frame_info_[i].iWidth},
+                             CV_8UC3,
+                             converted_buffer_[i]);
             cv::imwrite(current_path, cv_image);
             RCLCPP_INFO_STREAM(this->get_logger(), "Image " << current_path << " saved");
         }
     }
-    ++save_image_id_;
+    ++state_.save_image_id_;
 }
 
 void CameraNode::applyCameraParameters() {
-    const std::string param_names[] = {
-        "exposure time",
-        "contrast",
-        "gain_R",
-        "gain_G",
-        "gain_B",
-        "gamma",
-        "saturation",
-        "sharpness",
-        "auto_exposure"};
-    std::string current_param;
-    for (int i = 0; i < num_of_cameras_; ++i) {
-        for (const std::string &param : param_names) {
-            current_param = param + '_' + std::to_string(i + 1);
-            applyParamsToCamera(camera_handles_[i], param, current_param);
-        }
+    for (int i = 0; i < param_.num_of_cameras_; ++i) {
+        applyParamsToCamera(i);
     }
 }
 
-void CameraNode::applyParamsToCamera(
-    int camera_handle, const std::string &param_type, std::string &param_name) {
-    int status;
-    int i_num;
-    double d_num;
-    if (param_type == "exposure time") {
-        status = CameraSetExposureTime(camera_handle, this->declare_parameter<double>(param_name));
+void CameraNode::applyParamsToCamera(int camera_idx) {
+    const std::string param_names[] = {"exposure_time",
+                                       "contrast",
+                                       "gain_rgb",
+                                       "gamma",
+                                       "saturation",
+                                       "sharpness",
+                                       "auto_exposure"};
+    int handle = camera_handles_[camera_idx];
+    std::string prefix = "camera_" + std::to_string(camera_idx + 1) + ".";
 
+    {
+        const std::string param = "exposure_time";
+        const std::string full_param = prefix + param;
+        int status = CameraSetExposureTime(handle, this->declare_parameter<double>(full_param));
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Setting arameter " << param_name << " failed with code: " << status);
-            return;
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Setting '" << param << " for camera " << camera_idx
+                                            << " failed with status: " << status);
+            abort();
         }
-        CameraGetExposureTime(camera_handle, &d_num);
+        double value;
+        CameraGetExposureTime(handle, &value);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter '" << param << "' = " << value);
+    }
+
+    {
+        const std::string param = "contrast";
+        const std::string full_param = prefix + param;
+        int status = CameraSetContrast(handle, this->declare_parameter<int>(full_param));
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Setting '" << param << " for camera " << camera_idx
+                                            << " failed with status: " << status);
+            abort();
+        }
+        int value;
+        CameraGetContrast(handle, &value);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter '" << param << "' = " << value);
+    }
+
+    {
+        const std::string param = "gain_rgb";
+        const std::string full_param = prefix + param;
+        const std::vector<int64_t> gain = this->declare_parameter<std::vector<int>>(full_param);
+        int status = CameraSetGain(handle, gain[0], gain[1], gain[2]);
+        if (status != CAMERA_STATUS_SUCCESS) {
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Setting '" << param << " for camera " << camera_idx
+                                            << " failed with status: " << status);
+            abort();
+        }
+        int value_r, value_g, value_b;
+        CameraGetGain(handle, &value_r, &value_g, &value_b);
         RCLCPP_INFO_STREAM(
-            this->get_logger(), "Parameter " << param_name << " was set to " << d_num);
+            this->get_logger(),
+            "Parameter '" << param << "' = " << value_r << ", " << value_g << ", " << value_b);
+    }
 
-    } else if (param_type == "contrast") {
-        status = CameraSetContrast(camera_handle, this->declare_parameter<int>(param_name));
-
+    {
+        const std::string param = "gamma";
+        const std::string full_param = prefix + param;
+        int status = CameraSetGamma(handle, this->declare_parameter<int>(full_param));
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Setting arameter " << param_name << " failed with code: " << status);
-            return;
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Setting '" << param << " for camera " << camera_idx
+                                            << " failed with status: " << status);
+            abort();
         }
-        CameraGetContrast(camera_handle, &i_num);
-        RCLCPP_INFO_STREAM(
-            this->get_logger(), "Parameter " << param_name << " was set to " << i_num);
+        int value;
+        CameraGetGamma(handle, &value);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter '" << param << "' = " << value);
+    }
 
-    } else if (param_type == "gain_R") {
-        int r, g, b;
-        CameraGetGain(camera_handle, &r, &g, &b);
-        status = CameraSetGain(camera_handle, this->declare_parameter<int>(param_name), g, b);
-
+    {
+        const std::string param = "saturation";
+        const std::string full_param = prefix + param;
+        int status = CameraSetSaturation(handle, this->declare_parameter<int>(full_param));
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Setting arameter " << param_name << " failed with code: " << status);
-            return;
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Setting '" << param << " for camera " << camera_idx
+                                            << " failed with status: " << status);
+            abort();
         }
-        CameraGetGain(camera_handle, &r, &g, &b);
-        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << r);
+        int value;
+        CameraGetSaturation(handle, &value);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter '" << param << "' = " << value);
+    }
 
-    } else if (param_type == "gain_G") {
-        int r, g, b;
-        CameraGetGain(camera_handle, &r, &g, &b);
-        status = CameraSetGain(camera_handle, r, this->declare_parameter<int>(param_name), b);
-
+    {
+        const std::string param = "sharpness";
+        const std::string full_param = prefix + param;
+        int status = CameraSetSharpness(handle, this->declare_parameter<int>(full_param));
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Setting arameter " << param_name << " failed with code: " << status);
-            return;
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Setting '" << param << " for camera " << camera_idx
+                                            << " failed with status: " << status);
+            abort();
         }
-        CameraGetGain(camera_handle, &r, &g, &b);
-        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << g);
+        int value;
+        CameraGetSharpness(handle, &value);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter '" << param << "' = " << value);
+    }
 
-    } else if (param_type == "gain_B") {
-        int r, g, b;
-        CameraGetGain(camera_handle, &r, &g, &b);
-        status = CameraSetGain(camera_handle, r, g, this->declare_parameter<int>(param_name));
-
-        if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Setting arameter " << param_name << " failed with code: " << status);
-            return;
-        }
-        CameraGetGain(camera_handle, &r, &g, &b);
-        RCLCPP_INFO_STREAM(this->get_logger(), "Parameter " << param_name << " was set to " << b);
-    } else if (param_type == "gamma") {
-        status = CameraSetGamma(camera_handle, this->declare_parameter<int>(param_name));
-
-        if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Setting arameter " << param_name << " failed with code: " << status);
-            return;
-        }
-        CameraGetGamma(camera_handle, &i_num);
-        RCLCPP_INFO_STREAM(
-            this->get_logger(), "Parameter " << param_name << " was set to " << i_num);
-
-    } else if (param_type == "saturation") {
-        status = CameraSetSaturation(camera_handle, this->declare_parameter<int>(param_name));
-
-        if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Setting arameter " << param_name << " failed with code: " << status);
-            return;
-        }
-        CameraGetSaturation(camera_handle, &i_num);
-        RCLCPP_INFO_STREAM(
-            this->get_logger(), "Parameter " << param_name << " was set to " << i_num);
-
-    } else if (param_type == "sharpness") {
-        status = CameraSetSharpness(camera_handle, this->declare_parameter<int>(param_name));
-
-        if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Setting arameter " << param_name << " failed with code: " << status);
-            return;
-        }
-        CameraGetSharpness(camera_handle, &i_num);
-        RCLCPP_INFO_STREAM(
-            this->get_logger(), "Parameter " << param_name << " was set to " << i_num);
-
-    } else if (param_type == "auto_exposure") {
-        bool auto_exposure = this->declare_parameter<bool>(param_name);
+    {
+        const std::string param = "auto_exposure";
+        const std::string full_param = prefix + param;
+        bool auto_exposure = this->declare_parameter<bool>(full_param);
+        int status;
         if (auto_exposure) {
-            status = CameraSetAeThreshold(camera_handle, 10);
+            status = CameraSetAeThreshold(handle, 10);
         } else {
-            status = CameraSetAeThreshold(camera_handle, 1000);
+            status = CameraSetAeThreshold(handle, 1000);
         }
 
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Setting parameter " << param_name << " failed with code: " << status);
-            return;
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Setting parameter " << param << " failed with code: " << status);
+            abort();
         }
-        CameraGetSharpness(camera_handle, &i_num);
-        RCLCPP_INFO_STREAM(
-            this->get_logger(), "Parameter " << param_name << " was set to " << i_num);
-
-    } else {
-        RCLCPP_ERROR_STREAM(this->get_logger(), "Unknown parameter: " << param_name);
-        return;
+        RCLCPP_INFO_STREAM(this->get_logger(),
+                           "Parameter " << param << " was set to " << auto_exposure);
     }
 }

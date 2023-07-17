@@ -12,29 +12,18 @@ launch:
     - {name: "save_converted_frames_on_timer", value: False}
     - {name: "save_raw_frames_on_timer", value: False}
     - {name: "path_to_save", value: "/handy/handy/packages/industrial_camera/saved_images"}
-    - {name: "timer_period", value: 5} # in seconds
-
-    # camera №1
-    - {name: "exposure time_1", value: 6000.}     #(in microseconds) default: 10000, range: ...
-    - {name: "contrast_1", value: 100}            # default: 100, range: 0-100
-    - {name: "gain_R_1", value: 150}              # defalt: 100, range: 0-400
-    - {name: "gain_G_1" , value: 150}              # defalt: 100, range: 0-400
-    - {name: "gain_B_1", value: 150}              # defalt: 100, range: 0-400
-    - {name: "gamma_1", value: 60}               #default: 100, range: 0-250
-    - {name: "saturation_1", value: 100}         # default: 100, range: 0-200
-    - {name: "sharpness_1", value: 0}            # default: 0, range: 0-100
-    - {name: "auto_exposure_1", value: False}
-
-    # camera №2
-    - {name: "exposure time_2", value: 10000.}     #(in microseconds) default: 10000, range: ...
-    - {name: "contrast_2", value: 100}            # default: 100, range: 0-100
-    - {name: "gain_R_2", value: 100}              # defalt: 100, range: 0-400
-    - {name: "gain_G_2", value: 100}              # defalt: 100, range: 0-400
-    - {name: "gain_B_2", value: 100}              # defalt: 100, range: 0-400
-    - {name: "gamma_2", value: 100}               #default: 100, range: 0-250
-    - {name: "saturation_2", value: 100}         # default: 100, range: 0-200
-    - {name: "sharpness_2", value: 0}            # default: 0, range: 0-100
-    - {name: "auto_exposure_2", value: True}
-
-
+    - {name: "timer_period", value: 3} # in seconds
     
+    - {name: "fps", value: 4}
+    - {name: "publish_preview", value: false}
+
+    - name: "camera_1"
+      param:
+        - {name: "exposure_time", value: 6000.}       # range: ...
+        - {name: "contrast", value: 100}              # range: 0-100
+        - {name: "gain_rgb", value: [150, 150, 150]}  # range: 0-400
+        - {name: "gamma", value: 60}                  # range: 0-250
+        - {name: "saturation", value: 100}            # range: 0-200
+        - {name: "sharpness", value: 0}               # range: 0-100
+        - {name: "auto_exposure", value: False}
+
