@@ -2,8 +2,8 @@ version: "3"
 
 services:
   handy:
-    container_name: handy-${NAME:-$USER}
-    image: registry.robotics-lab.ru/handy"
+    container_name: "handy-${NAME:-${USER}}"
+    image: registry.robotics-lab.ru/handy:0.3.0
     stdin_open: true
     tty: true
     build:
@@ -16,6 +16,6 @@ services:
         platforms: [linux/arm64, linux/amd64]
     ports:
       - "${FOXGLOVE_PORT:-8765}:8765"
-    runtime: ${DOCKER_RUNTIME:-""}
+    runtime: ${DOCKER_RUNTIME:-runc}
     volumes:
       - "${PWD}:/handy"
