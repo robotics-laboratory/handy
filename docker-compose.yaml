@@ -14,6 +14,8 @@ services:
           - "registry.robotics-lab.ru/handy:0.3.0"
       x-bake:
         platforms: [linux/arm64, linux/amd64]
+        cache-to: "type=inline"
+        cache-from: "type=registry,ref=registry.robotics-lab.ru/handy"
     ports:
       - "${FOXGLOVE_PORT:-8765}:8765"
     runtime: ${DOCKER_RUNTIME:-runc}

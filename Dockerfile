@@ -10,6 +10,8 @@ ENV CUDA_HOME="/usr/local/cuda"
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
 
+ENV FLAGS="-O3 -ffast-math -Wall -march=armv8.2-a+simd+crypto+predres -mtune=cortex-a57"
+
 RUN apt-get update -q \
     && apt-get install -yq --no-install-recommends \
         nvidia-cuda-dev \
@@ -26,6 +28,8 @@ RUN apt-get update -q \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 FROM --platform=linux/amd64 ubuntu:20.04 AS handy-base-amd64
+
+ENV FLAGS="-O3 -ffast-math -Wall"
 
 FROM handy-base-${TARGETARCH} AS handy-common
 
@@ -65,7 +69,6 @@ RUN apt-get update -q && \
 
 ENV CC="gcc-${GCC_VERSION}"
 ENV CXX="g++-${GCC_VERSION}"
-ENV FLAGS="-O3 -ffast-math -Wall"
 ENV CFLAGS="${FLAGS}"
 ENV CXXFLAGS="${FLAGS}"
 
