@@ -21,20 +21,15 @@ class CameraNode : public rclcpp::Node {
     CameraNode();
     ~CameraNode();
 
-    static const unsigned int MAX_NUM_OF_CAMERAS = 10;
+    static const unsigned int MAX_NUM_OF_CAMERAS = 1;
 
   private:
     void applyCameraParameters();
     void applyParamsToCamera(int camera_idx);
-    void handleParamStatus(int camera_handle, const std::string &param_type,
-                           const std::string &param_name, int status);
-    void warnLatency(int latency);
 
+    void warnLatency(int latency);
     void allocateBuffersMemory();
-    void initSnapper();
-    void saveAllFramesOnTimer();
     void measureFPS();
-    void saveBufferToFile(BYTE *buffer, cv::Size size, std::string &path);
 
     void publishRawImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id);
     void publishConvertedImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id);
@@ -53,18 +48,16 @@ class CameraNode : public rclcpp::Node {
     tSdkFrameHead frame_info_[MAX_NUM_OF_CAMERAS];
 
     struct Signals {
-        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr converted_img_pub = nullptr;
-        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr raw_img_pub = nullptr;
-        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr small_preview_img_pub = nullptr;
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr converted_img_pub[MAX_NUM_OF_CAMERAS];
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr raw_img_pub[MAX_NUM_OF_CAMERAS];
+        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr
+            small_preview_img_pub[MAX_NUM_OF_CAMERAS];
 
     } signals_;
 
     struct Params {
         cv::Size frame_size_ = cv::Size(1280, 1024);
         cv::Size preview_frame_size_ = cv::Size(640, 480);
-        bool save_raw_ = false;
-        bool save_converted_ = false;
-        std::string path_to_file_save = ".";
         int num_of_cameras_ = MAX_NUM_OF_CAMERAS;
         bool publish_preview = false;
 
@@ -72,10 +65,10 @@ class CameraNode : public rclcpp::Node {
 
     struct State {
         int save_image_id_ = 0;
+        int frame_id_on_save = 0;
         rclcpp::Time last_frame_timestamps_[MAX_NUM_OF_CAMERAS];
 
     } state_;
 
     rclcpp::TimerBase::SharedPtr timer_ = nullptr;
-    rclcpp::TimerBase::SharedPtr snap_timer_ = nullptr;
 };

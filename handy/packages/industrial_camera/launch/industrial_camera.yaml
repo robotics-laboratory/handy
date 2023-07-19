@@ -9,17 +9,12 @@ launch:
     param:
 
     #global params
-    - {name: "save_converted_frames_on_timer", value: False}
-    - {name: "save_raw_frames_on_timer", value: False}
-    - {name: "path_to_save", value: "/handy/handy/packages/industrial_camera/saved_images"}
-    - {name: "timer_period", value: 3} # in seconds
-    
-    - {name: "fps", value: 4}
+    - {name: "fps", value: 20}
     - {name: "publish_preview", value: false}
 
     - name: "camera_1"
       param:
-        - {name: "exposure_time", value: 6000.}       # range: ...
+        - {name: "exposure_time", value: 2000.}       # range: ...
         - {name: "contrast", value: 100}              # range: 0-100
         - {name: "gain_rgb", value: [150, 150, 150]}  # range: 0-400
         - {name: "gamma", value: 60}                  # range: 0-250
