@@ -113,7 +113,7 @@ RUN wget -qO - https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSI
     && wget -qO - https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.tar.gz | tar -xz \
     && cd opencv-${OPENCV_VERSION} && mkdir -p build && cd build \
     && OPENCV_MODULES=(core calib3d imgproc imgcodecs ccalib ximgproc \
-        cudev cudaarithm cudacodec cudafilters cudaimgproc) \
+        aruco cudev cudaarithm cudacodec cudafilters cudaimgproc) \
     && cmake .. \
         -DBUILD_LIST=$(echo ${OPENCV_MODULES[*]} | tr ' ' ',') \
         -DCMAKE_BUILD_TYPE=RELEASE \
@@ -182,7 +182,7 @@ FROM handy-common AS handy-cuda-amd64
 RUN wget -qO - https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSION}.tar.gz | tar -xz \
     && wget -qO - https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.tar.gz | tar -xz \
     && cd opencv-${OPENCV_VERSION} && mkdir -p build && cd build \
-    && OPENCV_MODULES=(core calib3d imgcodecs ccalib ximgproc) \
+    && OPENCV_MODULES=(core calib3d imgcodecs ccalib ximgproc aruco) \
     && cmake .. \
         -DBUILD_LIST=$(echo ${OPENCV_MODULES[*]} | tr ' '  ',') \
         -DCMAKE_BUILD_TYPE=RELEASE \
