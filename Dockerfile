@@ -227,7 +227,7 @@ ENV LD_LIBRARY_PATH="${PYTORCH_PATH}/lib:${LD_LIBRARY_PATH}"
 FROM handy-cuda-${TARGETARCH} AS handy-ros
 
 ENV ROS_VERSION=2
-ENV ROS_DISTRO=humble
+ENV ROS_DISTRO=iron
 ENV ROS_ROOT=/opt/ros/${ROS_DISTRO}
 ENV ROS_PYTHON_VERSION=3
 
@@ -286,6 +286,7 @@ RUN mkdir -p ${ROS_ROOT} \
         launch_xml \
         launch_yaml \
         ros_base \
+        rosbag2 \
         sensor_msgs \
         std_msgs \
         tf2 \
