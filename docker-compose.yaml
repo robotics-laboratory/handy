@@ -1,29 +1,26 @@
-version: "3.5"
-
+version: "3.9"
 services:
-  handy-amd64:
-    container_name: handy-amd64
-    image: cr.yandex/crp8hpfj5tuhlaodm4dl/handy:amd64-0.3.0
-    stdin_open: true
-    tty: true
+  handy:
+    image: registry.robotics-lab.ru/handy:latest
+    container_name: "${CONTAINER_NAME:-handy-${USER}}"
     build:
-      dockerfile: docker/handy-amd64.dockerfile
+      dockerfile: Dockerfile
       context: .
-    network_mode: "host"
-    volumes:
-      - "${HOME}/handy:/handy"
-
-  handy-jetson:
-    container_name: handy-jetson
-    image: cr.yandex/crp8hpfj5tuhlaodm4dl/handy:jetson-0.3.0
-    stdin_open: true
+      tags:
+        - registry.robotics-lab.ru/handy:latest
+        - registry.robotics-lab.ru/handy:0.5.0
+      x-bake:
+        platforms: [linux/arm64, linux/amd64]
+        cache-to: "type=inline"
+        cache-from: "type=registry,ref=registry.robotics-lab.ru/handy"
+    entrypoint: "/bin/bash -c 'trap : TERM INT; sleep infinity & wait'"
+    runtime: "${DOCKER_RUNTIME:-runc}"
     privileged: true
-    tty: true
-    build:
-      dockerfile: docker/handy-jetson.dockerfile
-      context: .
     ports:
-    - "9090:9090"
-    - "8765:8765"
+      - "${FOXGLOVE_PORT:-8765}:8765"
     volumes:
-      - "${HOME}/handy:/handy"
+      - "${PWD}:/handy"
+      - "/dev:/dev"
+networks:
+  default:
+    name: "${CONTAINER_NAME:-handy-${USER}}"
