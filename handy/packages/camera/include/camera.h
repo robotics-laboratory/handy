@@ -15,6 +15,7 @@
 
 using namespace std::chrono_literals;
 
+namespace handy {
 class CameraNode : public rclcpp::Node {
   public:
     CameraNode();
@@ -65,3 +66,5 @@ class CameraNode : public rclcpp::Node {
 
     rclcpp::TimerBase::SharedPtr timer_ = nullptr;
 };
+
+}  // namespace handy

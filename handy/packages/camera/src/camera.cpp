@@ -1,5 +1,6 @@
 #include "camera.h"
 
+namespace handy {
 CameraNode::CameraNode() : Node("camera_node") {
     int st = CameraSdkInit(0);
     RCLCPP_INFO_STREAM(this->get_logger(), "Init status: " << st);
@@ -44,16 +45,20 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     for (int i = 0; i < param_.num_of_cameras; ++i) {
         if (param_.publish_raw_topic) {
-            signals_.raw_img.push_back(this->create_publisher<sensor_msgs::msg::Image>("/camera_" + std::to_string(i + 1) + "/raw/image", 50));
+            signals_.raw_img.push_back(
+                this->create_publisher<sensor_msgs::msg::Image>("/camera_" + std::to_string(i + 1) + "/raw/image", 50));
         }
         if (param_.publish_raw_preview) {
-            signals_.raw_preview_img.push_back(this->create_publisher<sensor_msgs::msg::CompressedImage>("/camera_" + std::to_string(i + 1) + "/raw/preview", 50));
+            signals_.raw_preview_img.push_back(this->create_publisher<sensor_msgs::msg::CompressedImage>(
+                "/camera_" + std::to_string(i + 1) + "/raw/preview", 50));
         }
         if (param_.publish_bgr_topic) {
-            signals_.bgr_img.push_back(this->create_publisher<sensor_msgs::msg::Image>("/camera_" + std::to_string(i + 1) + "/bgr/image", 50));
+            signals_.bgr_img.push_back(
+                this->create_publisher<sensor_msgs::msg::Image>("/camera_" + std::to_string(i + 1) + "/bgr/image", 50));
         }
         if (param_.publish_bgr_preview) {
-            signals_.bgr_preview_img.push_back(this->create_publisher<sensor_msgs::msg::CompressedImage>("/camera_" + std::to_string(i + 1) + "/bgr/preview", 50));
+            signals_.bgr_preview_img.push_back(this->create_publisher<sensor_msgs::msg::CompressedImage>(
+                "/camera_" + std::to_string(i + 1) + "/bgr/preview", 50));
         }
     }
 
@@ -67,12 +72,11 @@ CameraNode::CameraNode() : Node("camera_node") {
     int desired_fps = this->declare_parameter<int>("fps", 20);
     param_.latency = 1000 / desired_fps;
     warnLatency(param_.latency);
-    timer_ =
-        this->create_wall_timer(std::chrono::milliseconds(param_.latency), std::bind(&CameraNode::handleCameraOnTimer, this));
+    timer_ = this->create_wall_timer(std::chrono::milliseconds(param_.latency),
+                                     std::bind(&CameraNode::handleCameraOnTimer, this));
     RCLCPP_INFO_STREAM(this->get_logger(), "Cameras timer started with latency of " << param_.latency << "ms");
 
     RCLCPP_INFO_STREAM(this->get_logger(), "Initialisation finished");
-
 }
 
 void CameraNode::warnLatency(int latency) {
@@ -101,8 +105,7 @@ void CameraNode::allocateBuffersMemory() {
 }
 
 void CameraNode::publishBGRImage(BYTE *buffer, rclcpp::Time timestamp, int camera_id) {
-    int state =
-        CameraImageProcess(camera_handles_[camera_id], buffer, bgr_buffer_[camera_id], &frame_info_[camera_id]);
+    int state = CameraImageProcess(camera_handles_[camera_id], buffer, bgr_buffer_[camera_id], &frame_info_[camera_id]);
 
     cv::Mat cv_image(std::vector<int>{frame_info_[camera_id].iHeight, frame_info_[camera_id].iWidth},
                      CV_8UC3,
@@ -117,7 +120,7 @@ void CameraNode::publishBGRImage(BYTE *buffer, rclcpp::Time timestamp, int camer
 
     if (param_.publish_bgr_preview) {
         sensor_msgs::msg::CompressedImage comp_img_msg;
-        //cv::resize(cv_img.image, cv_img.image, param_.preview_frame_size);
+        // cv::resize(cv_img.image, cv_img.image, param_.preview_frame_size);
         cv_bridge_img.toCompressedImageMsg(comp_img_msg);
         signals_.bgr_preview_img[camera_id]->publish(comp_img_msg);
     }
@@ -191,9 +194,8 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         const std::string full_param = prefix + param;
         int status = CameraSetExposureTime(handle, this->declare_parameter<double>(full_param));
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
             abort();
         }
         double value;
@@ -206,9 +208,8 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         const std::string full_param = prefix + param;
         int status = CameraSetContrast(handle, this->declare_parameter<int>(full_param));
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
             abort();
         }
         int value;
@@ -222,9 +223,8 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         const std::vector<int64_t> gain = this->declare_parameter<std::vector<int>>(full_param);
         int status = CameraSetGain(handle, gain[0], gain[1], gain[2]);
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
             abort();
         }
         int value_r, value_g, value_b;
@@ -238,9 +238,8 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         const std::string full_param = prefix + param;
         int status = CameraSetGamma(handle, this->declare_parameter<int>(full_param));
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
             abort();
         }
         int value;
@@ -253,9 +252,8 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         const std::string full_param = prefix + param;
         int status = CameraSetSaturation(handle, this->declare_parameter<int>(full_param));
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
             abort();
         }
         int value;
@@ -268,9 +266,8 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         const std::string full_param = prefix + param;
         int status = CameraSetSharpness(handle, this->declare_parameter<int>(full_param));
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
             abort();
         }
         int value;
@@ -290,11 +287,11 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         }
 
         if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
             abort();
         }
         RCLCPP_INFO_STREAM(this->get_logger(), "Set \"" << param << "\" to " << auto_exposure);
     }
 }
+}  // namespace handy
