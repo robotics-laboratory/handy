@@ -84,8 +84,7 @@ if __name__ == "__main__":
         else:
             raise ValueError
 
-        frame_number = msg.header.stamp.nanosec % 100000
-        joint_path = os.path.join(save_folder, topicname_to_dir(topic), f"{frame_number}.png")
+        joint_path = os.path.join(save_folder, topicname_to_dir(topic), f"{timestamp}.png")
         cv2.imwrite(joint_path, image)
         print("Image", joint_path, "saved successfully")
             

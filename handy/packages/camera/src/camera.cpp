@@ -218,19 +218,37 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
     }
 
     {
-        const std::string param = "gain_rgb";
+        const std::string param = "analog_gain";
         const std::string full_param = prefix + param;
-        const std::vector<int64_t> gain = this->declare_parameter<std::vector<int>>(full_param);
-        int status = CameraSetGain(handle, gain[0], gain[1], gain[2]);
-        if (status != CAMERA_STATUS_SUCCESS) {
-            RCLCPP_ERROR_STREAM(this->get_logger(),
-                                "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
-            abort();
+        const int gain = this->declare_parameter<int>(full_param);
+        if (gain != -1) {
+            int status = CameraSetAnalogGain(handle, gain);
+
+            if (status != CAMERA_STATUS_SUCCESS) {
+                RCLCPP_ERROR_STREAM(this->get_logger(),
+                                    "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
+                abort();
+            }
+            int value;
+            CameraGetAnalogGain(handle, &value);
+            RCLCPP_INFO_STREAM(this->get_logger(), "Set \"" << param << "\" to " << value);
+        } else {
+            RCLCPP_INFO_STREAM(this->get_logger(), "Analog gain param is not set. Using gain_rgb instead");
+            const std::string param = "gain_rgb";
+            const std::string full_param = prefix + param;
+            const std::vector<int64_t> gain = this->declare_parameter<std::vector<int>>(full_param);
+
+            int status = CameraSetGain(handle, gain[0], gain[1], gain[2]);
+            if (status != CAMERA_STATUS_SUCCESS) {
+                RCLCPP_ERROR_STREAM(this->get_logger(),
+                                    "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
+                abort();
+            }
+            int value_r, value_g, value_b;
+            CameraGetGain(handle, &value_r, &value_g, &value_b);
+            RCLCPP_INFO_STREAM(this->get_logger(),
+                               "Set \"" << param << "\" to (" << value_r << ", " << value_g << ", " << value_b << ')');
         }
-        int value_r, value_g, value_b;
-        CameraGetGain(handle, &value_r, &value_g, &value_b);
-        RCLCPP_INFO_STREAM(this->get_logger(),
-                           "Set \"" << param << "\" to (" << value_r << ", " << value_g << ", " << value_b << ')');
     }
 
     {
@@ -280,12 +298,7 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         const std::string full_param = prefix + param;
         bool auto_exposure = this->declare_parameter<bool>(full_param);
         int status;
-        if (auto_exposure) {
-            status = CameraSetAeThreshold(handle, 10);
-        } else {
-            status = CameraSetAeThreshold(handle, 1000);
-        }
-
+        status = CameraSetAeState(handle, auto_exposure);
         if (status != CAMERA_STATUS_SUCCESS) {
             RCLCPP_ERROR_STREAM(this->get_logger(),
                                 "Set \"" << param << "\" for camera " << camera_idx << " failed: " << status);
