@@ -353,9 +353,3 @@ RUN printf "export CC='${CC}'\n" >> ${HOME}/.bashrc \
     && printf "export RCUTILS_LOGGING_BUFFERED_STREAM=1\n" >> ${HOME}/.bashrc \
     && printf "export RCUTILS_CONSOLE_OUTPUT_FORMAT='[{severity}:{time}] {message}'\n" >> ${HOME}/.bashrc \
     && ln -sf /usr/bin/clang-format-${CLANG_VERSION} /usr/bin/clang-format
-
-### SETUP ENTRYPOINT
-
-COPY /entrypoint.bash /entrypoint.bash
-ENTRYPOINT ["/entrypoint.bash"]
-WORKDIR /handy

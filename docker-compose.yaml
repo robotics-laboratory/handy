@@ -2,10 +2,13 @@ version: "3"
 
 services:
   handy:
-    container_name: "${NAME:-handy-${USER}}"
-    image: registry.robotics-lab.ru/handy:0.6.0
+    container_name: "${CONTAINER_NAME:-handy-${USER}}"
+    image: registry.robotics-lab.ru/handy:latest
+    privileged: true
     stdin_open: true
-    tty: true
+    runtime: ${DOCKER_RUNTIME:-runc}
+    entrypoint: "/bin/bash -c 'trap : TERM INT; sleep infinity & wait'"
+    working_dir: "/handy"
     build:
       dockerfile: Dockerfile
       context: .
@@ -14,11 +17,13 @@ services:
           - "registry.robotics-lab.ru/handy:0.6.0"
       x-bake:
         platforms: [linux/arm64, linux/amd64]
-        output: "type=image,name=registry.robotics-lab.ru/handy:latest,push=true,compression=zstd"
-        cache-to: "type=registry,ref=registry.robotics-lab.ru/handy:cache,mode=max,compression=zstd"
+        cache-to: "type=registry,ref=registry.robotics-lab.ru/handy:cache,mode=max"
         cache-from: "type=registry,ref=registry.robotics-lab.ru/handy:cache"
     ports:
       - "${FOXGLOVE_PORT:-8765}:8765"
-    runtime: ${DOCKER_RUNTIME:-runc}
     volumes:
       - "${PWD}:/handy"
+      - "/dev:/dev"
+networks:
+  default:
+    name: "${CONTAINER_NAME:-handy-${USER}}"
