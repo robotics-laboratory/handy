@@ -1,0 +1,11 @@
+launch:
+- include:
+   file: $(find-pkg-share camera)/launch/bridge.yaml
+- include:
+   file: $(find-pkg-share camera)/launch/camera.yaml
+   arg:
+   - {name: "publish_raw_preview", value: "True"}
+   - {name: "publish_bgr_preview", value: "True"}
+   - {name: "publish_raw", value: "False"}
+   - {name: "publish_bgr", value: "False"}
+
