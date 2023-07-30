@@ -3,7 +3,6 @@ project(camera)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wno-dev)
 
-
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -20,35 +19,23 @@ add_executable( camera src/main.cpp  src/camera.cpp)
 target_include_directories(camera PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "/usr/include")
-# target_include_directories(calibration_node PUBLIC
-#   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-#   "/usr/include")
 
 ament_target_dependencies(
-  camera
+    camera
     rclcpp
     cv_bridge
     OpenCV
-    sensor_msgs)
+    sensor_msgs
+    yaml_cpp_vendor)
 
-# ament_target_dependencies(
-#     calibration_node
-#     rclcpp
-#     cv_bridge
-#     OpenCV
-#     sensor_msgs
-#     yaml_cpp_vendor)
-
-
-target_link_libraries( camera mvsdk )
+target_link_libraries(camera mvsdk)
 
 install(TARGETS camera
    DESTINATION lib/${PROJECT_NAME})
   
-
 install(DIRECTORY
-  launch
-  DESTINATION share/${PROJECT_NAME}
+    launch
+    DESTINATION share/${PROJECT_NAME}
 )
 
 ament_package()

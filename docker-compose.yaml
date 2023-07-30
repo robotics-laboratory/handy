@@ -18,13 +18,13 @@ services:
         platforms: [linux/arm64, linux/amd64]
         cache-to: "type=registry,ref=registry.robotics-lab.ru/handy:cache,mode=max"
         cache-from: "type=registry,ref=registry.robotics-lab.ru/handy:cache"
+    networks:
+      - default
     ports:
       - "${FOXGLOVE_PORT:-8765}:8765"
     volumes:
       - "${PWD}:/handy"
       - "/dev:/dev"
-    networks:
-      - default
 networks:
   default:
     name: "${CONTAINER_NAME:-handy-${USER}}"

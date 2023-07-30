@@ -2,23 +2,37 @@ launch:
 - arg:
     name: "calibration_file_path"
     default: ""
+- arg:
+    name: "publish_raw_preview"
+    default: "False"
+- arg:
+    name: "publish_bgr_preview"
+    default: "False"
+- arg:
+    name: "publish_raw"
+    default: "False"
+- arg:
+    name: "publish_bgr"
+    default: "False"
+
 - node:
     pkg: "camera"
     exec: "camera"
     name: "camera"
     param:
-
-    #global params
-    - {name: "fps", value: 30}
-    - {name: "publish_bgr_topic", value: true}
-    - {name: "publish_bgr_preview", value: true}
-    - {name: "publish_raw_topic", value: true}
-    - {name: "publish_raw_preview", value: true}
     - {name: "num_of_cameras", value: 1}
+    - {name: "fps", value: 10.0}
+    - {name: "preview/width", value: 1280}
+    - {name: "preview/height", value: 1024}
+    - {name: "publish_raw_preview", value: "$(var publish_raw_preview)"}
+    - {name: "publish_bgr_preview", value: "$(var publish_bgr_preview)"}
+    - {name: "publish_bgr", value: "$(var publish_bgr)"}
+    - {name: "publish_raw", value: "$(var publish_raw)"}
+
     
-    - name: "camera_1"
+    - name: "camera_0"
       param:
-        - {name: "exposure_time", value: 6000.}       # range: ...
+        - {name: "exposure_time", value: 6000}       # range: ...
         - {name: "contrast", value: 100}              # range: 0-100
         - {name: "gain_rgb", value: [130, 130, 130]}  # range: 0-400, auto default if analog_gain != -1
         - {name: "analog_gain", value: 9}             # range: 0 - 15 approx.
