@@ -2,6 +2,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
+#include <cv_bridge/cv_bridge.hpp>
 
 #include <opencv2/core/core.hpp>
 
