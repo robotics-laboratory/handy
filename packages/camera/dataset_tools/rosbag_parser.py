@@ -6,108 +6,120 @@ import os
 import numpy as np
 import argparse
 
-def typename(topic_name, bag_topics):
-        for topic_type in bag_topics:
-            if topic_type.name == topic_name:
-                return topic_type.type
-        raise ValueError(f"topic {topic_name} not in bag")
+FRAME_SIZE = (1024, 1280)
 
-def topicname_to_dir(name):
-    dir_name = name.replace('/', '_')
-    if dir_name[0] == '_':
+
+def get_type_by_topic(bag_topics):
+    type_by_topic = {}
+    for topic in bag_topics:
+        type_by_topic[topic.name] = topic.type
+    return type_by_topic
+
+
+def topic_to_dir(name):
+    dir_name = name.replace("/", "_")
+    if dir_name[0] == "_":
         dir_name = dir_name[1:]
     return dir_name
 
-def check_create_dirs(save_dir, rosbag_path, topics, equalise=False):
-    assert os.path.exists(rosbag_path)
 
+def create_dirs(save_dir, topics, equalise=False):
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
 
     for topic_name in topics:
-        full_dir = os.path.join(save_dir, topicname_to_dir(topic_name))
-        if not os.path.exists(full_dir):
-            os.mkdir(full_dir)
-        if not equalise:
-            continue
-
-        full_dir = os.path.join(save_dir, topicname_to_dir("/increased"+topic_name))
+        full_dir = os.path.join(save_dir, topic_to_dir(topic_name))
         if not os.path.exists(full_dir):
             os.mkdir(full_dir)
 
-def equalise_hist_3chan(img):
-    img_r = cv2.equalizeHist(img[:, :, 0]).reshape(1024, 1280, 1)
-    img_g = cv2.equalizeHist(img[:, :, 1]).reshape(1024, 1280, 1)
-    img_b = cv2.equalizeHist(img[:, :, 2]).reshape(1024, 1280, 1)
-    res_img = np.concatenate((img_r, img_g, img_b), axis=2)
-    return res_img
+        if equalise:
+            full_dir = os.path.join(save_dir, topic_to_dir("/increased" + topic_name))
+            if not os.path.exists(full_dir):
+                os.mkdir(full_dir)
+
+
+def equalise_hist(img):
+    if len(img.shape) == 3:
+        for i in range(3):
+            img[:, :, i] = cv2.equalizeHist(img[:, :, i])
+    elif len(img.shape) == 2:
+        img = cv2.equalizeHist(img)
+    else:
+        raise ValueError("Invalid number of channels")
+
+    return img
+
 
 def init_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('directory_to_save_files')
-    parser.add_argument('path_to_bag_db3_file')
-    parser.add_argument('topics_to_parse', nargs='*')
-    parser.add_argument('--increase-exposure', action="store_true")
+    parser.add_argument("--topics", nargs='*')
+    parser.add_argument("--from-bag")
+    parser.add_argument("--export")
+    parser.add_argument("--increase-exposure", action="store_true")
 
     return parser
 
 
-if __name__ == "__main__":
+def main():
     parser = init_parser()
     args = parser.parse_args()
 
-    save_folder = args.directory_to_save_files
-    rosbag_path = args.path_to_bag_db3_file
-    req_topics = args.topics_to_parse
+    save_folder = args.export
+    rosbag_path = args.from_bag
+    req_topics = args.topics
     req_increase = args.increase_exposure
+    print(rosbag_path)
+    if not os.path.exists(rosbag_path):
+        print("Bag file not found")
+        print("Aborting")
+        return
 
-    check_create_dirs(save_folder, rosbag_path, req_topics, req_increase)
+    create_dirs(save_folder, req_topics, req_increase)
 
     reader = rosbag2_py.SequentialReader()
     storage = rosbag2_py.StorageOptions(uri=rosbag_path, storage_id="sqlite3")
-    converter = rosbag2_py.ConverterOptions('', '')
+    converter = rosbag2_py.ConverterOptions("", "")
 
     reader.open(storage, converter)
 
     bag_topics = reader.get_all_topics_and_types()
-    bag_topics_names = [topic.name for topic in bag_topics]
-    assert all([topic in bag_topics_names for topic in req_topics])
+    type_by_topic = get_type_by_topic(bag_topics)
+
+    bag_topics_names = set([topic.name for topic in bag_topics])
+    absent_topics = bag_topics_names - set(req_topics)
+    if absent_topics:
+        print("[ERROR] Not found all topics:")
+        print("\n".join(absent_topics))
+        print("Aborting")
+        return
 
     while reader.has_next():
-        topic, data, timestamp = reader.read_next()
+        topic, data, msg_timestamp = reader.read_next()
         if topic not in req_topics:
             continue
 
-        msg = deserialize_message(data, get_message(typename(topic, bag_topics)))
-        if len(msg.data) == 1024 * 1280 * 3:
-            image = np.array(msg.data, dtype=np.uint8).reshape(1024, 1280, 3)
-        elif len(msg.data) == 1024 * 1280:
-            image = np.array(msg.data, dtype=np.uint8).reshape(1024, 1280)
+        msg = deserialize_message(data, get_message(type_by_topic[topic]))
+        if len(msg.data) == FRAME_SIZE[0] * FRAME_SIZE[1] * 3:
+            image = np.array(msg.data, dtype=np.uint8).reshape(*FRAME_SIZE, 3)
+        elif len(msg.data) == FRAME_SIZE[0] * FRAME_SIZE[1]:
+            image = np.array(msg.data, dtype=np.uint8).reshape(*FRAME_SIZE)
         else:
             raise ValueError
 
-        joint_path = os.path.join(save_folder, topicname_to_dir(topic), f"{msg.header.stamp.sec}{msg.header.stamp.nanosec}.png")
-        cv2.imwrite(joint_path, image)
-        print("Image", joint_path, "saved successfully")
-            
-    if req_increase:
-        for topic in req_topics:
-            dir_to_read = os.path.join(save_folder, topicname_to_dir(topic))
-            dir_to_save = os.path.join(save_folder, topicname_to_dir("/increased" + topic))
+        filename = f"{msg.header.stamp.sec}{msg.header.stamp.nanosec}.png"
+        joint_path = os.path.join(save_folder, topic_to_dir(topic), filename)
+        success = cv2.imwrite(joint_path, image)
+        print(f"{'OK' if success else 'ERROR'}   {joint_path}")
 
-            for filename in os.listdir(dir_to_read):
-                full_path = os.path.join(dir_to_read, filename)
-                img = cv2.imread(full_path)
+        if req_increase:
+            dir_to_save = os.path.join(save_folder, topic_to_dir("/increased" + topic))
 
-                if len(img.shape) == 3:
-                    img = equalise_hist_3chan(img)
-                elif len(img.shape) == 1:
-                    img = cv2.equalizeHist(img)
-                else:
-                    raise ValueError
-                
-                full_new_path = os.path.join(dir_to_save, filename)
-                cv2.imwrite(full_new_path, img)
-                print("Image", full_new_path, "saved successfully")
+            img = equalise_hist(image)
 
-        
+            full_new_path = os.path.join(dir_to_save, filename)
+            success = cv2.imwrite(full_new_path, img)
+            print(f"{'OK' if success else 'ERROR'}   {full_new_path}")
+
+
+if __name__ == "__main__":
+    main()
