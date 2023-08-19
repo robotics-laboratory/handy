@@ -1,0 +1,33 @@
+launch:
+- arg:
+    name: "calibration_file_path"
+    default: "/handy/packages/camera/param_save/camera_params.yaml"
+- arg:
+    name: "publish_raw_preview"
+    default: "False"
+- arg:
+    name: "publish_bgr_preview"
+    default: "False"
+- arg:
+    name: "publish_raw"
+    default: "False"
+- arg:
+    name: "publish_bgr"
+    default: "False"
+
+- node:
+    pkg: "camera"
+    exec: "calibration_node"
+    name: "calibration_node"
+    param:
+    - {name: "calibration_needed", value: true}
+    # calibration
+    - {name: "calibration_file_path", value: "$(var calibration_file_path)"} # only .yaml file
+    - {name: "auto_calibrate", value: false}
+    - {name: "IoU_threshold", value: 0.5}
+    - {name: "alpha_channel_per_detected", value: 0.12}
+    - {name: "min_accepted_calib_error", value: 0.75}
+    - {name: "marker_color", value: [0.0, 1.0, 0.0]} #  each in range 0.0-1.0
+
+    # visualisation
+    - {name: "publish_chessboard_preview", value: true}
