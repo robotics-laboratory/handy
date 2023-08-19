@@ -1,7 +1,5 @@
 #include "camera.h"
 
-#include <cv_bridge/cv_bridge.hpp>
-
 namespace handy::camera {
 
 using namespace std::chrono_literals;
@@ -263,6 +261,14 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
     std::string prefix = "camera_" + std::to_string(camera_idx) + ".";
 
     {
+        const std::string param = "auto_exposure";
+        const std::string full_param = prefix + param;
+        const bool auto_exposure = this->declare_parameter<bool>(full_param);
+        abortIfNot("set auto exposure", CameraSetAeState(handle, auto_exposure));
+        RCLCPP_INFO(this->get_logger(), "camera=%i, auto_exposure=%i", camera_idx, auto_exposure);
+    }
+
+    {
         const std::string param = "exposure_time";
         const std::string full_param = prefix + param;
         std::chrono::microseconds exposure(this->declare_parameter<long int>(full_param));
@@ -276,7 +282,7 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
                 param_.latency.count());
             abort();
         }
-
+        
         abortIfNot("set exposure", camera_idx, CameraSetExposureTime(handle, exposure.count()));
         RCLCPP_INFO(this->get_logger(), "camera=%i, exposure=%lius", camera_idx, exposure.count());
     }
@@ -286,7 +292,7 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         const std::string full_param = prefix + param;
         const int contrast = this->declare_parameter<int>(full_param);
 
-        abortIfNot("set contrast", camera_idx, CameraSetExposureTime(handle, contrast));
+        abortIfNot("set contrast", camera_idx, CameraSetContrast(handle, contrast));
         RCLCPP_INFO(this->get_logger(), "camera=%i, contrast=%i", camera_idx, contrast);
     }
 
@@ -344,14 +350,6 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         const int sharpness = this->declare_parameter<int>(full_param);
         abortIfNot("set sharpness", CameraSetSharpness(handle, sharpness));
         RCLCPP_INFO(this->get_logger(), "camera=%i, sharpness=%i", camera_idx, sharpness);
-    }
-
-    {
-        const std::string param = "auto_exposure";
-        const std::string full_param = prefix + param;
-        const bool auto_exposure = this->declare_parameter<bool>(full_param);
-        abortIfNot("set auto exposure", CameraSetAeState(handle, auto_exposure));
-        RCLCPP_INFO(this->get_logger(), "camera=%i, auto_exposure=%i", camera_idx, auto_exposure);
     }
 }
 
