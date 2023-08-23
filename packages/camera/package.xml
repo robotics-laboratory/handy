@@ -14,6 +14,10 @@
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>visuallization_msgs</depend>
+  <depend>foxglove_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>yaml_cpp_vendor</depend>
 
   <test_depend>ament_lint_auto</test_depend>

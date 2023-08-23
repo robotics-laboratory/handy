@@ -2,11 +2,14 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
-#include <cv_bridge/cv_bridge.hpp>
+#include <yaml-cpp/yaml.h>
 
 #include <opencv2/core/core.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 #include "CameraApi.h"
+#include <params.h>
 
 #include <chrono>
 #include <cstdint>
@@ -23,6 +26,9 @@ class CameraNode : public rclcpp::Node {
   private:
     void applyCameraParameters();
     void applyParamsToCamera(int camera_idx);
+    void initCalibParams();
+    void calcUndistortMapping(int idx);
+    void undistortImage(int idx, cv::Mat &image);
 
     void handleOnTimer();
 
@@ -41,10 +47,11 @@ class CameraNode : public rclcpp::Node {
         bool publish_bgr_preview = false;
         bool publish_raw = false;
         bool publish_raw_preview = false;
+        bool undistort_images = false;
     } param_;
 
     std::vector<int> camera_handles_ = {};
-    std::vector<uint8_t*> raw_buffer_ptr_ = {};
+    std::vector<uint8_t *> raw_buffer_ptr_ = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<tSdkFrameHead> frame_info_ = {};
 
@@ -57,6 +64,8 @@ class CameraNode : public rclcpp::Node {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_preview_img;
         // clang-format on
     } signals_;
+
+    std::vector<handy::CameraIntrinsicParameters> cameras_params = {};
 
     rclcpp::TimerBase::SharedPtr timer_ = nullptr;
 };

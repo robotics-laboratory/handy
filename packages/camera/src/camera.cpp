@@ -1,5 +1,7 @@
 #include "camera.h"
 
+#include <cv_bridge/cv_bridge.hpp>
+
 namespace handy::camera {
 
 using namespace std::chrono_literals;
@@ -204,16 +206,16 @@ CameraNode::CameraNode() : Node("camera_node") {
     RCLCPP_INFO_STREAM(this->get_logger(), "all cameras started!");
 
     param_.publish_raw = this->declare_parameter<bool>("publish_raw", false);
-    RCLCPP_INFO(this->get_logger(), "publist raw: %i", param_.publish_raw);
+    RCLCPP_INFO(this->get_logger(), "publish raw: %i", param_.publish_raw);
 
     param_.publish_raw_preview = this->declare_parameter<bool>("publish_raw_preview", false);
     RCLCPP_INFO(this->get_logger(), "publish raw preview: %i", param_.publish_raw_preview);
 
     param_.publish_bgr = this->declare_parameter<bool>("publish_bgr", false);
-    RCLCPP_INFO(this->get_logger(), "publist bgr: %i", param_.publish_bgr);
+    RCLCPP_INFO(this->get_logger(), "publish bgr: %i", param_.publish_bgr);
 
     param_.publish_bgr_preview = this->declare_parameter<bool>("publish_bgr_preview", false);
-    RCLCPP_INFO(this->get_logger(), "publist bgr preview: %i", param_.publish_bgr_preview);
+    RCLCPP_INFO(this->get_logger(), "publish bgr preview: %i", param_.publish_bgr_preview);
 
     for (int i = 1; i <= param_.camera_num; ++i) {
         const std::string root = "/camera_" + std::to_string(i);
@@ -248,6 +250,9 @@ CameraNode::CameraNode() : Node("camera_node") {
     timer_ = this->create_wall_timer(param_.latency, std::bind(&CameraNode::handleOnTimer, this));
 
     applyCameraParameters();
+
+    // initCalibParams();
+    // undistortImage(0, test_image);
 }
 
 void CameraNode::applyCameraParameters() {
@@ -282,7 +287,7 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
                 param_.latency.count());
             abort();
         }
-        
+
         abortIfNot("set exposure", camera_idx, CameraSetExposureTime(handle, exposure.count()));
         RCLCPP_INFO(this->get_logger(), "camera=%i, exposure=%lius", camera_idx, exposure.count());
     }
@@ -459,6 +464,57 @@ void CameraNode::handleOnTimer() {
 
         CameraReleaseImageBuffer(camera_handles_[i], raw_buffer_ptr_[i]);
     }
+}
+
+void CameraNode::initCalibParams() {
+    for (int idx = 0; idx < param_.camera_num; ++idx) {
+        const std::string path = this->declare_parameter<std::string>("calibration_file_path");
+        const YAML::Node file = YAML::LoadFile(path);
+        const std::vector<float> yaml_camera_matrix =
+            file["camera_matrix"].as<std::vector<float>>();
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                cv::Point2i point(i, j);
+                cameras_params[idx].camera_matrix(i, j) = yaml_camera_matrix[i * 3 + j];
+            }
+        }
+
+        const std::vector<float> dist_coefs = file["distorsion_coefs"].as<std::vector<float>>();
+        for (int i = 0; i < 5; ++i) {
+            cameras_params[idx].dist_coefs[i] = dist_coefs[i];
+        }
+        RCLCPP_INFO_STREAM(this->get_logger(), "Read camera yaml params");
+        calcUndistortMapping(idx);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Got undistortion maps");
+    }
+}
+
+void CameraNode::calcUndistortMapping(int idx) {
+    cameras_params[idx].new_camera_matrix = cv::getOptimalNewCameraMatrix(
+        cameras_params[idx].camera_matrix,
+        cameras_params[idx].dist_coefs,
+        param_.frame_size,
+        1.0,
+        param_.frame_size);
+
+    cv::initUndistortRectifyMap(
+        cameras_params[idx].camera_matrix,
+        cameras_params[idx].dist_coefs,
+        cv::noArray(),
+        cameras_params[idx].new_camera_matrix,
+        param_.frame_size,
+        CV_16SC2,
+        cameras_params[idx].undistort_maps.first,
+        cameras_params[idx].undistort_maps.second);
+}
+
+void CameraNode::undistortImage(int idx, cv::Mat& image) {
+    cv::remap(
+        image,
+        image,
+        cameras_params[idx].undistort_maps.first,
+        cameras_params[idx].undistort_maps.second,
+        CV_INTER_LINEAR);
 }
 
 }  // namespace handy::camera
