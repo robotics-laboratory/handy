@@ -5,6 +5,7 @@ import cv2
 import os
 import numpy as np
 import argparse
+from cv_bridge import CvBridge
 
 FRAME_SIZE = (1024, 1280)
 
@@ -79,6 +80,7 @@ def main():
     reader = rosbag2_py.SequentialReader()
     storage = rosbag2_py.StorageOptions(uri=rosbag_path, storage_id="sqlite3")
     converter = rosbag2_py.ConverterOptions("", "")
+    bridge = CvBridge()
 
     reader.open(storage, converter)
 
@@ -86,7 +88,7 @@ def main():
     type_by_topic = get_type_by_topic(bag_topics)
 
     bag_topics_names = set([topic.name for topic in bag_topics])
-    absent_topics = bag_topics_names - set(req_topics)
+    absent_topics = set(req_topics) - bag_topics_names
     if absent_topics:
         print("[ERROR] Not found all topics:")
         print("\n".join(absent_topics))
@@ -99,12 +101,7 @@ def main():
             continue
 
         msg = deserialize_message(data, get_message(type_by_topic[topic]))
-        if len(msg.data) == FRAME_SIZE[0] * FRAME_SIZE[1] * 3:
-            image = np.array(msg.data, dtype=np.uint8).reshape(*FRAME_SIZE, 3)
-        elif len(msg.data) == FRAME_SIZE[0] * FRAME_SIZE[1]:
-            image = np.array(msg.data, dtype=np.uint8).reshape(*FRAME_SIZE)
-        else:
-            raise ValueError
+        image = bridge.compressed_imgmsg_to_cv2(msg)
 
         filename = f"{msg.header.stamp.sec}{msg.header.stamp.nanosec}.png"
         joint_path = os.path.join(save_folder, topic_to_dir(topic), filename)
