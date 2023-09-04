@@ -5,10 +5,9 @@ launch:
 
 - node:
     pkg: "camera"
-    exec: "calibration_node"
-    name: "calibration_node"
+    exec: "calibration"
+    name: "calibration"
     param:
-    - {name: "calibration_needed", value: true}
     # calibration
     - {name: "calibration_file_path", value: "$(var calibration_file_path)"} # only .yaml file
     - {name: "auto_calibrate", value: false}

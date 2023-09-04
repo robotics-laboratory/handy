@@ -1,6 +1,18 @@
 #include "calibration.h"
 
+namespace {
+
+geometry_msgs::msg::Point initPoint(cv::Point2f cv_point) {
+    geometry_msgs::msg::Point point;
+    point.x = cv_point.x;
+    point.y = cv_point.y;
+    return point;
+}
+
+}  // namespace
 namespace handy::calibration {
+
+using namespace std::chrono_literals;
 
 const std::vector<Point> getPoints(const std::vector<cv::Point2f> corners, cv::Size pattern_size) {
     // clang-format off
@@ -23,10 +35,6 @@ const std::vector<Point> getPoints(const std::vector<cv::Point2f> corners, cv::S
 }
 
 CalibrationNode::CalibrationNode() : Node("calibration_node") {
-    if (!this->declare_parameter<bool>("calibration_needed", false)) {
-        rclcpp::shutdown();
-    }
-
     RCLCPP_INFO_STREAM(this->get_logger(), "Init started");
 
     declareLaunchParams();
@@ -56,27 +64,27 @@ void CalibrationNode::declareLaunchParams() {
 }
 
 void CalibrationNode::initSignals() {
-    signals_.image_sub = this->create_subscription<sensor_msgs::msg::Image>(
+    slot_.image_sub = this->create_subscription<sensor_msgs::msg::Image>(
         "/camera_1/bgr/image",
         10,
         std::bind(&CalibrationNode::handleFrame, this, std::placeholders::_1));
-    signals_.button_service = this->create_service<std_srvs::srv::SetBool>(
+    service_.button_service = this->create_service<std_srvs::srv::SetBool>(
         "/calibration/button",
         std::bind(
             &CalibrationNode::onButtonClick, this, std::placeholders::_1, std::placeholders::_2));
 
-    signals_.chessboard_preview_pub =
+    signal_.chessboard_preview_pub =
         this->create_publisher<sensor_msgs::msg::Image>("/calibration/chessboard_preview_1", 10);
-    signals_.detected_boards =
+    signal_.detected_boards =
         this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>("/calibration/marker_1", 10);
-    signals_.calibration_state =
+    signal_.calibration_state =
         this->create_publisher<std_msgs::msg::Int16>("/calibration/state", 10);
-    calibration_state_timer_ =
+    timer_.calibration_state_timer_ =
         this->create_wall_timer(1000ms, std::bind(&CalibrationNode::publishCalibrationState, this));
 }
 
 void CalibrationNode::handleFrame(const sensor_msgs::msg::Image::ConstPtr& msg) {
-    if (state_.calibration_state != CAPTURING_STATE) {
+    if (state_.calibration_state != CAPTURING) {
         return;
     }
 
@@ -90,7 +98,7 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::Image::ConstPtr& msg) 
             if (params_.publish_chessboard_preview) {
                 state_.markers_array.markers.push_back(
                     getMarkerFromCorners(detected_corners, image_ptr));
-                signals_.detected_boards->publish(state_.markers_array);
+                signal_.detected_boards->publish(state_.markers_array);
             }
 
             state_.detected_corners_all.push_back(detected_corners);
@@ -103,19 +111,19 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::Image::ConstPtr& msg) 
     }
     if (params_.publish_chessboard_preview) {
         cv::drawChessboardCorners(image_ptr->image, params_.pattern_size, detected_corners, found);
-        signals_.chessboard_preview_pub->publish(*image_ptr->toImageMsg());
+        signal_.chessboard_preview_pub->publish(*image_ptr->toImageMsg());
     }
 }
 
 void CalibrationNode::onButtonClick(
     const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
     std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
-    if (state_.calibration_state == CAPTURING_STATE) {
+    if (state_.calibration_state == CAPTURING) {
         calibrate();
-    } else if (state_.calibration_state == NOT_CALIBRATED_STATE) {
-        state_.calibration_state = CAPTURING_STATE;
-    } else if (state_.calibration_state == OK_CALIBRATION_STATE) {
-        state_.calibration_state = CAPTURING_STATE;
+    } else if (state_.calibration_state == NOT_CALIBRATED) {
+        state_.calibration_state = CAPTURING;
+    } else if (state_.calibration_state == OK_CALIBRATION) {
+        state_.calibration_state = CAPTURING;
         state_.detected_corners_all.clear();
         state_.object_points_all.clear();
         state_.markers_array.markers.clear();
@@ -159,14 +167,7 @@ bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f> corners) const
 void CalibrationNode::publishCalibrationState() const {
     std_msgs::msg::Int16 msg;
     msg.data = state_.calibration_state;
-    signals_.calibration_state->publish(msg);
-}
-
-geometry_msgs::msg::Point CalibrationNode::initPoint(cv::Point2f cv_point) const {
-    geometry_msgs::msg::Point point;
-    point.x = cv_point.x;
-    point.y = cv_point.y;
-    return point;
+    signal_.calibration_state->publish(msg);
 }
 
 visualization_msgs::msg::ImageMarker CalibrationNode::getMarkerFromCorners(
@@ -174,7 +175,7 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getMarkerFromCorners(
     visualization_msgs::msg::ImageMarker marker;
 
     marker.header.frame_id = image_ptr->header.frame_id;
-    marker.header.stamp = this->get_clock()->now();
+    marker.header.stamp = image_ptr->header.stamp;
     marker.ns = "calibration";
     marker.id = ++state_.last_marker_id;
     marker.type = visualization_msgs::msg::ImageMarker::POLYGON;
@@ -190,8 +191,6 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getMarkerFromCorners(
     marker.fill_color.g = params_.marker_color[1];
     marker.fill_color.b = params_.marker_color[2];
     marker.fill_color.a = params_.alpha_chn_increase;
-
-    marker.lifetime = rclcpp::Duration::Duration::from_seconds(1000);
 
     cv::Point2f board_cv_corners[4] = {
         detected_corners[0],
@@ -210,7 +209,7 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getMarkerFromCorners(
 }
 
 void CalibrationNode::calibrate() {
-    state_.calibration_state = CALIBRATING_STATE;
+    state_.calibration_state = CALIBRATING;
     publishCalibrationState();
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration inialized");
     double rms = cv::calibrateCamera(
@@ -222,81 +221,29 @@ void CalibrationNode::calibrate() {
         intrinsic_params_.rotation_vectors,
         intrinsic_params_.translation_vectors);
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration done with error of " << rms);
-    CalibrationPrecision calib_results = calcCalibPrecision();
-    RCLCPP_INFO_STREAM(
-        this->get_logger(),
-        "Calibration done with summ error of: " << calib_results.summ_repr_error
-                                                << " and max error of: "
-                                                << calib_results.max_repr_error);
 
     if (rms < params_.min_accepted_error) {
         saveCalibParams();
-        state_.calibration_state = OK_CALIBRATION_STATE;
+        state_.calibration_state = OK_CALIBRATION;
     } else {
         RCLCPP_INFO_STREAM(this->get_logger(), "Continue taking frames");
 
-        state_.calibration_state = BAD_CALIBRATION_STATE;
+        state_.calibration_state = BAD_CALIBRATION;
         publishCalibrationState();
         rclcpp::sleep_for(3s);
-        state_.calibration_state = CAPTURING_STATE;
+        state_.calibration_state = CAPTURING;
     }
     publishCalibrationState();
 }
 
-CalibrationPrecision CalibrationNode::calcCalibPrecision() const {
-    std::vector<std::vector<cv::Point2f>> repr_image_point;
-    double repr_error = 0.0;
-    double max_repr_error = 0.0;
-    for (int i = 0; i < state_.detected_corners_all.size(); ++i) {
-        std::vector<cv::Point2f> projected_points;
-        cv::projectPoints(
-            state_.object_points_all[i],
-            intrinsic_params_.rotation_vectors[i],
-            intrinsic_params_.translation_vectors[i],
-            intrinsic_params_.camera_matrix,
-            intrinsic_params_.dist_coefs,
-            projected_points);
-
-        double current_error = cv::norm(state_.detected_corners_all[i], projected_points);
-        repr_error += current_error;
-        max_repr_error = std::max(max_repr_error, current_error);
-    }
-    CalibrationPrecision result{repr_error / state_.detected_corners_all.size(), max_repr_error};
-    return result;
-}
-
 void CalibrationNode::saveCalibParams() const {
-    std::string path_to_yaml_file = params_.path_to_save_params;
-    std::ofstream param_file(path_to_yaml_file);
-    if (!param_file) {
-        RCLCPP_ERROR_STREAM(this->get_logger(), "invalid path " << path_to_yaml_file);
+    const std::string path_to_yaml_file = params_.path_to_save_params;
+    const bool status = intrinsic_params_.save(path_to_yaml_file);
+    if (!status) {
+        RCLCPP_ERROR_STREAM(
+            this->get_logger(), "Error when writing params to " << path_to_yaml_file);
         abort();
     }
-
-    YAML::Emitter output_yaml;
-    output_yaml << YAML::BeginMap;
-
-    output_yaml << YAML::Key << "camera_matrix";
-    output_yaml << YAML::Value << YAML::BeginSeq;
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            output_yaml << intrinsic_params_.camera_matrix(i, j);
-        }
-    }
-    output_yaml << YAML::EndSeq;
-
-    output_yaml << YAML::Key << "distorsion_coefs";
-    output_yaml << YAML::Value << YAML::BeginSeq;
-    for (int i = 0; i < 5; ++i) {
-        output_yaml << intrinsic_params_.dist_coefs[i];
-    }
-    output_yaml << YAML::EndSeq;
-
-    output_yaml << YAML::EndMap;
-
-    param_file << output_yaml.c_str();
-    param_file.close();
-
     RCLCPP_INFO_STREAM(
         this->get_logger(), "Calibration result saved successfully to " << path_to_yaml_file);
 }

@@ -9,7 +9,7 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include "CameraApi.h"
-#include <params.h>
+#include "params.h"
 
 #include <chrono>
 #include <cstdint>
@@ -51,7 +51,7 @@ class CameraNode : public rclcpp::Node {
     } param_;
 
     std::vector<int> camera_handles_ = {};
-    std::vector<uint8_t *> raw_buffer_ptr_ = {};
+    std::vector<uint8_t*> raw_buffer_ptr_ = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<tSdkFrameHead> frame_info_ = {};
 

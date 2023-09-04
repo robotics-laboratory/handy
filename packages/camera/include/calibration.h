@@ -1,6 +1,6 @@
 #pragma once
 
-#include <params.h>
+#include "params.h"
 
 #include <rclcpp/rclcpp.hpp>
 #include <cv_bridge/cv_bridge.h>
@@ -25,17 +25,15 @@
 #include <fstream>
 #include <deque>
 
-using namespace std::chrono_literals;
+namespace {
 
+geometry_msgs::msg::Point initPoint(cv::Point2f cv_point);
+
+}  // namespace
 namespace handy::calibration {
 
 typedef boost::geometry::model::d2::point_xy<double> Point;
 typedef boost::geometry::model::polygon<Point> Polygon;
-
-struct CalibrationPrecision {
-    double summ_repr_error;
-    double max_repr_error;
-};
 
 const std::vector<Point> getPoints(const std::vector<cv::Point2f> corners, cv::Size pattern_size);
 
@@ -43,14 +41,14 @@ class CalibrationNode : public rclcpp::Node {
   public:
     CalibrationNode();
 
-    static const int MIN_FRAMES_FOR_CALIBRATION = 30;
+    constexpr static int MIN_FRAMES_FOR_CALIBRATION = 30;
 
     enum {
-        NOT_CALIBRATED_STATE = 1,
-        CAPTURING_STATE = 2,
-        CALIBRATING_STATE = 3,
-        BAD_CALIBRATION_STATE = 4,
-        OK_CALIBRATION_STATE = 5
+        NOT_CALIBRATED = 1,
+        CAPTURING = 2,
+        CALIBRATING = 3,
+        BAD_CALIBRATION = 4,
+        OK_CALIBRATION = 5
     };
 
   private:
@@ -65,23 +63,30 @@ class CalibrationNode : public rclcpp::Node {
 
     void calibrate();
     void saveCalibParams() const;
-    CalibrationPrecision calcCalibPrecision() const;
 
     bool checkMaxSimilarity(std::vector<cv::Point2f> corners) const;
 
     visualization_msgs::msg::ImageMarker getMarkerFromCorners(
         std::vector<cv::Point2f>& detected_corners, cv_bridge::CvImagePtr image_ptr);
-    geometry_msgs::msg::Point initPoint(cv::Point2f cv_point) const;
 
     struct Signals {
-        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
-        rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr button_service;
-
         rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr detected_boards =
             nullptr;
         rclcpp::Publisher<std_msgs::msg::Int16>::SharedPtr calibration_state = nullptr;
         rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr chessboard_preview_pub = nullptr;
-    } signals_;
+    } signal_{};
+
+    struct Slots {
+        rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub = nullptr;
+    } slot_{};
+
+    struct Services {
+        rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr button_service = nullptr;
+    } service_{};
+
+    struct Timers {
+        rclcpp::TimerBase::SharedPtr calibration_state_timer_ = nullptr;
+    } timer_{};
 
     struct Params {
         cv::Size frame_size_ = cv::Size(1280, 1024);
@@ -105,17 +110,9 @@ class CalibrationNode : public rclcpp::Node {
         foxglove_msgs::msg::ImageMarkerArray markers_array;
 
         int last_marker_id = 0;
-        int calibration_state = NOT_CALIBRATED_STATE;
+        int calibration_state = NOT_CALIBRATED;
     } state_;
 
     CameraIntrinsicParameters intrinsic_params_;
-    // struct CameraIntrinsicParameters {
-    //     cv::Mat camera_matrix;
-    //     cv::Mat dist_coefs;
-    //     std::vector<cv::Mat> rotation_vectors;
-    //     std::vector<cv::Mat> translation_vectors;
-    // } intrinsic_params_;
-
-    rclcpp::TimerBase::SharedPtr calibration_state_timer_ = nullptr;
 };
 }  // namespace handy::calibration
