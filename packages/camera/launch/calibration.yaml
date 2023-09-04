@@ -2,18 +2,6 @@ launch:
 - arg:
     name: "calibration_file_path"
     default: "/handy/packages/camera/param_save/camera_params.yaml"
-- arg:
-    name: "publish_raw_preview"
-    default: "False"
-- arg:
-    name: "publish_bgr_preview"
-    default: "False"
-- arg:
-    name: "publish_raw"
-    default: "False"
-- arg:
-    name: "publish_bgr"
-    default: "False"
 
 - node:
     pkg: "camera"

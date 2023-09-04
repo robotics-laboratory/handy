@@ -27,22 +27,23 @@
 
 using namespace std::chrono_literals;
 
-
 namespace handy::calibration {
+
+typedef boost::geometry::model::d2::point_xy<double> Point;
+typedef boost::geometry::model::polygon<Point> Polygon;
 
 struct CalibrationPrecision {
     double summ_repr_error;
     double max_repr_error;
 };
 
+const std::vector<Point> getPoints(const std::vector<cv::Point2f> corners, cv::Size pattern_size);
+
 class CalibrationNode : public rclcpp::Node {
   public:
     CalibrationNode();
 
     static const int MIN_FRAMES_FOR_CALIBRATION = 30;
-
-    typedef boost::geometry::model::d2::point_xy<double> BoostPoint;
-    typedef boost::geometry::model::polygon<BoostPoint> BoostPolygon;
 
     enum {
         NOT_CALIBRATED_STATE = 1,
@@ -106,7 +107,6 @@ class CalibrationNode : public rclcpp::Node {
         int last_marker_id = 0;
         int calibration_state = NOT_CALIBRATED_STATE;
     } state_;
-
 
     CameraIntrinsicParameters intrinsic_params_;
     // struct CameraIntrinsicParameters {

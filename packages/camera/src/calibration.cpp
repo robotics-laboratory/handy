@@ -2,6 +2,26 @@
 
 namespace handy::calibration {
 
+const std::vector<Point> getPoints(const std::vector<cv::Point2f> corners, cv::Size pattern_size) {
+    // clang-format off
+    const std::vector<cv::Point2f> cv_points = {
+        corners[0],                                               // top left
+        corners[pattern_size.width - 1],                          // top right
+        corners[pattern_size.width * pattern_size.height - 1],    // bottom right
+        corners[pattern_size.width * (pattern_size.height - 1)],  // bottom left
+    };
+    // clang-format on
+
+    const std::vector<Point> points = {
+        {cv_points[0].x, cv_points[0].y},  // top left
+        {cv_points[3].x, cv_points[3].y},  // top right
+        {cv_points[2].x, cv_points[2].y},  // bottom right
+        {cv_points[1].x, cv_points[1].y},  // bottom left
+        {cv_points[0].x, cv_points[0].y}};
+
+    return points;
+}
+
 CalibrationNode::CalibrationNode() : Node("calibration_node") {
     if (!this->declare_parameter<bool>("calibration_needed", false)) {
         rclcpp::shutdown();
@@ -103,46 +123,20 @@ void CalibrationNode::onButtonClick(
 }
 
 bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f> corners) const {
-    const cv::Point2f cv_points_new[4] = {
-        corners[0],                                                               // top left
-        corners[params_.pattern_size.width - 1],                                  // top right
-        corners[params_.pattern_size.width * params_.pattern_size.height - 1],    // bottom right
-        corners[params_.pattern_size.width * (params_.pattern_size.height - 1)],  // bottom left
-    };
-    const BoostPoint boost_points_new[5] = {
-        BoostPoint(cv_points_new[0].x, cv_points_new[0].y),  // top left
-        BoostPoint(cv_points_new[3].x, cv_points_new[3].y),  // top right
-        BoostPoint(cv_points_new[2].x, cv_points_new[2].y),  // bottom right
-        BoostPoint(cv_points_new[1].x, cv_points_new[1].y),  // bottom left
-        BoostPoint(cv_points_new[0].x, cv_points_new[0].y)};
-
-    BoostPolygon new_poly, prev_poly;
-    boost::geometry::append(new_poly, boost_points_new);
+    Polygon new_poly, prev_poly;
+    const std::vector<Point> new_points = getPoints(corners, params_.pattern_size);
+    boost::geometry::append(new_poly, new_points);
 
     double max_value = 0.0;
 
     for (const std::vector<cv::Point2f> prev_corners : state_.detected_corners_all) {
-        // clang-format off
-        const cv::Point2f cv_points_prev[4] = {
-            prev_corners[0],                               // top left
-            prev_corners[params_.pattern_size.width - 1],  // top right
-            prev_corners[params_.pattern_size.width * params_.pattern_size.height - 1],    // bottom right
-            prev_corners[params_.pattern_size.width * (params_.pattern_size.height - 1)],  // bottom left
-        };
-        // clang-format on
+        const std::vector<Point> prev_points = getPoints(prev_corners, params_.pattern_size);
+        boost::geometry::append(prev_poly, prev_points);
 
-        const BoostPoint boost_points_prev[5] = {
-            BoostPoint(cv_points_prev[0].x, cv_points_prev[0].y),  // top left
-            BoostPoint(cv_points_prev[3].x, cv_points_prev[3].y),  // top right
-            BoostPoint(cv_points_prev[2].x, cv_points_prev[2].y),  // bottom right
-            BoostPoint(cv_points_prev[1].x, cv_points_prev[1].y),  // bottom left
-            BoostPoint(cv_points_prev[0].x, cv_points_prev[0].y)};
-        boost::geometry::append(prev_poly, boost_points_prev);
-
-        std::deque<BoostPolygon> union_poly;
+        std::deque<Polygon> union_poly;
         boost::geometry::union_(prev_poly, new_poly, union_poly);
 
-        std::deque<BoostPolygon> inter_poly;
+        std::deque<Polygon> inter_poly;
         boost::geometry::intersection(prev_poly, new_poly, inter_poly);
 
         double current_value = 0.0;
