@@ -1,33 +1,35 @@
 #include "params.h"
 
-bool handy::CameraIntrinsicParameters::save(const std::string path_to_yaml_file) const {
-    std::ofstream param_file(path_to_yaml_file);
-    if (!param_file) {
-        return false;
-    }
+namespace handy {
 
-    YAML::Emitter output_yaml;
-    output_yaml << YAML::BeginMap;
-
-    output_yaml << YAML::Key << "camera_matrix";
-    output_yaml << YAML::Value << YAML::BeginSeq;
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            output_yaml << camera_matrix(i, j);
-        }
-    }
-    output_yaml << YAML::EndSeq;
-
-    output_yaml << YAML::Key << "distorsion_coefs";
-    output_yaml << YAML::Value << YAML::BeginSeq;
-    for (int i = 0; i < 5; ++i) {
-        output_yaml << dist_coefs[i];
-    }
-    output_yaml << YAML::EndSeq;
-
-    output_yaml << YAML::EndMap;
-
-    param_file << output_yaml.c_str();
-    param_file.close();
-    return true;
+void CameraIntrinsicParameters::save(const std::string path_to_yaml_file) const {
+    cv::FileStorage file(path_to_yaml_file, cv::FileStorage::WRITE);
+    file << "camera_matrix" << camera_matrix << "distortion_coefs" << dist_coefs;
+    file.release();
 }
+
+int CameraIntrinsicParameters::load(const std::string path_to_yaml_file, rclcpp::Logger logger) {
+    try {
+        cv::FileStorage file(path_to_yaml_file, cv::FileStorage::READ);
+        if (file["camera_matrix"].isNone() || file["distortion_coefs"].isNone()) {
+            return -1;
+        }
+        RCLCPP_INFO_STREAM(logger, "read and checked");
+        cv::Mat test;
+        file["camera_matrix"] >> test;
+        std::memcpy(&camera_matrix.data[0], &test.data[0], 9);
+        RCLCPP_INFO_STREAM(logger, camera_matrix.at<float>(2, 2));
+        //file["camera_matrix"] >> camera_matrix;
+        RCLCPP_INFO_STREAM(logger, "wrote to cam matrix");
+        RCLCPP_INFO_STREAM(logger, camera_matrix.data);
+
+        // file["distortion_coefs"] >> dist_coefs;
+        file.release();
+        return 0;
+
+    } catch (const std::exception& e) {
+        RCLCPP_INFO_STREAM(logger, e.what());
+        return -1;
+    }
+}
+}  // namespace handy

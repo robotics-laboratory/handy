@@ -28,6 +28,7 @@
 namespace {
 
 geometry_msgs::msg::Point initPoint(cv::Point2f cv_point);
+std::vector<geometry_msgs::msg::Point> getMsgPoints(std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size);
 
 }  // namespace
 namespace handy::calibration {
@@ -35,7 +36,7 @@ namespace handy::calibration {
 typedef boost::geometry::model::d2::point_xy<double> Point;
 typedef boost::geometry::model::polygon<Point> Polygon;
 
-const std::vector<Point> getPoints(const std::vector<cv::Point2f> corners, cv::Size pattern_size);
+const std::vector<Point> getPoints(const std::vector<cv::Point2f>& corners, cv::Size pattern_size);
 
 class CalibrationNode : public rclcpp::Node {
   public:
@@ -84,9 +85,6 @@ class CalibrationNode : public rclcpp::Node {
         rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr button_service = nullptr;
     } service_{};
 
-    struct Timers {
-        rclcpp::TimerBase::SharedPtr calibration_state_timer_ = nullptr;
-    } timer_{};
 
     struct Params {
         cv::Size frame_size_ = cv::Size(1280, 1024);
@@ -102,12 +100,12 @@ class CalibrationNode : public rclcpp::Node {
         double min_accepted_error = 0.75;
         double alpha_chn_increase = 0.12;
         double IoU_treshhold = 0.5;
-    } params_;
+    } param_;
 
     struct State {
         std::vector<std::vector<cv::Point2f>> detected_corners_all;
         std::vector<std::vector<cv::Point3f>> object_points_all;
-        foxglove_msgs::msg::ImageMarkerArray markers_array;
+        foxglove_msgs::msg::ImageMarkerArray board_markers_array;
 
         int last_marker_id = 0;
         int calibration_state = NOT_CALIBRATED;

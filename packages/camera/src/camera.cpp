@@ -205,6 +205,11 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     RCLCPP_INFO_STREAM(this->get_logger(), "all cameras started!");
 
+    param_.calibration_file_path = this->declare_parameter<std::string>(
+        "calibration_file_path", "param_save/camera_params.yaml");
+    RCLCPP_INFO_STREAM(
+        this->get_logger(), "calibration file path: " << param_.calibration_file_path);
+
     param_.publish_raw = this->declare_parameter<bool>("publish_raw", false);
     RCLCPP_INFO(this->get_logger(), "publish raw: %i", param_.publish_raw);
 
@@ -251,7 +256,7 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     applyCameraParameters();
 
-    // initCalibParams();
+    initCalibParams();
     // undistortImage(0, test_image);
 }
 
@@ -468,24 +473,13 @@ void CameraNode::handleOnTimer() {
 
 void CameraNode::initCalibParams() {
     for (int idx = 0; idx < param_.camera_num; ++idx) {
-        const std::string path = this->declare_parameter<std::string>("calibration_file_path");
-        const YAML::Node file = YAML::LoadFile(path);
-        const std::vector<float> yaml_camera_matrix =
-            file["camera_matrix"].as<std::vector<float>>();
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                cv::Point2i point(i, j);
-                cameras_params[idx].camera_matrix(i, j) = yaml_camera_matrix[i * 3 + j];
-            }
-        }
+        RCLCPP_INFO_STREAM(this->get_logger(), "loading params");
+        int status = cameras_params[idx].load(param_.calibration_file_path, this->get_logger());
+        abortIfNot("reading camera intrinsic parameters", status);
 
-        const std::vector<float> dist_coefs = file["distorsion_coefs"].as<std::vector<float>>();
-        for (int i = 0; i < 5; ++i) {
-            cameras_params[idx].dist_coefs[i] = dist_coefs[i];
-        }
-        RCLCPP_INFO_STREAM(this->get_logger(), "Read camera yaml params");
+        RCLCPP_INFO_STREAM(this->get_logger(), "read camera yaml params");
         calcUndistortMapping(idx);
-        RCLCPP_INFO_STREAM(this->get_logger(), "Got undistortion maps");
+        RCLCPP_INFO_STREAM(this->get_logger(), "got undistortion maps");
     }
 }
 
@@ -514,7 +508,7 @@ void CameraNode::undistortImage(int idx, cv::Mat& image) {
         image,
         cameras_params[idx].undistort_maps.first,
         cameras_params[idx].undistort_maps.second,
-        CV_INTER_LINEAR);
+        cv::INTER_NEAREST);
 }
 
 }  // namespace handy::camera

@@ -4,12 +4,15 @@
 #include <string>
 #include <yaml-cpp/yaml.h>
 #include <fstream>
+#include <iostream>
+#include <rclcpp/rclcpp.hpp>
 
 namespace handy {
 struct CameraIntrinsicParameters {
-    bool save(const std::string path_to_yaml_file) const;
+    void save(const std::string path_to_yaml_file) const;
+    int load(const std::string path_to_yaml_file, rclcpp::Logger logger);
 
-    cv::Matx33f camera_matrix;
+    cv::Mat camera_matrix;
     cv::Vec<float, 5> dist_coefs;
     std::vector<cv::Mat> rotation_vectors;
     std::vector<cv::Mat> translation_vectors;
