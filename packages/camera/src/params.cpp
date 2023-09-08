@@ -15,15 +15,17 @@ int CameraIntrinsicParameters::load(const std::string path_to_yaml_file, rclcpp:
             return -1;
         }
         RCLCPP_INFO_STREAM(logger, "read and checked");
-        cv::Mat test;
-        file["camera_matrix"] >> test;
-        std::memcpy(&camera_matrix.data[0], &test.data[0], 9);
-        RCLCPP_INFO_STREAM(logger, camera_matrix.at<float>(2, 2));
+        cv::Mat cam_matrix;
+        file["camera_matrix"] >> cam_matrix;
+        RCLCPP_INFO_STREAM(logger, "initing");
+        camera_matrix = cv::Mat(3, 3, CV_32F, cam_matrix.data);
+        
+        //camera_matrix = matCopy(cam_matrix);
+        //this->camera_matrix = cam_matrix.clone();
+        //cam_matrix.copyTo(this->camera_matrix);
         //file["camera_matrix"] >> camera_matrix;
-        RCLCPP_INFO_STREAM(logger, "wrote to cam matrix");
-        RCLCPP_INFO_STREAM(logger, camera_matrix.data);
 
-        // file["distortion_coefs"] >> dist_coefs;
+        file["distortion_coefs"] >> dist_coefs;
         file.release();
         return 0;
 

@@ -67,7 +67,7 @@ class CalibrationNode : public rclcpp::Node {
 
     bool checkMaxSimilarity(std::vector<cv::Point2f> corners) const;
 
-    visualization_msgs::msg::ImageMarker getMarkerFromCorners(
+    visualization_msgs::msg::ImageMarker getBoardMarkerFromCorners(
         std::vector<cv::Point2f>& detected_corners, cv_bridge::CvImagePtr image_ptr);
 
     struct Signals {

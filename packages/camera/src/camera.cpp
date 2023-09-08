@@ -222,6 +222,9 @@ CameraNode::CameraNode() : Node("camera_node") {
     param_.publish_bgr_preview = this->declare_parameter<bool>("publish_bgr_preview", false);
     RCLCPP_INFO(this->get_logger(), "publish bgr preview: %i", param_.publish_bgr_preview);
 
+    param_.publish_rectified = this->declare_parameter<bool>("publish_rectified", false);
+    RCLCPP_INFO(this->get_logger(), "publish rectified image: %i", param_.publish_rectified);
+
     for (int i = 1; i <= param_.camera_num; ++i) {
         const std::string root = "/camera_" + std::to_string(i);
         constexpr int queue_size = 1;
@@ -247,17 +250,25 @@ CameraNode::CameraNode() : Node("camera_node") {
                 this->create_publisher<sensor_msgs::msg::CompressedImage>(
                     root + "/bgr/preview", queue_size));
         }
+
+        if (param_.publish_rectified) {
+            signals_.rectified_image.push_back(
+                this->create_publisher<sensor_msgs::msg::CompressedImage>(
+                    root + "/bgr/rectified", queue_size));
+        }
     }
 
     const auto fps = this->declare_parameter<double>("fps", 20.0);
     param_.latency = std::chrono::duration<double>(1 / fps);
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
-    timer_ = this->create_wall_timer(param_.latency, std::bind(&CameraNode::handleOnTimer, this));
+    timer_.timer =
+        this->create_wall_timer(param_.latency, std::bind(&CameraNode::handleOnTimer, this));
 
     applyCameraParameters();
 
-    initCalibParams();
-    // undistortImage(0, test_image);
+    if (param_.publish_rectified) {
+        initCalibParams();
+    }
 }
 
 void CameraNode::applyCameraParameters() {
@@ -410,6 +421,12 @@ void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int id
     if (param_.publish_bgr_preview) {
         cv_bridge::CvImage cv_image(header, "bgr8", rescale(image, param_.preview_frame_size));
         signals_.bgr_preview_img[idx]->publish(toJpegMsg(cv_image));
+    }
+
+    if (param_.publish_rectified) {
+        undistortImage(idx, image);
+        cv_bridge::CvImage cv_image(header, "bgr8", rescale(image, param_.preview_frame_size));
+        signals_.rectified_image[idx]->publish(toJpegMsg(cv_image));
     }
 }
 

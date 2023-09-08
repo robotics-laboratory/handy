@@ -9,13 +9,12 @@
 
 namespace handy {
 struct CameraIntrinsicParameters {
+  public:
     void save(const std::string path_to_yaml_file) const;
     int load(const std::string path_to_yaml_file, rclcpp::Logger logger);
 
-    cv::Mat camera_matrix;
+    cv::Mat camera_matrix = cv::Mat(3, 3, CV_16FC1);
     cv::Vec<float, 5> dist_coefs;
-    std::vector<cv::Mat> rotation_vectors;
-    std::vector<cv::Mat> translation_vectors;
     cv::Mat new_camera_matrix;
     std::pair<cv::Mat, cv::Mat> undistort_maps;
 };

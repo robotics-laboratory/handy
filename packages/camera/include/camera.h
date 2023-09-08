@@ -48,11 +48,11 @@ class CameraNode : public rclcpp::Node {
         bool publish_bgr_preview = false;
         bool publish_raw = false;
         bool publish_raw_preview = false;
-        bool undistort_images = false;
+        bool publish_rectified = false;
     } param_;
 
     std::vector<int> camera_handles_ = {};
-    std::vector<uint8_t*> raw_buffer_ptr_ = {};
+    std::vector<uint8_t *> raw_buffer_ptr_ = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<tSdkFrameHead> frame_info_ = {};
 
@@ -61,6 +61,7 @@ class CameraNode : public rclcpp::Node {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_img;
 
         // clang-format off
+        std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> rectified_image;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_preview_img;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_preview_img;
         // clang-format on
@@ -68,7 +69,9 @@ class CameraNode : public rclcpp::Node {
 
     std::vector<handy::CameraIntrinsicParameters> cameras_params = {};
 
-    rclcpp::TimerBase::SharedPtr timer_ = nullptr;
+    struct Timers {
+        rclcpp::TimerBase::SharedPtr timer = nullptr;
+    } timer_{};
 };
 
 }  // namespace handy::camera

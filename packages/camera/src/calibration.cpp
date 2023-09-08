@@ -216,8 +216,8 @@ void CalibrationNode::calibrate() {
         param_.frame_size_,
         intrinsic_params_.camera_matrix,
         intrinsic_params_.dist_coefs,
-        intrinsic_params_.rotation_vectors,
-        intrinsic_params_.translation_vectors);
+        std::vector<cv::Mat>{},
+        std::vector<cv::Mat>{});
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration done with error of " << rms);
 
     if (rms < param_.min_accepted_error) {
