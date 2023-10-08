@@ -1,5 +1,6 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/calib3d.hpp>
+#include <opencv2/imgproc.hpp>
 #include <tuple>
 #include <string>
 #include <yaml-cpp/yaml.h>
@@ -9,13 +10,20 @@
 
 namespace handy {
 struct CameraIntrinsicParameters {
-  public:
+    CameraIntrinsicParameters() = default;
     void save(const std::string path_to_yaml_file) const;
-    int load(const std::string path_to_yaml_file, rclcpp::Logger logger);
+    int load(const std::string path_to_yaml_file);
 
     cv::Mat camera_matrix = cv::Mat(3, 3, CV_16FC1);
     cv::Vec<float, 5> dist_coefs;
-    cv::Mat new_camera_matrix;
+};
+
+struct CameraUndistortModule : CameraIntrinsicParameters {
+    void initUndistortMaps(cv::Size& frame_size);
+    cv::Mat& undistortImage(cv::Mat& src);
+
     std::pair<cv::Mat, cv::Mat> undistort_maps;
+
+    cv::Mat undistortedImage;
 };
 }  // namespace handy
