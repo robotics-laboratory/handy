@@ -205,10 +205,15 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     RCLCPP_INFO_STREAM(this->get_logger(), "all cameras started!");
 
-    param_.calibration_file_path = this->declare_parameter<std::string>(
-        "calibration_file_path", "param_save/camera_params.yaml");
-    RCLCPP_INFO_STREAM(
-        this->get_logger(), "calibration file path: " << param_.calibration_file_path);
+    param_.calibration_file_paths = this->declare_parameter<std::vector<std::string>>(
+        "calibration_file_paths", {"param_save/camera_params.yaml"});
+    for (int i = 0; i < param_.camera_num; ++i) {
+        RCLCPP_INFO(
+            this->get_logger(),
+            "calibration file paths: (%d)  %s",
+            i,
+            param_.calibration_file_paths[i]);
+    }
 
     param_.publish_raw = this->declare_parameter<bool>("publish_raw", false);
     RCLCPP_INFO(this->get_logger(), "publish raw: %i", param_.publish_raw);
@@ -424,8 +429,8 @@ void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int id
     }
 
     if (param_.publish_rectified) {
-        undistortImage(idx, image);
-        cv_bridge::CvImage cv_image(header, "bgr8", rescale(image, param_.preview_frame_size));
+        cv::Mat& undistorted_image = cameras_params_modules_[idx].undistortImage(image);
+        cv_bridge::CvImage cv_image(header, "bgr8", rescale(undistorted_image, param_.preview_frame_size));
         signals_.rectified_image[idx]->publish(toJpegMsg(cv_image));
     }
 }
@@ -490,42 +495,15 @@ void CameraNode::handleOnTimer() {
 
 void CameraNode::initCalibParams() {
     for (int idx = 0; idx < param_.camera_num; ++idx) {
-        RCLCPP_INFO_STREAM(this->get_logger(), "loading params");
-        int status = cameras_params[idx].load(param_.calibration_file_path, this->get_logger());
+        RCLCPP_INFO_STREAM(this->get_logger(), "loading camera " << idx << " parameters");
+        cameras_params_modules_.emplace_back();
+
+        int status = cameras_params_modules_[idx].load(param_.calibration_file_paths[idx]);
         abortIfNot("reading camera intrinsic parameters", status);
 
         RCLCPP_INFO_STREAM(this->get_logger(), "read camera yaml params");
-        calcUndistortMapping(idx);
+        cameras_params_modules_[idx].initUndistortMaps(param_.frame_size);
         RCLCPP_INFO_STREAM(this->get_logger(), "got undistortion maps");
     }
 }
-
-void CameraNode::calcUndistortMapping(int idx) {
-    cameras_params[idx].new_camera_matrix = cv::getOptimalNewCameraMatrix(
-        cameras_params[idx].camera_matrix,
-        cameras_params[idx].dist_coefs,
-        param_.frame_size,
-        1.0,
-        param_.frame_size);
-
-    cv::initUndistortRectifyMap(
-        cameras_params[idx].camera_matrix,
-        cameras_params[idx].dist_coefs,
-        cv::noArray(),
-        cameras_params[idx].new_camera_matrix,
-        param_.frame_size,
-        CV_16SC2,
-        cameras_params[idx].undistort_maps.first,
-        cameras_params[idx].undistort_maps.second);
-}
-
-void CameraNode::undistortImage(int idx, cv::Mat& image) {
-    cv::remap(
-        image,
-        image,
-        cameras_params[idx].undistort_maps.first,
-        cameras_params[idx].undistort_maps.second,
-        cv::INTER_NEAREST);
-}
-
 }  // namespace handy::camera

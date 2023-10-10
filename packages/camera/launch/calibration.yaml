@@ -9,8 +9,7 @@ launch:
     name: "calibration"
     param:
     # calibration
-    - {name: "calibration_file_path", value: "$(var calibration_file_path)"} # only .yaml file
-    - {name: "auto_calibrate", value: false}
+    - {name: "calibration_file_path", value: "$(var calibration_file_path)"} # only .yaml files
     - {name: "IoU_threshold", value: 0.5}
     - {name: "alpha_channel_per_detected", value: 0.12}
     - {name: "min_accepted_calib_error", value: 0.75}

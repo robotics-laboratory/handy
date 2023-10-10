@@ -13,6 +13,7 @@ find_package(foxglove_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(camera_srvs REQUIRED)
 
 add_library(mvsdk SHARED IMPORTED)
 set_target_properties(mvsdk PROPERTIES IMPORTED_LOCATION "/lib/libMVSDK.so")
@@ -46,7 +47,8 @@ ament_target_dependencies(
     foxglove_msgs
     visualization_msgs
     geometry_msgs
-    std_msgs)
+    std_msgs
+    camera_srvs)
 
 target_link_libraries(camera mvsdk)
 

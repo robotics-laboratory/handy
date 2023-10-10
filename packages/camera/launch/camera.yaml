@@ -32,7 +32,7 @@ launch:
     - {name: "publish_bgr", value: "$(var publish_bgr)"}
     - {name: "publish_raw", value: "$(var publish_raw)"}
     - {name: "publish_rectified", value: "$(var publish_rectified)"}
-    - {name: "calibration_file_path", value: "$(var calibration_file_path)"}
+    - {name: "calibration_file_paths", value: ["$(var calibration_file_path)"]}
 
     
     - name: "camera_0"

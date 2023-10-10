@@ -27,8 +27,6 @@ class CameraNode : public rclcpp::Node {
     void applyCameraParameters();
     void applyParamsToCamera(int camera_idx);
     void initCalibParams();
-    void calcUndistortMapping(int idx);
-    void undistortImage(int idx, cv::Mat &image);
 
     void handleOnTimer();
 
@@ -39,22 +37,23 @@ class CameraNode : public rclcpp::Node {
     void abortIfNot(std::string_view msg, int camera_idx, int status);
 
     struct Params {
-        cv::Size frame_size = cv::Size(1280, 1024);
         cv::Size preview_frame_size = cv::Size(640, 480);
+        cv::Size frame_size = cv::Size(1280, 1024);
         std::chrono::duration<double> latency{50.0};
-        std::string calibration_file_path = "param_save/camera_params.yaml";
+        std::vector<std::string> calibration_file_paths = {"param_save/camera_params.yaml"};
         int camera_num = 0;
         bool publish_bgr = false;
         bool publish_bgr_preview = false;
         bool publish_raw = false;
         bool publish_raw_preview = false;
         bool publish_rectified = false;
-    } param_;
+    } param_{};
 
     std::vector<int> camera_handles_ = {};
     std::vector<uint8_t *> raw_buffer_ptr_ = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<tSdkFrameHead> frame_info_ = {};
+    std::vector<CameraUndistortModule> cameras_params_modules_ = {};
 
     struct Signals {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_img;
@@ -65,9 +64,7 @@ class CameraNode : public rclcpp::Node {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_preview_img;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_preview_img;
         // clang-format on
-    } signals_;
-
-    std::vector<handy::CameraIntrinsicParameters> cameras_params = {};
+    } signals_{};
 
     struct Timers {
         rclcpp::TimerBase::SharedPtr timer = nullptr;

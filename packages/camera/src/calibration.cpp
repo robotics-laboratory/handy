@@ -8,7 +8,8 @@ geometry_msgs::msg::Point initPoint(cv::Point2f cv_point) {
     point.y = cv_point.y;
     return point;
 }
-std::vector<geometry_msgs::msg::Point> getMsgPoints(std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size) {
+std::vector<geometry_msgs::msg::Point> getMsgPoints(
+    std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size) {
     cv::Point2f board_cv_corners[4] = {
         detected_corners[0],
         detected_corners[pattern_size.width - 1],
@@ -20,6 +21,7 @@ std::vector<geometry_msgs::msg::Point> getMsgPoints(std::vector<cv::Point2f>& de
     for (int i = 0; i < 4; ++i) {
         marker_points[i] = initPoint(board_cv_corners[i]);
     }
+    return marker_points;
 }
 
 }  // namespace
@@ -48,6 +50,12 @@ const std::vector<Point> getPoints(const std::vector<cv::Point2f>& corners, cv::
     return points;
 }
 
+sensor_msgs::msg::CompressedImage toJpegMsg(const cv_bridge::CvImage& cv_image) {
+    sensor_msgs::msg::CompressedImage result;
+    cv_image.toCompressedImageMsg(result, cv_bridge::Format::JPEG);
+    return result;
+}
+
 CalibrationNode::CalibrationNode() : Node("calibration_node") {
     RCLCPP_INFO_STREAM(this->get_logger(), "Init started");
 
@@ -67,7 +75,6 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
 void CalibrationNode::declareLaunchParams() {
     // clang-format off
     param_.publish_chessboard_preview = this->declare_parameter<bool>("publish_chessboard_preview", true);
-    param_.auto_calibrate = this->declare_parameter<bool>("auto_calibrate", true);
     param_.path_to_save_params = this->declare_parameter<std::string>("calibration_file_path", "param_save");
 
     param_.min_accepted_error = this->declare_parameter<double>("min_accepted_calib_error", 0.75);
@@ -78,29 +85,35 @@ void CalibrationNode::declareLaunchParams() {
 }
 
 void CalibrationNode::initSignals() {
-    slot_.image_sub = this->create_subscription<sensor_msgs::msg::Image>(
-        "/camera_1/bgr/image",
+    slot_.image_sub = this->create_subscription<sensor_msgs::msg::CompressedImage>(
+        "/camera_1/bgr/preview",
         10,
         std::bind(&CalibrationNode::handleFrame, this, std::placeholders::_1));
-    service_.button_service = this->create_service<std_srvs::srv::SetBool>(
+    service_.button_service = this->create_service<camera_srvs::srv::CmdService>(
         "/calibration_1/button",
         std::bind(
             &CalibrationNode::onButtonClick, this, std::placeholders::_1, std::placeholders::_2));
 
-    signal_.chessboard_preview_pub =
-        this->create_publisher<sensor_msgs::msg::Image>("/calibration_1/chessboard_preview", 10);
+    signal_.chessboard_preview_pub = this->create_publisher<sensor_msgs::msg::CompressedImage>(
+        "/calibration_1/chessboard_preview", 10);
     signal_.detected_boards =
         this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>("/calibration_1/marker", 10);
     signal_.calibration_state =
         this->create_publisher<std_msgs::msg::Int16>("/calibration_1/state", 10);
 }
 
-void CalibrationNode::handleFrame(const sensor_msgs::msg::Image::ConstPtr& msg) {
+void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::ConstPtr& msg) {
     if (state_.calibration_state != CAPTURING) {
         return;
     }
 
     cv_bridge::CvImagePtr image_ptr = cv_bridge::toCvCopy(msg, "bgr8");
+    if (!state_.frame_size_.height) {
+        state_.frame_size_ = cv::Size(image_ptr->image.cols, image_ptr->image.rows);
+    }
+    assert(
+        state_.frame_size_.width == image_ptr->image.cols &&
+        state_.frame_size_.height == image_ptr->image.rows);
     std::vector<cv::Point2f> detected_corners;
     bool found = cv::findChessboardCorners(
         image_ptr->image, param_.pattern_size, detected_corners, cv::CALIB_CB_FAST_CHECK);
@@ -115,28 +128,28 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::Image::ConstPtr& msg) 
 
             state_.detected_corners_all.push_back(detected_corners);
             state_.object_points_all.push_back(param_.square_obj_points);
-            if (param_.auto_calibrate &&
-                state_.detected_corners_all.size() >= MIN_FRAMES_FOR_CALIBRATION) {
-                calibrate();
-            }
         }
     }
     if (param_.publish_chessboard_preview) {
         cv::drawChessboardCorners(image_ptr->image, param_.pattern_size, detected_corners, found);
-        signal_.chessboard_preview_pub->publish(*image_ptr->toImageMsg());
+        cv_bridge::CvImage cv_image(image_ptr->header, "bgr8", image_ptr->image);
+        signal_.chessboard_preview_pub->publish(toJpegMsg(cv_image));
     }
     publishCalibrationState();
 }
 
 void CalibrationNode::onButtonClick(
-    const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-    std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
-    if (state_.calibration_state == CAPTURING) {
+    const camera_srvs::srv::CmdService::Request::SharedPtr request,
+    camera_srvs::srv::CmdService::Response::SharedPtr response) {
+    if (state_.calibration_state == CALIBRATING) {
+        return;
+    }
+    if (request->cmd == START) {
+        state_.calibration_state = CAPTURING;
+    } else if (request->cmd == CALIBRATE) {
         calibrate();
-    } else if (state_.calibration_state == NOT_CALIBRATED) {
-        state_.calibration_state = CAPTURING;
-    } else if (state_.calibration_state == OK_CALIBRATION) {
-        state_.calibration_state = CAPTURING;
+    } else if (request->cmd == RESET) {
+        state_.calibration_state = NOT_CALIBRATED;
         state_.detected_corners_all.clear();
         state_.object_points_all.clear();
         state_.board_markers_array.markers.clear();
@@ -149,18 +162,17 @@ bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f> corners) const
     append(new_poly, new_points);
 
     double max_value = 0.0;
-
     for (const std::vector<cv::Point2f> prev_corners : state_.detected_corners_all) {
         const std::vector<Point> prev_points = getPoints(prev_corners, param_.pattern_size);
+
         append(prev_poly, prev_points);
 
         std::deque<Polygon> inter_poly;
         intersection(prev_poly, new_poly, inter_poly);
 
         double current_value = 0.0;
-        double inter_area = area(inter_poly.front());
-
         if (!inter_poly.empty()) {
+            double inter_area = area(inter_poly.front());
             current_value = inter_area / (area(prev_poly) + area(new_poly) - inter_area);
         }
 
@@ -210,14 +222,15 @@ void CalibrationNode::calibrate() {
     state_.calibration_state = CALIBRATING;
     publishCalibrationState();
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration inialized");
+    std::vector<cv::Mat> _1, _2;
     double rms = cv::calibrateCamera(
         state_.object_points_all,
         state_.detected_corners_all,
-        param_.frame_size_,
+        state_.frame_size_,
         intrinsic_params_.camera_matrix,
         intrinsic_params_.dist_coefs,
-        std::vector<cv::Mat>{},
-        std::vector<cv::Mat>{});
+        _1,
+        _2);
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration done with error of " << rms);
 
     if (rms < param_.min_accepted_error) {

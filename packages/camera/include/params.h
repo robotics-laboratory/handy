@@ -1,12 +1,13 @@
+#pragma once
+
 #include <opencv2/core/core.hpp>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
-#include <tuple>
+//#include <tuple>
 #include <string>
 #include <yaml-cpp/yaml.h>
 #include <fstream>
-#include <iostream>
-#include <rclcpp/rclcpp.hpp>
+#include <exception>
 
 namespace handy {
 struct CameraIntrinsicParameters {
