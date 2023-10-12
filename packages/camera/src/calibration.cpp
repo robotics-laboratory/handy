@@ -70,6 +70,8 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
             param_.square_obj_points.push_back(cv::Point3f(i, j, 0));
         }
     }
+    publishCalibrationState();
+    signal_.detected_boards->publish(state_.board_markers_array);
 }
 
 void CalibrationNode::declareLaunchParams() {
@@ -77,9 +79,10 @@ void CalibrationNode::declareLaunchParams() {
     param_.publish_chessboard_preview = this->declare_parameter<bool>("publish_chessboard_preview", true);
     param_.path_to_save_params = this->declare_parameter<std::string>("calibration_file_path", "param_save");
 
+    param_.coverage_required = this->declare_parameter<double>("coverage_required", 0.7);
     param_.min_accepted_error = this->declare_parameter<double>("min_accepted_calib_error", 0.75);
     param_.alpha_chn_increase = this->declare_parameter<double>("alpha_channel_per_detected", 0.12);
-    param_.IoU_treshhold = this->declare_parameter<double>("IoU_threshold", 0.5);
+    param_.iou_treshhold = this->declare_parameter<double>("iou_threshold", 0.5);
     param_.marker_color = this->declare_parameter<std::vector<double>>("marker_color", {0.0f, 1.0f, 0.0f});
     // clang-format on
 }
@@ -153,7 +156,9 @@ void CalibrationNode::onButtonClick(
         state_.detected_corners_all.clear();
         state_.object_points_all.clear();
         state_.board_markers_array.markers.clear();
+        signal_.detected_boards->publish(state_.board_markers_array);
     }
+    publishCalibrationState();
 }
 
 bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f> corners) const {
@@ -161,29 +166,41 @@ bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f> corners) const
     const std::vector<Point> new_points = getPoints(corners, param_.pattern_size);
     append(new_poly, new_points);
 
-    double max_value = 0.0;
-    for (const std::vector<cv::Point2f> prev_corners : state_.detected_corners_all) {
-        const std::vector<Point> prev_points = getPoints(prev_corners, param_.pattern_size);
+    return std::all_of(
+        state_.detected_corners_all.begin(),
+        state_.detected_corners_all.end(),
+        [&](const std::vector<cv::Point2f> prev_corners) {
+            const std::vector<Point> prev_points = getPoints(prev_corners, param_.pattern_size);
 
-        append(prev_poly, prev_points);
+            append(prev_poly, prev_points);
 
-        std::deque<Polygon> inter_poly;
-        intersection(prev_poly, new_poly, inter_poly);
+            std::deque<Polygon> inter_poly;
+            intersection(prev_poly, new_poly, inter_poly);
 
-        double current_value = 0.0;
-        if (!inter_poly.empty()) {
-            double inter_area = area(inter_poly.front());
-            current_value = inter_area / (area(prev_poly) + area(new_poly) - inter_area);
-        }
+            double current_value = 0.0;
+            if (!inter_poly.empty()) {
+                double inter_area = area(inter_poly.front());
+                current_value = inter_area / (area(prev_poly) + area(new_poly) - inter_area);
+            }
 
-        clear(prev_poly);
-        max_value = std::max(max_value, current_value);
-        if (max_value > param_.IoU_treshhold) {
-            return false;
-        }
+            clear(prev_poly);
+            return current_value <= param_.iou_treshhold;
+        });
+}
+int CalibrationNode::checkOverallCoverage() const {
+    Polygon new_poly;
+    MultiPolygon current_coverage, tmp_poly;
+
+    for (const std::vector<cv::Point2f> cur_corners : state_.detected_corners_all) {
+        const std::vector<Point> cur_points = getPoints(cur_corners, param_.pattern_size);
+        append(new_poly, cur_points);
+        union_(current_coverage, new_poly, tmp_poly);
+        current_coverage = tmp_poly;
+        clear(tmp_poly);
+        clear(new_poly);
     }
-
-    return max_value <= param_.IoU_treshhold;
+    float ratio = area(current_coverage) / (state_.frame_size_.height * state_.frame_size_.width);
+    return (ratio >= param_.coverage_required) ? static_cast<int>(ratio * 100) : 0;
 }
 
 void CalibrationNode::publishCalibrationState() const {
@@ -218,10 +235,23 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getBoardMarkerFromCorners(
     return marker;
 }
 
+void CalibrationNode::handleBadCalibration() {
+    RCLCPP_INFO_STREAM(this->get_logger(), "Continue taking frames");
+
+    state_.calibration_state = CAPTURING;
+    publishCalibrationState();
+}
+
 void CalibrationNode::calibrate() {
     state_.calibration_state = CALIBRATING;
     publishCalibrationState();
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration inialized");
+    int coverage_percentage = checkOverallCoverage();
+    if (!coverage_percentage) {
+        RCLCPP_INFO_STREAM(this->get_logger(), "Coverage is not sufficient");
+        handleBadCalibration();
+        return;
+    }
     std::vector<cv::Mat> _1, _2;
     double rms = cv::calibrateCamera(
         state_.object_points_all,
@@ -231,18 +261,17 @@ void CalibrationNode::calibrate() {
         intrinsic_params_.dist_coefs,
         _1,
         _2);
-    RCLCPP_INFO_STREAM(this->get_logger(), "Calibration done with error of " << rms);
 
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Calibration done with error of %f and coverage of %d%%",
+        rms,
+        coverage_percentage);
     if (rms < param_.min_accepted_error) {
         saveCalibParams();
         state_.calibration_state = OK_CALIBRATION;
     } else {
-        RCLCPP_INFO_STREAM(this->get_logger(), "Continue taking frames");
-
-        state_.calibration_state = BAD_CALIBRATION;
-        publishCalibrationState();
-        rclcpp::sleep_for(3s);
-        state_.calibration_state = CAPTURING;
+        handleBadCalibration();
     }
     publishCalibrationState();
 }

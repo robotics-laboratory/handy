@@ -5,7 +5,6 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <cv_bridge/cv_bridge.hpp>
-#include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
 #include <visualization_msgs/msg/image_marker.hpp>
 #include <foxglove_msgs/msg/image_marker_array.hpp>
@@ -37,6 +36,8 @@ namespace handy::calibration {
 
 typedef boost::geometry::model::d2::point_xy<double> Point;
 typedef boost::geometry::model::polygon<Point> Polygon;
+typedef boost::geometry::model::multi_polygon<Polygon> MultiPolygon;
+typedef boost::geometry::model::multi_polygon<Polygon> PolygonSet;
 
 const std::vector<Point> getPoints(const std::vector<cv::Point2f>& corners, cv::Size pattern_size);
 sensor_msgs::msg::CompressedImage toJpegMsg(const cv_bridge::CvImage& cv_image);
@@ -49,7 +50,6 @@ class CalibrationNode : public rclcpp::Node {
         NOT_CALIBRATED = 1,
         CAPTURING = 2,
         CALIBRATING = 3,
-        BAD_CALIBRATION = 4,
         OK_CALIBRATION = 5,
 
         START = 6,
@@ -70,8 +70,10 @@ class CalibrationNode : public rclcpp::Node {
 
     void calibrate();
     void saveCalibParams() const;
+    void handleBadCalibration();
 
     bool checkMaxSimilarity(std::vector<cv::Point2f> corners) const;
+    int checkOverallCoverage() const;
 
     visualization_msgs::msg::ImageMarker getBoardMarkerFromCorners(
         std::vector<cv::Point2f>& detected_corners, cv_bridge::CvImagePtr image_ptr);
@@ -104,7 +106,8 @@ class CalibrationNode : public rclcpp::Node {
         std::vector<double> marker_color = {0.0, 1.0, 0.0};
         double min_accepted_error = 0.75;
         double alpha_chn_increase = 0.12;
-        double IoU_treshhold = 0.5;
+        double iou_treshhold = 0.5;
+        double coverage_required = 0.7;
     } param_;
 
     struct State {

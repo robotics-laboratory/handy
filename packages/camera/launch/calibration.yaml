@@ -10,9 +10,10 @@ launch:
     param:
     # calibration
     - {name: "calibration_file_path", value: "$(var calibration_file_path)"} # only .yaml files
-    - {name: "IoU_threshold", value: 0.5}
+    - {name: "iou_threshold", value: 0.5}
     - {name: "alpha_channel_per_detected", value: 0.12}
-    - {name: "min_accepted_calib_error", value: 0.75}
+    - {name: "min_accepted_calib_error", value: 0.7}
+    - {name: "coverage_required", value: 0.7}
     - {name: "marker_color", value: [0.0, 1.0, 0.0]} #  each in range 0.0-1.0
 
     # visualisation

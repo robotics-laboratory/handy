@@ -3,7 +3,6 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
-//#include <tuple>
 #include <string>
 #include <yaml-cpp/yaml.h>
 #include <fstream>
@@ -15,7 +14,7 @@ struct CameraIntrinsicParameters {
     void save(const std::string path_to_yaml_file) const;
     int load(const std::string path_to_yaml_file);
 
-    cv::Mat camera_matrix = cv::Mat(3, 3, CV_16FC1);
+    cv::Mat camera_matrix;
     cv::Vec<float, 5> dist_coefs;
 };
 

@@ -2,7 +2,6 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
-#include <yaml-cpp/yaml.h>
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/calib3d.hpp>

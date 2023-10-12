@@ -15,7 +15,7 @@ void CameraIntrinsicParameters::save(const std::string path_to_yaml_file) const 
     output_yaml << YAML::Value << YAML::BeginSeq;
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            output_yaml << camera_matrix.at<float>(i, j);
+            output_yaml << camera_matrix.at<double>(i, j);
         }
     }
     output_yaml << YAML::EndSeq;
@@ -35,15 +35,11 @@ void CameraIntrinsicParameters::save(const std::string path_to_yaml_file) const 
 
 int CameraIntrinsicParameters::load(const std::string path_to_yaml_file) {
     const YAML::Node file = YAML::LoadFile(path_to_yaml_file);
-    const std::vector<float> yaml_camera_matrix = file["camera_matrix"].as<std::vector<float>>();
+    const std::vector<double> yaml_camera_matrix = file["camera_matrix"].as<std::vector<double>>();
     camera_matrix = cv::Mat(yaml_camera_matrix, true);
-    for (int i = 0; i < 9; ++i) {
-        camera_matrix.at<float>(i / 3, i % 3) = yaml_camera_matrix[i];
-    }
+
     const std::vector<float> coefs = file["distorsion_coefs"].as<std::vector<float>>();
-    for (int i = 0; i < 5; ++i) {
-        dist_coefs[i] = coefs[i];
-    }
+    dist_coefs = cv::Mat(coefs, true);
 
     return 0;
 }
