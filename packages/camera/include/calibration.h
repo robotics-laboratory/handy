@@ -75,12 +75,18 @@ class CalibrationNode : public rclcpp::Node {
     bool checkMaxSimilarity(std::vector<cv::Point2f> corners) const;
     int checkOverallCoverage() const;
 
+    void initCornerMarkers();
+    void updateCornerMarkers(std::vector<cv::Point2f>& detected_corners);
+    visualization_msgs::msg::ImageMarker getCornerMarker(cv::Point2f point);
     visualization_msgs::msg::ImageMarker getBoardMarkerFromCorners(
         std::vector<cv::Point2f>& detected_corners, cv_bridge::CvImagePtr image_ptr);
 
     struct Signals {
         rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr detected_boards =
             nullptr;
+        rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr detected_corners =
+            nullptr;
+
         rclcpp::Publisher<std_msgs::msg::Int16>::SharedPtr calibration_state = nullptr;
         rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr chessboard_preview_pub =
             nullptr;
@@ -116,6 +122,7 @@ class CalibrationNode : public rclcpp::Node {
         std::vector<std::vector<cv::Point2f>> detected_corners_all;
         std::vector<std::vector<cv::Point3f>> object_points_all;
         foxglove_msgs::msg::ImageMarkerArray board_markers_array;
+        foxglove_msgs::msg::ImageMarkerArray board_corners_array;
 
         int last_marker_id = 0;
         int calibration_state = NOT_CALIBRATED;

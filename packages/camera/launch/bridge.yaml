@@ -5,5 +5,5 @@ launch:
     name: "foxglove_bridge"
     output: "log"
     param:
-    - {name: "capabilities", value: ["clientPublish"]}
+    - {name: "capabilities", value: ["clientPublish", "services"]}
     - {name: "send_buffer_limit", value: 100000000}

@@ -89,7 +89,7 @@ void CalibrationNode::declareLaunchParams() {
 
 void CalibrationNode::initSignals() {
     slot_.image_sub = this->create_subscription<sensor_msgs::msg::CompressedImage>(
-        "/camera_1/bgr/preview",
+        "/camera_1/bgr/image",
         10,
         std::bind(&CalibrationNode::handleFrame, this, std::placeholders::_1));
     service_.button_service = this->create_service<camera_srvs::srv::CmdService>(
@@ -99,8 +99,11 @@ void CalibrationNode::initSignals() {
 
     signal_.chessboard_preview_pub = this->create_publisher<sensor_msgs::msg::CompressedImage>(
         "/calibration_1/chessboard_preview", 10);
-    signal_.detected_boards =
-        this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>("/calibration_1/marker", 10);
+    signal_.detected_boards = this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
+        "/calibration_1/board_markers", 10);
+    signal_.detected_corners = this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
+        "/calibration_1/corner_markers", 10);
+
     signal_.calibration_state =
         this->create_publisher<std_msgs::msg::Int16>("/calibration_1/state", 10);
 }
@@ -133,12 +136,14 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
             state_.object_points_all.push_back(param_.square_obj_points);
         }
     }
-    if (param_.publish_chessboard_preview) {
-        cv::drawChessboardCorners(image_ptr->image, param_.pattern_size, detected_corners, found);
+    state_.board_corners_array.markers.clear();
+    if (param_.publish_chessboard_preview && found) {
+        updateCornerMarkers(detected_corners);
         cv_bridge::CvImage cv_image(image_ptr->header, "bgr8", image_ptr->image);
         signal_.chessboard_preview_pub->publish(toJpegMsg(cv_image));
     }
     publishCalibrationState();
+    signal_.detected_corners->publish(state_.board_corners_array);
 }
 
 void CalibrationNode::onButtonClick(
@@ -200,7 +205,7 @@ int CalibrationNode::checkOverallCoverage() const {
         clear(new_poly);
     }
     float ratio = area(current_coverage) / (state_.frame_size_.height * state_.frame_size_.width);
-    return (ratio >= param_.coverage_required) ? static_cast<int>(ratio * 100) : 0;
+    return static_cast<int>(ratio * 100);
 }
 
 void CalibrationNode::publishCalibrationState() const {
@@ -234,6 +239,34 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getBoardMarkerFromCorners(
     marker.points = getMsgPoints(detected_corners, param_.pattern_size);
     return marker;
 }
+visualization_msgs::msg::ImageMarker CalibrationNode::getCornerMarker(cv::Point2f point) {
+    visualization_msgs::msg::ImageMarker marker;
+
+    marker.ns = "calibration";
+    marker.id = ++state_.last_marker_id;
+    marker.type = visualization_msgs::msg::ImageMarker::CIRCLE;
+    marker.action = visualization_msgs::msg::ImageMarker::ADD;
+
+    marker.position.x = point.x;
+    marker.position.y = point.y;
+
+    marker.scale = 6;
+
+    marker.filled = 1;
+    marker.fill_color.r = 1. - param_.marker_color[0];
+    marker.fill_color.g = 1. - param_.marker_color[1];
+    marker.fill_color.b = 1. - param_.marker_color[2];
+    marker.fill_color.a = 0.7;
+
+    return marker;
+}
+
+void CalibrationNode::updateCornerMarkers(std::vector<cv::Point2f>& detected_corners) {
+    for (size_t i = 0; i < detected_corners.size(); ++i) {
+        visualization_msgs::msg::ImageMarker marker = getCornerMarker(detected_corners[i]);
+        state_.board_corners_array.markers.push_back(marker);
+    }
+}
 
 void CalibrationNode::handleBadCalibration() {
     RCLCPP_INFO_STREAM(this->get_logger(), "Continue taking frames");
@@ -247,8 +280,8 @@ void CalibrationNode::calibrate() {
     publishCalibrationState();
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration inialized");
     int coverage_percentage = checkOverallCoverage();
-    if (!coverage_percentage) {
-        RCLCPP_INFO_STREAM(this->get_logger(), "Coverage is not sufficient");
+    if (coverage_percentage < param_.coverage_required) {
+        RCLCPP_INFO(this->get_logger(), "Coverage of %d is not sufficient", coverage_percentage);
         handleBadCalibration();
         return;
     }
