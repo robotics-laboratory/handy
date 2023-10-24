@@ -227,8 +227,12 @@ CameraNode::CameraNode() : Node("camera_node") {
     param_.publish_bgr_preview = this->declare_parameter<bool>("publish_bgr_preview", false);
     RCLCPP_INFO(this->get_logger(), "publish bgr preview: %i", param_.publish_bgr_preview);
 
-    param_.publish_rectified = this->declare_parameter<bool>("publish_rectified", false);
-    RCLCPP_INFO(this->get_logger(), "publish rectified image: %i", param_.publish_rectified);
+    param_.publish_rectified_preview =
+        this->declare_parameter<bool>("publish_rectified_preview", false);
+    RCLCPP_INFO(
+        this->get_logger(),
+        "publish rectified preview image: %i",
+        param_.publish_rectified_preview);
 
     for (int i = 1; i <= param_.camera_num; ++i) {
         const std::string root = "/camera_" + std::to_string(i);
@@ -256,22 +260,22 @@ CameraNode::CameraNode() : Node("camera_node") {
                     root + "/bgr/preview", queue_size));
         }
 
-        if (param_.publish_rectified) {
-            signals_.rectified_image.push_back(
+        if (param_.publish_rectified_preview) {
+            signals_.rectified_preview_img.push_back(
                 this->create_publisher<sensor_msgs::msg::CompressedImage>(
-                    root + "/bgr/rectified", queue_size));
+                    root + "/rectified/preview", queue_size));
         }
     }
 
     const auto fps = this->declare_parameter<double>("fps", 20.0);
     param_.latency = std::chrono::duration<double>(1 / fps);
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
-    timer_.timer =
+    timer_.camera_capture =
         this->create_wall_timer(param_.latency, std::bind(&CameraNode::handleOnTimer, this));
 
     applyCameraParameters();
 
-    if (param_.publish_rectified) {
+    if (param_.publish_rectified_preview) {
         initCalibParams();
     }
 }
@@ -428,10 +432,11 @@ void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int id
         signals_.bgr_preview_img[idx]->publish(toJpegMsg(cv_image));
     }
 
-    if (param_.publish_rectified) {
-        cv::Mat& undistorted_image = cameras_params_modules_[idx].undistortImage(image);
-        cv_bridge::CvImage cv_image(header, "bgr8", rescale(undistorted_image, param_.preview_frame_size));
-        signals_.rectified_image[idx]->publish(toJpegMsg(cv_image));
+    if (param_.publish_rectified_preview) {
+        cv::Mat undistorted_image = cameras_params_modules_[idx].undistortImage(image);
+        cv_bridge::CvImage cv_image(
+            header, "bgr8", rescale(undistorted_image, param_.preview_frame_size));
+        signals_.rectified_preview_img[idx]->publish(toJpegMsg(cv_image));
     }
 }
 
@@ -496,13 +501,9 @@ void CameraNode::handleOnTimer() {
 void CameraNode::initCalibParams() {
     for (int idx = 0; idx < param_.camera_num; ++idx) {
         RCLCPP_INFO_STREAM(this->get_logger(), "loading camera " << idx << " parameters");
-        cameras_params_modules_.emplace_back();
+        cameras_params_modules_.push_back(CameraUndistortModule::load(
+            param_.calibration_file_paths[idx], std::make_optional<cv::Size>(param_.frame_size)));
 
-        int status = cameras_params_modules_[idx].load(param_.calibration_file_paths[idx]);
-        abortIfNot("reading camera intrinsic parameters", status);
-
-        RCLCPP_INFO_STREAM(this->get_logger(), "read camera yaml params");
-        cameras_params_modules_[idx].initUndistortMaps(param_.frame_size);
         RCLCPP_INFO_STREAM(this->get_logger(), "got undistortion maps");
     }
 }

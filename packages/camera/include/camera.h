@@ -29,8 +29,8 @@ class CameraNode : public rclcpp::Node {
 
     void handleOnTimer();
 
-    void publishRawImage(uint8_t *buffer, rclcpp::Time timestamp, int camera_idx);
-    void publishBGRImage(uint8_t *buffer, rclcpp::Time timestamp, int camera_idx);
+    void publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
+    void publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
 
     void abortIfNot(std::string_view msg, int status);
     void abortIfNot(std::string_view msg, int camera_idx, int status);
@@ -45,11 +45,11 @@ class CameraNode : public rclcpp::Node {
         bool publish_bgr_preview = false;
         bool publish_raw = false;
         bool publish_raw_preview = false;
-        bool publish_rectified = false;
+        bool publish_rectified_preview = false;
     } param_{};
 
     std::vector<int> camera_handles_ = {};
-    std::vector<uint8_t *> raw_buffer_ptr_ = {};
+    std::vector<uint8_t*> raw_buffer_ptr_ = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<tSdkFrameHead> frame_info_ = {};
     std::vector<CameraUndistortModule> cameras_params_modules_ = {};
@@ -59,14 +59,14 @@ class CameraNode : public rclcpp::Node {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_img;
 
         // clang-format off
-        std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> rectified_image;
+        std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> rectified_preview_img;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_preview_img;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_preview_img;
         // clang-format on
     } signals_{};
 
     struct Timers {
-        rclcpp::TimerBase::SharedPtr timer = nullptr;
+        rclcpp::TimerBase::SharedPtr camera_capture = nullptr;
     } timer_{};
 };
 

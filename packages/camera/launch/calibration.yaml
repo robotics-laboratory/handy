@@ -1,7 +1,7 @@
 launch:
 - arg:
     name: "calibration_file_path"
-    default: "/handy/packages/camera/param_save/camera_params.yaml"
+    default: "$(find-pkg-share camera)/params/camera_params.yaml"
 
 - node:
     pkg: "camera"
@@ -11,10 +11,9 @@ launch:
     # calibration
     - {name: "calibration_file_path", value: "$(var calibration_file_path)"} # only .yaml files
     - {name: "iou_threshold", value: 0.5}
-    - {name: "alpha_channel_per_detected", value: 0.12}
     - {name: "min_accepted_calib_error", value: 0.7}
     - {name: "coverage_required", value: 0.7}
-    - {name: "marker_color", value: [0.0, 1.0, 0.0]} #  each in range 0.0-1.0
+    - {name: "marker_color", value: [0.0, 1.0, 0.0, 0.12]} #  [R, G, B, A], each in range 0.0-1.0
 
     # visualisation
     - {name: "publish_chessboard_preview", value: true}

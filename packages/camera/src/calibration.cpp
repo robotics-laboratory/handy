@@ -1,15 +1,31 @@
 #include "calibration.h"
 
+#include <opencv2/calib3d.hpp>
+#include <deque>
+
 namespace {
 
-geometry_msgs::msg::Point initPoint(cv::Point2f cv_point) {
+/**
+ * Converts OpenCV point to ROS2 message
+ *
+ * @param cv_point OpenCV point that will be converted
+ * @return converted point of ROS2 message
+ */
+geometry_msgs::msg::Point toMsgPoint(cv::Point2f cv_point) {
     geometry_msgs::msg::Point point;
     point.x = cv_point.x;
     point.y = cv_point.y;
     return point;
 }
-std::vector<geometry_msgs::msg::Point> getMsgPoints(
-    std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size) {
+
+/**
+ * Converts all detected corners into a vector of top/bottom left/right corners
+ *
+ * @param cv_point OpenCV point that will be converted
+ * @return vector of 4 corners of detected pattern
+ */
+std::vector<geometry_msgs::msg::Point> toMsgCorners(
+    const std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size) {
     cv::Point2f board_cv_corners[4] = {
         detected_corners[0],
         detected_corners[pattern_size.width - 1],
@@ -19,7 +35,7 @@ std::vector<geometry_msgs::msg::Point> getMsgPoints(
 
     std::vector<geometry_msgs::msg::Point> marker_points(4);
     for (int i = 0; i < 4; ++i) {
-        marker_points[i] = initPoint(board_cv_corners[i]);
+        marker_points[i] = toMsgPoint(board_cv_corners[i]);
     }
     return marker_points;
 }
@@ -30,7 +46,16 @@ namespace handy::calibration {
 using namespace std::chrono_literals;
 using namespace boost::geometry;
 
-const std::vector<Point> getPoints(const std::vector<cv::Point2f>& corners, cv::Size pattern_size) {
+/**
+ * Converts all corners of detected chessboard into a closed polyline of
+ * top/bottom left/right corners (Boost points)
+ *
+ * @param corners vector all corners in cv::Point2f format
+ * @param pattern_size width and height of chessboard
+ * @return vector of points of closed polyline
+ */
+const std::vector<Point> convertToBoostCorners(
+    const std::vector<cv::Point2f>& corners, cv::Size pattern_size) {
     // clang-format off
     const std::vector<cv::Point2f> cv_points = {
         corners[0],                                               // top left
@@ -48,6 +73,29 @@ const std::vector<Point> getPoints(const std::vector<cv::Point2f>& corners, cv::
         {cv_points[0].x, cv_points[0].y}};
 
     return points;
+}
+
+/**
+ * Calculates "intersection over union" metric as a measure of similarity between two polygons
+ *
+ * @param first Boost polygon
+ * @param second Boost polygon
+ * @return double value of metric
+ */
+
+double getIou(const Polygon& first, const Polygon& second) {
+    std::deque<Polygon> inter_poly;
+    intersection(first, second, inter_poly);
+
+    double iou = 0.0;
+    if (inter_poly.size() > 1) {
+        throw std::logic_error("Intersection is not valid");
+    }
+    if (!inter_poly.empty()) {
+        double inter_area = area(inter_poly.front());
+        iou = inter_area / (area(first) + area(second) - inter_area);
+    }
+    return iou;
 }
 
 sensor_msgs::msg::CompressedImage toJpegMsg(const cv_bridge::CvImage& cv_image) {
@@ -81,9 +129,8 @@ void CalibrationNode::declareLaunchParams() {
 
     param_.coverage_required = this->declare_parameter<double>("coverage_required", 0.7);
     param_.min_accepted_error = this->declare_parameter<double>("min_accepted_calib_error", 0.75);
-    param_.alpha_chn_increase = this->declare_parameter<double>("alpha_channel_per_detected", 0.12);
     param_.iou_treshhold = this->declare_parameter<double>("iou_threshold", 0.5);
-    param_.marker_color = this->declare_parameter<std::vector<double>>("marker_color", {0.0f, 1.0f, 0.0f});
+    param_.marker_color = this->declare_parameter<std::vector<double>>("marker_color", {0.0f, 1.0f, 0.0f, 0.12f});
     // clang-format on
 }
 
@@ -97,8 +144,6 @@ void CalibrationNode::initSignals() {
         std::bind(
             &CalibrationNode::onButtonClick, this, std::placeholders::_1, std::placeholders::_2));
 
-    signal_.chessboard_preview_pub = this->create_publisher<sensor_msgs::msg::CompressedImage>(
-        "/calibration_1/chessboard_preview", 10);
     signal_.detected_boards = this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
         "/calibration_1/board_markers", 10);
     signal_.detected_corners = this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
@@ -114,33 +159,29 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
     }
 
     cv_bridge::CvImagePtr image_ptr = cv_bridge::toCvCopy(msg, "bgr8");
-    if (!state_.frame_size_.height) {
-        state_.frame_size_ = cv::Size(image_ptr->image.cols, image_ptr->image.rows);
+    if (!state_.frame_size_) {
+        state_.frame_size_ =
+            std::make_optional<cv::Size>(image_ptr->image.cols, image_ptr->image.rows);
     }
     assert(
-        state_.frame_size_.width == image_ptr->image.cols &&
-        state_.frame_size_.height == image_ptr->image.rows);
+        state_.frame_size_->width == image_ptr->image.cols &&
+        state_.frame_size_->height == image_ptr->image.rows);
     std::vector<cv::Point2f> detected_corners;
     bool found = cv::findChessboardCorners(
         image_ptr->image, param_.pattern_size, detected_corners, cv::CALIB_CB_FAST_CHECK);
-    if (found) {
-        bool req_to_add = checkMaxSimilarity(detected_corners);
-        if (req_to_add) {
-            if (param_.publish_chessboard_preview) {
-                state_.board_markers_array.markers.push_back(
-                    getBoardMarkerFromCorners(detected_corners, image_ptr));
-                signal_.detected_boards->publish(state_.board_markers_array);
-            }
-
-            state_.detected_corners_all.push_back(detected_corners);
-            state_.object_points_all.push_back(param_.square_obj_points);
+    if (found && checkMaxSimilarity(detected_corners)) {
+        if (param_.publish_chessboard_preview) {
+            state_.board_markers_array.markers.push_back(
+                getBoardMarkerFromCorners(detected_corners, image_ptr->header));
+            signal_.detected_boards->publish(state_.board_markers_array);
         }
+
+        state_.detected_corners_all.push_back(detected_corners);
+        state_.object_points_all.push_back(param_.square_obj_points);
     }
     state_.board_corners_array.markers.clear();
     if (param_.publish_chessboard_preview && found) {
-        updateCornerMarkers(detected_corners);
-        cv_bridge::CvImage cv_image(image_ptr->header, "bgr8", image_ptr->image);
-        signal_.chessboard_preview_pub->publish(toJpegMsg(cv_image));
+        appendCornerMarkers(detected_corners);
     }
     publishCalibrationState();
     signal_.detected_corners->publish(state_.board_corners_array);
@@ -148,12 +189,14 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
 
 void CalibrationNode::onButtonClick(
     const camera_srvs::srv::CmdService::Request::SharedPtr request,
-    camera_srvs::srv::CmdService::Response::SharedPtr response) {
+    camera_srvs::srv::CmdService::Response::SharedPtr) {
     if (state_.calibration_state == CALIBRATING) {
         return;
     }
     if (request->cmd == START) {
         state_.calibration_state = CAPTURING;
+        RCLCPP_INFO_STREAM(this->get_logger(), "State set to capturing");
+
     } else if (request->cmd == CALIBRATE) {
         calibrate();
     } else if (request->cmd == RESET) {
@@ -166,30 +209,22 @@ void CalibrationNode::onButtonClick(
     publishCalibrationState();
 }
 
-bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f> corners) const {
+bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f>& corners) const {
     Polygon new_poly, prev_poly;
-    const std::vector<Point> new_points = getPoints(corners, param_.pattern_size);
+    const std::vector<Point> new_points = convertToBoostCorners(corners, param_.pattern_size);
     append(new_poly, new_points);
 
     return std::all_of(
         state_.detected_corners_all.begin(),
         state_.detected_corners_all.end(),
-        [&](const std::vector<cv::Point2f> prev_corners) {
-            const std::vector<Point> prev_points = getPoints(prev_corners, param_.pattern_size);
-
-            append(prev_poly, prev_points);
-
-            std::deque<Polygon> inter_poly;
-            intersection(prev_poly, new_poly, inter_poly);
-
-            double current_value = 0.0;
-            if (!inter_poly.empty()) {
-                double inter_area = area(inter_poly.front());
-                current_value = inter_area / (area(prev_poly) + area(new_poly) - inter_area);
-            }
+        [&](const std::vector<cv::Point2f>& prev_corners) {
+            const std::vector<Point> prev_points =
+                convertToBoostCorners(prev_corners, param_.pattern_size);
 
             clear(prev_poly);
-            return current_value <= param_.iou_treshhold;
+            append(prev_poly, prev_points);
+
+            return getIou(prev_poly, new_poly) <= param_.iou_treshhold;
         });
 }
 int CalibrationNode::checkOverallCoverage() const {
@@ -197,14 +232,15 @@ int CalibrationNode::checkOverallCoverage() const {
     MultiPolygon current_coverage, tmp_poly;
 
     for (const std::vector<cv::Point2f> cur_corners : state_.detected_corners_all) {
-        const std::vector<Point> cur_points = getPoints(cur_corners, param_.pattern_size);
+        const std::vector<Point> cur_points =
+            convertToBoostCorners(cur_corners, param_.pattern_size);
         append(new_poly, cur_points);
         union_(current_coverage, new_poly, tmp_poly);
         current_coverage = tmp_poly;
         clear(tmp_poly);
         clear(new_poly);
     }
-    float ratio = area(current_coverage) / (state_.frame_size_.height * state_.frame_size_.width);
+    float ratio = area(current_coverage) / (state_.frame_size_->height * state_.frame_size_->width);
     return static_cast<int>(ratio * 100);
 }
 
@@ -215,11 +251,11 @@ void CalibrationNode::publishCalibrationState() const {
 }
 
 visualization_msgs::msg::ImageMarker CalibrationNode::getBoardMarkerFromCorners(
-    std::vector<cv::Point2f>& detected_corners, cv_bridge::CvImagePtr image_ptr) {
+    std::vector<cv::Point2f>& detected_corners, std_msgs::msg::Header& header) {
     visualization_msgs::msg::ImageMarker marker;
 
-    marker.header.frame_id = image_ptr->header.frame_id;
-    marker.header.stamp = image_ptr->header.stamp;
+    marker.header.frame_id = header.frame_id;
+    marker.header.stamp = header.stamp;
     marker.ns = "calibration";
     marker.id = ++state_.last_marker_id;
     marker.type = visualization_msgs::msg::ImageMarker::POLYGON;
@@ -234,9 +270,9 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getBoardMarkerFromCorners(
     marker.fill_color.r = param_.marker_color[0];
     marker.fill_color.g = param_.marker_color[1];
     marker.fill_color.b = param_.marker_color[2];
-    marker.fill_color.a = param_.alpha_chn_increase;
+    marker.fill_color.a = param_.marker_color[3];
 
-    marker.points = getMsgPoints(detected_corners, param_.pattern_size);
+    marker.points = toMsgCorners(detected_corners, param_.pattern_size);
     return marker;
 }
 visualization_msgs::msg::ImageMarker CalibrationNode::getCornerMarker(cv::Point2f point) {
@@ -261,7 +297,7 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getCornerMarker(cv::Point2
     return marker;
 }
 
-void CalibrationNode::updateCornerMarkers(std::vector<cv::Point2f>& detected_corners) {
+void CalibrationNode::appendCornerMarkers(const std::vector<cv::Point2f>& detected_corners) {
     for (size_t i = 0; i < detected_corners.size(); ++i) {
         visualization_msgs::msg::ImageMarker marker = getCornerMarker(detected_corners[i]);
         state_.board_corners_array.markers.push_back(marker);
@@ -289,7 +325,7 @@ void CalibrationNode::calibrate() {
     double rms = cv::calibrateCamera(
         state_.object_points_all,
         state_.detected_corners_all,
-        state_.frame_size_,
+        *state_.frame_size_,
         intrinsic_params_.camera_matrix,
         intrinsic_params_.dist_coefs,
         _1,
@@ -305,12 +341,12 @@ void CalibrationNode::calibrate() {
         state_.calibration_state = OK_CALIBRATION;
     } else {
         handleBadCalibration();
+        return;
     }
     publishCalibrationState();
 }
 
 void CalibrationNode::saveCalibParams() const {
-    const std::string path_to_yaml_file = param_.path_to_save_params;
-    intrinsic_params_.save(path_to_yaml_file);
+    intrinsic_params_.save(param_.path_to_save_params);
 }
 }  // namespace handy::calibration

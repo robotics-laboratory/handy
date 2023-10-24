@@ -1,8 +1,15 @@
 #include "params.h"
 
+#include <opencv2/calib3d.hpp>
+#include <opencv2/imgproc.hpp>
+#include <string>
+#include <yaml-cpp/yaml.h>
+#include <fstream>
+#include <exception>
+
 namespace handy {
 
-void CameraIntrinsicParameters::save(const std::string path_to_yaml_file) const {
+void CameraIntrinsicParameters::save(const std::string& path_to_yaml_file) const {
     std::ofstream param_file(path_to_yaml_file);
     if (!param_file) {
         throw std::invalid_argument("unable to open file");
@@ -33,15 +40,21 @@ void CameraIntrinsicParameters::save(const std::string path_to_yaml_file) const 
     param_file.close();
 }
 
-int CameraIntrinsicParameters::load(const std::string path_to_yaml_file) {
+CameraUndistortModule CameraIntrinsicParameters::load(
+    const std::string& path_to_yaml_file, std::optional<cv::Size> frame_size) {
+    CameraUndistortModule result;
     const YAML::Node file = YAML::LoadFile(path_to_yaml_file);
     const std::vector<double> yaml_camera_matrix = file["camera_matrix"].as<std::vector<double>>();
-    camera_matrix = cv::Mat(yaml_camera_matrix, true);
+    result.camera_matrix = cv::Mat(yaml_camera_matrix, true);
 
     const std::vector<float> coefs = file["distorsion_coefs"].as<std::vector<float>>();
-    dist_coefs = cv::Mat(coefs, true);
+    result.dist_coefs = cv::Mat(coefs, true);
 
-    return 0;
+    if (frame_size) {
+        result.initUndistortMaps(frame_size);
+    }
+
+    return result;
 }
 
 void CameraUndistortModule::initUndistortMaps(cv::Size& frame_size) {
@@ -58,7 +71,12 @@ void CameraUndistortModule::initUndistortMaps(cv::Size& frame_size) {
         undistort_maps.second);
     undistortedImage = cv::Mat(frame_size, CV_8UC3);
 }
-cv::Mat& CameraUndistortModule::undistortImage(cv::Mat& src) {
+
+void CameraUndistortModule::initUndistortMaps(std::optional<cv::Size> frame_size) {
+    initUndistortMaps(*frame_size);
+}
+
+cv::Mat CameraUndistortModule::undistortImage(cv::Mat& src) {
     cv::remap(
         src, undistortedImage, undistort_maps.first, undistort_maps.second, cv::INTER_NEAREST);
     return undistortedImage;
