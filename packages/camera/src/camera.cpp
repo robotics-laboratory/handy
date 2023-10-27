@@ -166,10 +166,22 @@ void CameraNode::abortIfNot(std::string_view msg, int camera_idx, int status) {
     }
 }
 
+int CameraNode::getMaxBufferSize() {
+    if (param_.max_buffer_size) {
+        return param_.max_buffer_size;
+    }
+    int max_size = 0;
+    for (int i = 0; i < frame_sizes_.size(); ++i) {
+        max_size = std::max(max_size, 3 * frame_sizes_[i].width * frame_sizes_[i].height);
+    }
+    param_.max_buffer_size = max_size;
+    return max_size;
+}
+
 CameraNode::CameraNode() : Node("camera_node") {
     abortIfNot("camera init", CameraSdkInit(0));
 
-    int camera_num = 100;  // attach all conntected camers
+    int camera_num = 100;  // attach all conntected cameras
     tSdkCameraDevInfo cameras_list;
     abortIfNot("camera listing", CameraEnumerateDevice(&cameras_list, &camera_num));
 
@@ -186,15 +198,12 @@ CameraNode::CameraNode() : Node("camera_node") {
     param_.preview_frame_size.width = this->declare_parameter<int>("preview/width", 640);
     param_.preview_frame_size.height = this->declare_parameter<int>("preview/height", 480);
 
-    RCLCPP_INFO_STREAM(this->get_logger(), "frame size=" << param_.frame_size);
     RCLCPP_INFO_STREAM(this->get_logger(), "frame preview size=" << param_.preview_frame_size);
-
-    const int bgr_buffer_size = 3 * param_.frame_size.width * param_.frame_size.height;
 
     camera_handles_ = std::vector<int>(param_.camera_num);
     raw_buffer_ptr_ = std::vector<uint8_t*>(param_.camera_num);
-    bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * bgr_buffer_size);
     frame_info_ = std::vector<tSdkFrameHead>(param_.camera_num);
+    frame_sizes_ = std::vector<cv::Size>(param_.camera_num);
 
     abortIfNot("cameras init", CameraInit(&cameras_list, -1, -1, camera_handles_.data()));
 
@@ -275,6 +284,9 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     applyCameraParameters();
 
+    const int bgr_buffer_size = getMaxBufferSize();
+    bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * bgr_buffer_size);
+
     if (param_.publish_rectified_preview) {
         initCalibParams();
     }
@@ -289,6 +301,19 @@ void CameraNode::applyCameraParameters() {
 void CameraNode::applyParamsToCamera(int camera_idx) {
     int handle = camera_handles_[camera_idx];
     std::string prefix = "camera_" + std::to_string(camera_idx) + ".";
+    {
+        tSdkCameraCapbility camera_capability;
+        abortIfNot(
+            "get image size", CameraGetCapability(camera_handles_[camera_idx], &camera_capability));
+        tSdkImageResolution* resolution_data = camera_capability.pImageSizeDesc;
+        RCLCPP_INFO(
+            this->get_logger(),
+            "camera=%i, image_size=(%i, %i)",
+            camera_idx,
+            resolution_data->iWidth,
+            resolution_data->iHeight);
+        frame_sizes_[camera_idx] = cv::Size(resolution_data->iWidth, resolution_data->iHeight);
+    }
 
     {
         const std::string param = "auto_exposure";
@@ -415,12 +440,12 @@ cv::Mat rescale(const cv::Mat& image, const cv::Size& size) {
 void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int idx) {
     const auto header = makeHeader(timestamp, idx);
 
-    const int bgr_buffer_size = 3 * param_.frame_size.width * param_.frame_size.height;
+    const int bgr_buffer_size = getMaxBufferSize();
     const auto bgr_buffer = bgr_buffer_.get() + idx * bgr_buffer_size;
 
     abortIfNot(
         "get bgr", CameraImageProcess(camera_handles_[idx], buffer, bgr_buffer, &frame_info_[idx]));
-    cv::Mat image(param_.frame_size, CV_8UC3, bgr_buffer);
+    cv::Mat image(frame_sizes_[idx], CV_8UC3, bgr_buffer);
 
     if (param_.publish_bgr) {
         cv_bridge::CvImage cv_image(header, "bgr8", image);
@@ -442,7 +467,7 @@ void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int id
 
 void CameraNode::publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx) {
     const auto header = makeHeader(timestamp, camera_idx);
-    cv::Mat image(param_.frame_size, CV_8UC1, buffer);
+    cv::Mat image(frame_sizes_[camera_idx], CV_8UC1, buffer);
 
     if (param_.publish_raw) {
         cv_bridge::CvImage cv_image(header, "mono8", image);
@@ -477,10 +502,10 @@ void CameraNode::handleOnTimer() {
 
         const cv::Size size{frame_info_[i].iWidth, frame_info_[i].iHeight};
 
-        if (size != param_.frame_size) {
+        if (size != frame_sizes_[i]) {
             RCLCPP_ERROR_STREAM(
                 this->get_logger(),
-                "expected frame size " << param_.frame_size << ", but got " << size);
+                "expected frame size " << frame_sizes_[i] << ", but got " << size);
             abort();
         }
     }
@@ -502,7 +527,7 @@ void CameraNode::initCalibParams() {
     for (int idx = 0; idx < param_.camera_num; ++idx) {
         RCLCPP_INFO_STREAM(this->get_logger(), "loading camera " << idx << " parameters");
         cameras_params_modules_.push_back(CameraUndistortModule::load(
-            param_.calibration_file_paths[idx], std::make_optional<cv::Size>(param_.frame_size)));
+            param_.calibration_file_paths[idx], std::make_optional<cv::Size>(frame_sizes_[idx])));
 
         RCLCPP_INFO_STREAM(this->get_logger(), "got undistortion maps");
     }

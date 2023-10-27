@@ -1,7 +1,7 @@
 launch:
 - arg:
     name: "calibration_file_path"
-    default: ""$(find-pkg-share camera)/params/camera_params.yaml"
+    default: "$(find-pkg-share camera)/params/camera_params.yaml"
 - arg:
     name: "publish_raw_preview"
     default: "False"
@@ -23,7 +23,7 @@ launch:
     exec: "camera"
     name: "camera"
     param:
-    - {name: "num_of_cameras", value: 1}
+    - {name: "camera_num", value: 1}
     - {name: "fps", value: 10.0}
     - {name: "preview/width", value: 1280}
     - {name: "preview/height", value: 1024}
@@ -40,7 +40,7 @@ launch:
         - {name: "exposure_time", value: 6000}       # range: ...
         - {name: "contrast", value: 100}              # range: 0-100
         - {name: "gain_rgb", value: [120, 120, 120]}  # range: 0-400, auto default if analog_gain != -1
-        - {name: "analog_gain", value: 9}             # range: 0 - 15 approx.
+        - {name: "analog_gain", value: 9}
         - {name: "gamma", value: 80}                  # range: 0-250
         - {name: "saturation", value: 100}            # range: 0-200
         - {name: "sharpness", value: 0}               # range: 0-100

@@ -34,10 +34,11 @@ class CameraNode : public rclcpp::Node {
 
     void abortIfNot(std::string_view msg, int status);
     void abortIfNot(std::string_view msg, int camera_idx, int status);
+    
+    int getMaxBufferSize();
 
     struct Params {
         cv::Size preview_frame_size = cv::Size(640, 480);
-        cv::Size frame_size = cv::Size(1280, 1024);
         std::chrono::duration<double> latency{50.0};
         std::vector<std::string> calibration_file_paths = {"param_save/camera_params.yaml"};
         int camera_num = 0;
@@ -46,6 +47,7 @@ class CameraNode : public rclcpp::Node {
         bool publish_raw = false;
         bool publish_raw_preview = false;
         bool publish_rectified_preview = false;
+        int max_buffer_size = 0;
     } param_{};
 
     std::vector<int> camera_handles_ = {};
@@ -53,6 +55,7 @@ class CameraNode : public rclcpp::Node {
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<tSdkFrameHead> frame_info_ = {};
     std::vector<CameraUndistortModule> cameras_params_modules_ = {};
+    std::vector<cv::Size> frame_sizes_ = {};
 
     struct Signals {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_img;
