@@ -124,6 +124,10 @@ class CalibrationNode : public rclcpp::Node {
         int calibration_state = NOT_CALIBRATED;
     } state_;
 
+    struct Timer {
+        rclcpp::TimerBase::SharedPtr calibration_state = nullptr;
+    } timer_{};
+
     CameraIntrinsicParameters intrinsic_params_{};
 };
 }  // namespace handy::calibration

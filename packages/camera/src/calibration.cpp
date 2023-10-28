@@ -120,7 +120,10 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
             param_.square_obj_points.push_back(cv::Point3f(i, j, 0));
         }
     }
-    publishCalibrationState();
+
+    timer_.calibration_state =
+        this->create_wall_timer(250ms, std::bind(&CalibrationNode::publishCalibrationState, this));
+
     signal_.detected_boards->publish(state_.board_markers_array);
 }
 
@@ -190,7 +193,6 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
     if (param_.publish_preview_markers && found) {
         appendCornerMarkers(detected_corners);
     }
-    publishCalibrationState();
     signal_.detected_corners->publish(state_.board_corners_array);
 }
 
@@ -214,7 +216,6 @@ void CalibrationNode::onButtonClick(
         state_.polygons_all.clear();
         signal_.detected_boards->publish(state_.board_markers_array);
     }
-    publishCalibrationState();
 }
 
 bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f>& corners) const {
@@ -303,7 +304,6 @@ void CalibrationNode::handleBadCalibration() {
     RCLCPP_INFO_STREAM(this->get_logger(), "Continue taking frames");
 
     state_.calibration_state = CAPTURING;
-    publishCalibrationState();
 }
 
 void CalibrationNode::calibrate() {
@@ -338,10 +338,7 @@ void CalibrationNode::calibrate() {
         handleBadCalibration();
         return;
     }
-    publishCalibrationState();
 }
 
-void CalibrationNode::saveCalibParams() const {
-    intrinsic_params_.save();
-}
+void CalibrationNode::saveCalibParams() const { intrinsic_params_.save(); }
 }  // namespace handy::calibration
