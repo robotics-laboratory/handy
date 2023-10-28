@@ -336,7 +336,6 @@ void CalibrationNode::calibrate() {
         state_.calibration_state = OK_CALIBRATION;
     } else {
         handleBadCalibration();
-        return;
     }
 }
 
