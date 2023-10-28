@@ -101,7 +101,7 @@ class CalibrationNode : public rclcpp::Node {
 
         std::vector<cv::Point3f> square_obj_points;
 
-        bool publish_chessboard_preview = true;
+        bool publish_preview_markers = true;
         bool auto_calibrate = true;
 
         std::vector<double> marker_color = {0.0, 1.0, 0.0, 0.12};
@@ -116,6 +116,7 @@ class CalibrationNode : public rclcpp::Node {
 
         std::vector<std::vector<cv::Point2f>> detected_corners_all;
         std::vector<std::vector<cv::Point3f>> object_points_all;
+        std::vector<Polygon> polygons_all;
         foxglove_msgs::msg::ImageMarkerArray board_markers_array;
         foxglove_msgs::msg::ImageMarkerArray board_corners_array;
 

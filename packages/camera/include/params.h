@@ -9,15 +9,20 @@ struct CameraUndistortModule;
 
 struct CameraIntrinsicParameters {
     CameraIntrinsicParameters() = default;
-    void save(const std::string& path_to_yaml_file) const;
+    CameraIntrinsicParameters(const std::string& path_to_yaml_file, const std::string& calib_name);
+    void save() const;
     static CameraUndistortModule load(
-        const std::string& path_to_yaml_file, std::optional<cv::Size> frame_size = std::nullopt);
+        const std::string& path_to_yaml_file, const std::string& calib_name,
+        std::optional<cv::Size> frame_size = std::nullopt);
 
     cv::Mat camera_matrix;
     cv::Vec<float, 5> dist_coefs;
+    std::string path_to_yaml_file;
+    std::string calib_name;
 };
 
 struct CameraUndistortModule : CameraIntrinsicParameters {
+    CameraUndistortModule(const std::string& path_to_yaml_file, const std::string& calib_name);
     void initUndistortMaps(cv::Size& frame_size);
     void initUndistortMaps(std::optional<cv::Size> frame_size);
     cv::Mat undistortImage(cv::Mat& src);

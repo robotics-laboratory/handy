@@ -214,15 +214,10 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     RCLCPP_INFO_STREAM(this->get_logger(), "all cameras started!");
 
-    param_.calibration_file_paths = this->declare_parameter<std::vector<std::string>>(
-        "calibration_file_paths", {"param_save/camera_params.yaml"});
-    for (int i = 0; i < param_.camera_num; ++i) {
-        RCLCPP_INFO(
-            this->get_logger(),
-            "calibration file paths: (%d)  %s",
-            i,
-            param_.calibration_file_paths[i]);
-    }
+    param_.calibration_file_path = this->declare_parameter<std::string>(
+        "calibration_file_path", "param_save/camera_params.yaml");
+    RCLCPP_INFO(
+        this->get_logger(), "parameters will be read from: %s", param_.calibration_file_path);
 
     param_.publish_raw = this->declare_parameter<bool>("publish_raw", false);
     RCLCPP_INFO(this->get_logger(), "publish raw: %i", param_.publish_raw);
@@ -526,8 +521,11 @@ void CameraNode::handleOnTimer() {
 void CameraNode::initCalibParams() {
     for (int idx = 0; idx < param_.camera_num; ++idx) {
         RCLCPP_INFO_STREAM(this->get_logger(), "loading camera " << idx << " parameters");
+        std::string calibration_name = "camera_" + std::to_string(idx);
         cameras_params_modules_.push_back(CameraUndistortModule::load(
-            param_.calibration_file_paths[idx], std::make_optional<cv::Size>(frame_sizes_[idx])));
+            param_.calibration_file_path,
+            calibration_name,
+            std::make_optional<cv::Size>(frame_sizes_[idx])));
 
         RCLCPP_INFO_STREAM(this->get_logger(), "got undistortion maps");
     }

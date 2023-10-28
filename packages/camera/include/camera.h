@@ -40,7 +40,7 @@ class CameraNode : public rclcpp::Node {
     struct Params {
         cv::Size preview_frame_size = cv::Size(640, 480);
         std::chrono::duration<double> latency{50.0};
-        std::vector<std::string> calibration_file_paths = {"param_save/camera_params.yaml"};
+        std::string calibration_file_path = "param_save/camera_params.yaml";
         int camera_num = 0;
         bool publish_bgr = false;
         bool publish_bgr_preview = false;

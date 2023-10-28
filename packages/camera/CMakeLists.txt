@@ -56,8 +56,7 @@ install(TARGETS camera calibration
    DESTINATION lib/${PROJECT_NAME})
   
 install(DIRECTORY
-    launch
-    DESTINATION share/${PROJECT_NAME}
-)
+    launch params
+    DESTINATION share/${PROJECT_NAME})
 
 ament_package()

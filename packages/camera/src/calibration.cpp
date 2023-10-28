@@ -110,6 +110,8 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     declareLaunchParams();
     RCLCPP_INFO_STREAM(this->get_logger(), "Launch params declared");
 
+    intrinsic_params_ = CameraIntrinsicParameters(param_.path_to_save_params, "camera_0");
+
     initSignals();
     RCLCPP_INFO_STREAM(this->get_logger(), "Signals initialised");
 
@@ -124,7 +126,7 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
 
 void CalibrationNode::declareLaunchParams() {
     // clang-format off
-    param_.publish_chessboard_preview = this->declare_parameter<bool>("publish_chessboard_preview", true);
+    param_.publish_preview_markers = this->declare_parameter<bool>("publish_preview_markers", true);
     param_.path_to_save_params = this->declare_parameter<std::string>("calibration_file_path", "param_save");
 
     param_.coverage_required = this->declare_parameter<double>("coverage_required", 0.7);
@@ -170,7 +172,7 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
     bool found = cv::findChessboardCorners(
         image_ptr->image, param_.pattern_size, detected_corners, cv::CALIB_CB_FAST_CHECK);
     if (found && checkMaxSimilarity(detected_corners)) {
-        if (param_.publish_chessboard_preview) {
+        if (param_.publish_preview_markers) {
             state_.board_markers_array.markers.push_back(
                 getBoardMarkerFromCorners(detected_corners, image_ptr->header));
             signal_.detected_boards->publish(state_.board_markers_array);
@@ -178,9 +180,14 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
 
         state_.detected_corners_all.push_back(detected_corners);
         state_.object_points_all.push_back(param_.square_obj_points);
+        state_.polygons_all.emplace_back();
+
+        const std::vector<Point> cur_points =
+            convertToBoostCorners(detected_corners, param_.pattern_size);
+        append(state_.polygons_all.back(), cur_points);
     }
     state_.board_corners_array.markers.clear();
-    if (param_.publish_chessboard_preview && found) {
+    if (param_.publish_preview_markers && found) {
         appendCornerMarkers(detected_corners);
     }
     publishCalibrationState();
@@ -204,41 +211,29 @@ void CalibrationNode::onButtonClick(
         state_.detected_corners_all.clear();
         state_.object_points_all.clear();
         state_.board_markers_array.markers.clear();
+        state_.polygons_all.clear();
         signal_.detected_boards->publish(state_.board_markers_array);
     }
     publishCalibrationState();
 }
 
 bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f>& corners) const {
-    Polygon new_poly, prev_poly;
+    Polygon new_poly;
     const std::vector<Point> new_points = convertToBoostCorners(corners, param_.pattern_size);
     append(new_poly, new_points);
 
     return std::all_of(
-        state_.detected_corners_all.begin(),
-        state_.detected_corners_all.end(),
-        [&](const std::vector<cv::Point2f>& prev_corners) {
-            const std::vector<Point> prev_points =
-                convertToBoostCorners(prev_corners, param_.pattern_size);
-
-            clear(prev_poly);
-            append(prev_poly, prev_points);
-
+        state_.polygons_all.begin(), state_.polygons_all.end(), [&](const Polygon& prev_poly) {
             return getIou(prev_poly, new_poly) <= param_.iou_treshhold;
         });
 }
-int CalibrationNode::checkOverallCoverage() const {
-    Polygon new_poly;
-    MultiPolygon current_coverage, tmp_poly;
 
-    for (const std::vector<cv::Point2f> cur_corners : state_.detected_corners_all) {
-        const std::vector<Point> cur_points =
-            convertToBoostCorners(cur_corners, param_.pattern_size);
-        append(new_poly, cur_points);
+int CalibrationNode::checkOverallCoverage() const {
+    MultiPolygon current_coverage;
+    for (const Polygon& new_poly : state_.polygons_all) {
+        MultiPolygon tmp_poly;
         union_(current_coverage, new_poly, tmp_poly);
         current_coverage = tmp_poly;
-        clear(tmp_poly);
-        clear(new_poly);
     }
     float ratio = area(current_coverage) / (state_.frame_size_->height * state_.frame_size_->width);
     return static_cast<int>(ratio * 100);
@@ -347,6 +342,6 @@ void CalibrationNode::calibrate() {
 }
 
 void CalibrationNode::saveCalibParams() const {
-    intrinsic_params_.save(param_.path_to_save_params);
+    intrinsic_params_.save();
 }
 }  // namespace handy::calibration
