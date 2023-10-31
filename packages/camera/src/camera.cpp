@@ -182,8 +182,8 @@ CameraNode::CameraNode() : Node("camera_node") {
     abortIfNot("camera init", CameraSdkInit(0));
 
     int camera_num = 100;  // attach all conntected cameras
-    tSdkCameraDevInfo cameras_list;
-    abortIfNot("camera listing", CameraEnumerateDevice(&cameras_list, &camera_num));
+    tSdkCameraDevInfo cameras_list[100];
+    abortIfNot("camera listing", CameraEnumerateDevice(cameras_list, &camera_num));
 
     param_.camera_num = this->declare_parameter<int>("camera_num", 1);
     if (param_.camera_num != camera_num) {
@@ -205,9 +205,8 @@ CameraNode::CameraNode() : Node("camera_node") {
     frame_info_ = std::vector<tSdkFrameHead>(param_.camera_num);
     frame_sizes_ = std::vector<cv::Size>(param_.camera_num);
 
-    abortIfNot("cameras init", CameraInit(&cameras_list, -1, -1, camera_handles_.data()));
-
     for (int i = 0; i < param_.camera_num; ++i) {
+        abortIfNot("camera init " + std::to_string(i), CameraInit(&cameras_list[i], -1, -1, &camera_handles_[i]));
         abortIfNot("set icp", i, CameraSetIspOutFormat(camera_handles_[i], CAMERA_MEDIA_TYPE_BGR8));
         abortIfNot("start", CameraPlay(camera_handles_[i]));
     }
