@@ -1,5 +1,7 @@
 #include "camera.h"
 
+#include <cv_bridge/cv_bridge.hpp>
+
 namespace handy::camera {
 
 using namespace std::chrono_literals;
@@ -164,12 +166,22 @@ void CameraNode::abortIfNot(std::string_view msg, int camera_idx, int status) {
     }
 }
 
+namespace {
+int MaxBufSize(const std::vector<cv::Size>& frame_sizes) {
+    int max_size = 0;
+    for (size_t i = 0; i < frame_sizes.size(); ++i) {
+        max_size = std::max(max_size, 3 * frame_sizes[i].width * frame_sizes[i].height);
+    }
+    return max_size;
+}
+}  // namespace
+
 CameraNode::CameraNode() : Node("camera_node") {
     abortIfNot("camera init", CameraSdkInit(0));
 
-    int camera_num = 100;  // attach all conntected camers
-    tSdkCameraDevInfo cameras_list;
-    abortIfNot("camera listing", CameraEnumerateDevice(&cameras_list, &camera_num));
+    int camera_num = 100;  // attach all conntected cameras
+    tSdkCameraDevInfo cameras_list[100];
+    abortIfNot("camera listing", CameraEnumerateDevice(cameras_list, &camera_num));
 
     param_.camera_num = this->declare_parameter<int>("camera_num", 1);
     if (param_.camera_num != camera_num) {
@@ -184,36 +196,46 @@ CameraNode::CameraNode() : Node("camera_node") {
     param_.preview_frame_size.width = this->declare_parameter<int>("preview/width", 640);
     param_.preview_frame_size.height = this->declare_parameter<int>("preview/height", 480);
 
-    RCLCPP_INFO_STREAM(this->get_logger(), "frame size=" << param_.frame_size);
     RCLCPP_INFO_STREAM(this->get_logger(), "frame preview size=" << param_.preview_frame_size);
-
-    const int bgr_buffer_size = 3 * param_.frame_size.width * param_.frame_size.height;
 
     camera_handles_ = std::vector<int>(param_.camera_num);
     raw_buffer_ptr_ = std::vector<uint8_t*>(param_.camera_num);
-    bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * bgr_buffer_size);
     frame_info_ = std::vector<tSdkFrameHead>(param_.camera_num);
-
-    abortIfNot("cameras init", CameraInit(&cameras_list, -1, -1, camera_handles_.data()));
+    frame_sizes_ = std::vector<cv::Size>(param_.camera_num);
 
     for (int i = 0; i < param_.camera_num; ++i) {
+        abortIfNot(
+            "camera init " + std::to_string(i),
+            CameraInit(&cameras_list[i], -1, -1, &camera_handles_[i]));
         abortIfNot("set icp", i, CameraSetIspOutFormat(camera_handles_[i], CAMERA_MEDIA_TYPE_BGR8));
         abortIfNot("start", CameraPlay(camera_handles_[i]));
     }
 
     RCLCPP_INFO_STREAM(this->get_logger(), "all cameras started!");
 
+    param_.calibration_file_path = this->declare_parameter<std::string>(
+        "calibration_file_path", "param_save/camera_params.yaml");
+    RCLCPP_INFO(
+        this->get_logger(), "parameters will be read from: %s", param_.calibration_file_path);
+
     param_.publish_raw = this->declare_parameter<bool>("publish_raw", false);
-    RCLCPP_INFO(this->get_logger(), "publist raw: %i", param_.publish_raw);
+    RCLCPP_INFO(this->get_logger(), "publish raw: %i", param_.publish_raw);
 
     param_.publish_raw_preview = this->declare_parameter<bool>("publish_raw_preview", false);
     RCLCPP_INFO(this->get_logger(), "publish raw preview: %i", param_.publish_raw_preview);
 
     param_.publish_bgr = this->declare_parameter<bool>("publish_bgr", false);
-    RCLCPP_INFO(this->get_logger(), "publist bgr: %i", param_.publish_bgr);
+    RCLCPP_INFO(this->get_logger(), "publish bgr: %i", param_.publish_bgr);
 
     param_.publish_bgr_preview = this->declare_parameter<bool>("publish_bgr_preview", false);
-    RCLCPP_INFO(this->get_logger(), "publist bgr preview: %i", param_.publish_bgr_preview);
+    RCLCPP_INFO(this->get_logger(), "publish bgr preview: %i", param_.publish_bgr_preview);
+
+    param_.publish_rectified_preview =
+        this->declare_parameter<bool>("publish_rectified_preview", false);
+    RCLCPP_INFO(
+        this->get_logger(),
+        "publish rectified preview image: %i",
+        param_.publish_rectified_preview);
 
     for (int i = 1; i <= param_.camera_num; ++i) {
         const std::string root = "/camera_" + std::to_string(i);
@@ -240,14 +262,28 @@ CameraNode::CameraNode() : Node("camera_node") {
                 this->create_publisher<sensor_msgs::msg::CompressedImage>(
                     root + "/bgr/preview", queue_size));
         }
+
+        if (param_.publish_rectified_preview) {
+            signals_.rectified_preview_img.push_back(
+                this->create_publisher<sensor_msgs::msg::CompressedImage>(
+                    root + "/rectified/preview", queue_size));
+        }
     }
 
     const auto fps = this->declare_parameter<double>("fps", 20.0);
     param_.latency = std::chrono::duration<double>(1 / fps);
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
-    timer_ = this->create_wall_timer(param_.latency, std::bind(&CameraNode::handleOnTimer, this));
+    timer_.camera_capture =
+        this->create_wall_timer(param_.latency, std::bind(&CameraNode::handleOnTimer, this));
 
     applyCameraParameters();
+
+    param_.max_buffer_size = MaxBufSize(frame_sizes_);
+    bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * param_.max_buffer_size);
+
+    if (param_.publish_rectified_preview) {
+        initCalibParams();
+    }
 }
 
 void CameraNode::applyCameraParameters() {
@@ -259,6 +295,19 @@ void CameraNode::applyCameraParameters() {
 void CameraNode::applyParamsToCamera(int camera_idx) {
     int handle = camera_handles_[camera_idx];
     std::string prefix = "camera_" + std::to_string(camera_idx) + ".";
+    {
+        tSdkCameraCapbility camera_capability;
+        abortIfNot(
+            "get image size", CameraGetCapability(camera_handles_[camera_idx], &camera_capability));
+        tSdkImageResolution* resolution_data = camera_capability.pImageSizeDesc;
+        RCLCPP_INFO(
+            this->get_logger(),
+            "camera=%i, image_size=(%i, %i)",
+            camera_idx,
+            resolution_data->iWidth,
+            resolution_data->iHeight);
+        frame_sizes_[camera_idx] = cv::Size(resolution_data->iWidth, resolution_data->iHeight);
+    }
 
     {
         const std::string param = "auto_exposure";
@@ -282,7 +331,7 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
                 param_.latency.count());
             abort();
         }
-        
+
         abortIfNot("set exposure", camera_idx, CameraSetExposureTime(handle, exposure.count()));
         RCLCPP_INFO(this->get_logger(), "camera=%i, exposure=%lius", camera_idx, exposure.count());
     }
@@ -384,13 +433,11 @@ cv::Mat rescale(const cv::Mat& image, const cv::Size& size) {
 
 void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int idx) {
     const auto header = makeHeader(timestamp, idx);
-
-    const int bgr_buffer_size = 3 * param_.frame_size.width * param_.frame_size.height;
-    const auto bgr_buffer = bgr_buffer_.get() + idx * bgr_buffer_size;
+    const auto bgr_buffer = bgr_buffer_.get() + idx * param_.max_buffer_size;
 
     abortIfNot(
         "get bgr", CameraImageProcess(camera_handles_[idx], buffer, bgr_buffer, &frame_info_[idx]));
-    cv::Mat image(param_.frame_size, CV_8UC3, bgr_buffer);
+    cv::Mat image(frame_sizes_[idx], CV_8UC3, bgr_buffer);
 
     if (param_.publish_bgr) {
         cv_bridge::CvImage cv_image(header, "bgr8", image);
@@ -401,11 +448,18 @@ void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int id
         cv_bridge::CvImage cv_image(header, "bgr8", rescale(image, param_.preview_frame_size));
         signals_.bgr_preview_img[idx]->publish(toJpegMsg(cv_image));
     }
+
+    if (param_.publish_rectified_preview) {
+        cv::Mat undistorted_image = cameras_intrinsics_[idx].undistortImage(image);
+        cv_bridge::CvImage cv_image(
+            header, "bgr8", rescale(undistorted_image, param_.preview_frame_size));
+        signals_.rectified_preview_img[idx]->publish(toJpegMsg(cv_image));
+    }
 }
 
 void CameraNode::publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx) {
     const auto header = makeHeader(timestamp, camera_idx);
-    cv::Mat image(param_.frame_size, CV_8UC1, buffer);
+    cv::Mat image(frame_sizes_[camera_idx], CV_8UC1, buffer);
 
     if (param_.publish_raw) {
         cv_bridge::CvImage cv_image(header, "mono8", image);
@@ -440,10 +494,10 @@ void CameraNode::handleOnTimer() {
 
         const cv::Size size{frame_info_[i].iWidth, frame_info_[i].iHeight};
 
-        if (size != param_.frame_size) {
+        if (size != frame_sizes_[i]) {
             RCLCPP_ERROR_STREAM(
                 this->get_logger(),
-                "expected frame size " << param_.frame_size << ", but got " << size);
+                "expected frame size " << frame_sizes_[i] << ", but got " << size);
             abort();
         }
     }
@@ -461,4 +515,12 @@ void CameraNode::handleOnTimer() {
     }
 }
 
+void CameraNode::initCalibParams() {
+    for (int idx = 0; idx < param_.camera_num; ++idx) {
+        RCLCPP_INFO_STREAM(this->get_logger(), "loading camera " << idx << " parameters");
+        std::string calibration_name = "camera_" + std::to_string(idx);
+        cameras_intrinsics_.push_back(
+            CameraIntrinsicParameters::loadFromYaml(param_.calibration_file_path));
+    }
+}
 }  // namespace handy::camera

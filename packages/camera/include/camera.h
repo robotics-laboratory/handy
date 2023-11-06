@@ -2,11 +2,11 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
-#include <cv_bridge/cv_bridge.hpp>
 
 #include <opencv2/core/core.hpp>
 
 #include "CameraApi.h"
+#include "params.h"
 
 #include <chrono>
 #include <cstdint>
@@ -23,42 +23,50 @@ class CameraNode : public rclcpp::Node {
   private:
     void applyCameraParameters();
     void applyParamsToCamera(int camera_idx);
+    void initCalibParams();
 
     void handleOnTimer();
 
-    void publishRawImage(uint8_t *buffer, rclcpp::Time timestamp, int camera_idx);
-    void publishBGRImage(uint8_t *buffer, rclcpp::Time timestamp, int camera_idx);
+    void publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
+    void publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
 
     void abortIfNot(std::string_view msg, int status);
     void abortIfNot(std::string_view msg, int camera_idx, int status);
 
     struct Params {
-        cv::Size frame_size = cv::Size(1280, 1024);
         cv::Size preview_frame_size = cv::Size(640, 480);
         std::chrono::duration<double> latency{50.0};
+        std::string calibration_file_path = "";
         int camera_num = 0;
         bool publish_bgr = false;
         bool publish_bgr_preview = false;
         bool publish_raw = false;
         bool publish_raw_preview = false;
-    } param_;
+        bool publish_rectified_preview = false;
+        int max_buffer_size = 0;
+    } param_{};
 
     std::vector<int> camera_handles_ = {};
     std::vector<uint8_t*> raw_buffer_ptr_ = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<tSdkFrameHead> frame_info_ = {};
+    std::vector<CameraIntrinsicParameters> cameras_intrinsics_ = {};
+    std::vector<cv::Size> frame_sizes_ = {};
 
     struct Signals {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_img;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_img;
 
         // clang-format off
+        std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> rectified_preview_img;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_preview_img;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_preview_img;
         // clang-format on
-    } signals_;
+    } signals_{};
 
-    rclcpp::TimerBase::SharedPtr timer_ = nullptr;
+    struct Timers {
+        rclcpp::TimerBase::SharedPtr camera_capture = nullptr;
+    } timer_{};
 };
 
 }  // namespace handy::camera
