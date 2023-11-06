@@ -4,8 +4,6 @@
 #include <sensor_msgs/msg/compressed_image.hpp>
 
 #include <opencv2/core/core.hpp>
-#include <opencv2/calib3d.hpp>
-#include <opencv2/imgcodecs.hpp>
 
 #include "CameraApi.h"
 #include "params.h"
@@ -34,13 +32,11 @@ class CameraNode : public rclcpp::Node {
 
     void abortIfNot(std::string_view msg, int status);
     void abortIfNot(std::string_view msg, int camera_idx, int status);
-    
-    int getMaxBufferSize();
 
     struct Params {
         cv::Size preview_frame_size = cv::Size(640, 480);
         std::chrono::duration<double> latency{50.0};
-        std::string calibration_file_path = "param_save/camera_params.yaml";
+        std::string calibration_file_path = "";
         int camera_num = 0;
         bool publish_bgr = false;
         bool publish_bgr_preview = false;
@@ -54,7 +50,7 @@ class CameraNode : public rclcpp::Node {
     std::vector<uint8_t*> raw_buffer_ptr_ = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<tSdkFrameHead> frame_info_ = {};
-    std::vector<CameraUndistortModule> cameras_params_modules_ = {};
+    std::vector<CameraIntrinsicParameters> cameras_intrinsics_ = {};
     std::vector<cv::Size> frame_sizes_ = {};
 
     struct Signals {

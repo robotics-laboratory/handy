@@ -1,7 +1,6 @@
 #pragma once
 
-#include "params.h"
-#include "camera_srvs/srv/cmd_service.hpp"
+#include "camera_srvs/srv/calibration_command.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 #include <cv_bridge/cv_bridge.hpp>
@@ -21,14 +20,6 @@
 #include <string>
 #include <optional>
 
-namespace {
-
-geometry_msgs::msg::Point toMsgPoint(cv::Point2f cv_point);
-
-std::vector<geometry_msgs::msg::Point> toMsgCorners(
-    const std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size);
-
-}  // namespace
 namespace handy::calibration {
 
 typedef boost::geometry::model::d2::point_xy<double> Point;
@@ -62,15 +53,15 @@ class CalibrationNode : public rclcpp::Node {
     void publishCalibrationState() const;
 
     void onButtonClick(
-        const camera_srvs::srv::CmdService::Request::SharedPtr request,
-        camera_srvs::srv::CmdService::Response::SharedPtr response);
+        const camera_srvs::srv::CalibrationCommand::Request::SharedPtr request,
+        camera_srvs::srv::CalibrationCommand::Response::SharedPtr response);
 
     void calibrate();
-    void saveCalibParams() const;
     void handleBadCalibration();
+    void handleResetCommand();
 
     bool checkMaxSimilarity(std::vector<cv::Point2f>& corners) const;
-    int checkOverallCoverage() const;
+    int getImageCoverage() const;
 
     void initCornerMarkers();
     void appendCornerMarkers(const std::vector<cv::Point2f>& detected_corners);
@@ -92,11 +83,11 @@ class CalibrationNode : public rclcpp::Node {
     } slot_{};
 
     struct Services {
-        rclcpp::Service<camera_srvs::srv::CmdService>::SharedPtr button_service = nullptr;
+        rclcpp::Service<camera_srvs::srv::CalibrationCommand>::SharedPtr button_service = nullptr;
     } service_{};
 
     struct Params {
-        std::string path_to_save_params = "param_save";
+        std::string path_to_save_params = "";
         cv::Size pattern_size = cv::Size(9, 6);
 
         std::vector<cv::Point3f> square_obj_points;
@@ -108,11 +99,11 @@ class CalibrationNode : public rclcpp::Node {
         double min_accepted_error = 0.75;
         double alpha_chn_increase = 0.12;
         double iou_treshhold = 0.5;
-        double coverage_required = 0.7;
+        double required_board_coverage = 0.7;
     } param_;
 
     struct State {
-        std::optional<cv::Size> frame_size_ = std::nullopt;
+        std::optional<cv::Size> frame_size = std::nullopt;
 
         std::vector<std::vector<cv::Point2f>> detected_corners_all;
         std::vector<std::vector<cv::Point3f>> object_points_all;
@@ -127,7 +118,5 @@ class CalibrationNode : public rclcpp::Node {
     struct Timer {
         rclcpp::TimerBase::SharedPtr calibration_state = nullptr;
     } timer_{};
-
-    CameraIntrinsicParameters intrinsic_params_{};
 };
 }  // namespace handy::calibration

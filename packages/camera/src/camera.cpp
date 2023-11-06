@@ -166,17 +166,15 @@ void CameraNode::abortIfNot(std::string_view msg, int camera_idx, int status) {
     }
 }
 
-int CameraNode::getMaxBufferSize() {
-    if (param_.max_buffer_size) {
-        return param_.max_buffer_size;
-    }
+namespace {
+int MaxBufSize(const std::vector<cv::Size>& frame_sizes) {
     int max_size = 0;
-    for (int i = 0; i < frame_sizes_.size(); ++i) {
-        max_size = std::max(max_size, 3 * frame_sizes_[i].width * frame_sizes_[i].height);
+    for (size_t i = 0; i < frame_sizes.size(); ++i) {
+        max_size = std::max(max_size, 3 * frame_sizes[i].width * frame_sizes[i].height);
     }
-    param_.max_buffer_size = max_size;
     return max_size;
 }
+}  // namespace
 
 CameraNode::CameraNode() : Node("camera_node") {
     abortIfNot("camera init", CameraSdkInit(0));
@@ -206,7 +204,9 @@ CameraNode::CameraNode() : Node("camera_node") {
     frame_sizes_ = std::vector<cv::Size>(param_.camera_num);
 
     for (int i = 0; i < param_.camera_num; ++i) {
-        abortIfNot("camera init " + std::to_string(i), CameraInit(&cameras_list[i], -1, -1, &camera_handles_[i]));
+        abortIfNot(
+            "camera init " + std::to_string(i),
+            CameraInit(&cameras_list[i], -1, -1, &camera_handles_[i]));
         abortIfNot("set icp", i, CameraSetIspOutFormat(camera_handles_[i], CAMERA_MEDIA_TYPE_BGR8));
         abortIfNot("start", CameraPlay(camera_handles_[i]));
     }
@@ -278,8 +278,8 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     applyCameraParameters();
 
-    const int bgr_buffer_size = getMaxBufferSize();
-    bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * bgr_buffer_size);
+    param_.max_buffer_size = MaxBufSize(frame_sizes_);
+    bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * param_.max_buffer_size);
 
     if (param_.publish_rectified_preview) {
         initCalibParams();
@@ -433,9 +433,7 @@ cv::Mat rescale(const cv::Mat& image, const cv::Size& size) {
 
 void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int idx) {
     const auto header = makeHeader(timestamp, idx);
-
-    const int bgr_buffer_size = getMaxBufferSize();
-    const auto bgr_buffer = bgr_buffer_.get() + idx * bgr_buffer_size;
+    const auto bgr_buffer = bgr_buffer_.get() + idx * param_.max_buffer_size;
 
     abortIfNot(
         "get bgr", CameraImageProcess(camera_handles_[idx], buffer, bgr_buffer, &frame_info_[idx]));
@@ -452,7 +450,7 @@ void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int id
     }
 
     if (param_.publish_rectified_preview) {
-        cv::Mat undistorted_image = cameras_params_modules_[idx].undistortImage(image);
+        cv::Mat undistorted_image = cameras_intrinsics_[idx].undistortImage(image);
         cv_bridge::CvImage cv_image(
             header, "bgr8", rescale(undistorted_image, param_.preview_frame_size));
         signals_.rectified_preview_img[idx]->publish(toJpegMsg(cv_image));
@@ -521,12 +519,8 @@ void CameraNode::initCalibParams() {
     for (int idx = 0; idx < param_.camera_num; ++idx) {
         RCLCPP_INFO_STREAM(this->get_logger(), "loading camera " << idx << " parameters");
         std::string calibration_name = "camera_" + std::to_string(idx);
-        cameras_params_modules_.push_back(CameraUndistortModule::load(
-            param_.calibration_file_path,
-            calibration_name,
-            std::make_optional<cv::Size>(frame_sizes_[idx])));
-
-        RCLCPP_INFO_STREAM(this->get_logger(), "got undistortion maps");
+        cameras_intrinsics_.push_back(
+            CameraIntrinsicParameters::loadFromYaml(param_.calibration_file_path));
     }
 }
 }  // namespace handy::camera
