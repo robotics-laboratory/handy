@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import os
 
-class SegmantationDataset(Dataset):
+class SegmentationDataset(Dataset):
     TEST_SIZE = 0.2  # Define the test size
 
     def __init__(self, image_dir: str, mask_dir: str, is_train: bool = True, transforms = None, random_seed: int = 42):
