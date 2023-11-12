@@ -58,11 +58,13 @@ class DetectionDataset(Dataset):
         # Read the image and convert it to RGB
         image = cv2.cvtColor(cv2.imread(image_name), cv2.COLOR_BGR2RGB)
 
+        bbox = [bbox['x'], bbox['y'], bbox['x'] + bbox['width'], bbox['y'] + bbox['height']]
+
         # If transforms are defined, apply them to the image and bounding box
         if self.transforms is not None:
             augmented = self.transforms(image=image, bbox=bbox)
             image = augmented["image"]
-            bbox = augmented["bbox"]
+            bbox = augmented["bboxes"][0]
 
         # Return the image, bounding box, and mark
         return image, bbox, mark
