@@ -48,6 +48,11 @@ int maxBufSize(const std::vector<cv::Size>& frame_sizes) {
 }
 }  // namespace
 
+void CameraNode::cameraCallback(
+    CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info, PVOID camera_node_instance) {
+    reinterpret_cast<CameraNode*>(camera_node_instance)->handleFrame(idx, raw_buffer, frame_info);
+}
+
 CameraNode::CameraNode() : Node("camera_node") {
     abortIfNot("camera init", CameraSdkInit(0));
 
@@ -79,7 +84,31 @@ CameraNode::CameraNode() : Node("camera_node") {
         abortIfNot(
             "camera init " + std::to_string(i),
             CameraInit(&cameras_list[i], -1, -1, &camera_handles_[i]));
+        camera_idxs[camera_handles_[i]] = i;
         abortIfNot("set icp", i, CameraSetIspOutFormat(camera_handles_[i], CAMERA_MEDIA_TYPE_BGR8));
+
+        void* placeholder_1;
+        CAMERA_SNAP_PROC* placeholder_2;
+        auto func = [](CameraHandle idx,
+                       BYTE* raw_buffer,
+                       tSdkFrameHead* frame_info,
+                       PVOID camera_node_instance) -> void {
+            reinterpret_cast<CameraNode*>(camera_node_instance)
+                ->handleFrame(idx, raw_buffer, frame_info);
+        };
+        CameraSetCallbackFunction(camera_handles_[i], std::move(func), this, placeholder_2);
+
+        CameraSetTriggerMode(camera_handles_[i], (i == 0) ? SOFT_TRIGGER : EXTERNAL_TRIGGER);
+        if (i != 0) {
+            CameraSetExtTrigSignalType(camera_handles_[i], EXT_TRIG_HIGH_LEVEL);
+            CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_TRIG_INPUT);
+        }
+        CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_STROBE_OUTPUT);
+        CameraSetStrobeMode(camera_handles_[i], STROBE_SYNC_WITH_TRIG_MANUAL);
+        CameraSetStrobePolarity(camera_handles_[i], 1);
+        CameraSetStrobeDelayTime(camera_handles_[i], 0);
+        CameraSetStrobePulseWidth(camera_handles_[i], 500);
+
         abortIfNot("start", CameraPlay(camera_handles_[i]));
     }
 
@@ -147,7 +176,9 @@ CameraNode::CameraNode() : Node("camera_node") {
     const auto fps = this->declare_parameter<double>("fps", 20.0);
     param_.latency = std::chrono::duration<double>(1 / fps);
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
-    timer_.camera_capture = this->create_wall_timer(param_.latency, [this] { handleOnTimer(); });
+
+    timer_.camera_soft_trigger = this->create_wall_timer(
+        param_.latency, [this]() -> void { CameraSoftTrigger(camera_handles_[0]); });
 
     applyCameraParameters();
 
@@ -345,47 +376,29 @@ void CameraNode::publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp,
     }
 }
 
-void CameraNode::handleOnTimer() {
+void CameraNode::handleFrame(CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
     const auto now = this->get_clock()->now();
 
-    for (int i = 0; i < param_.camera_num; ++i) {
-        const auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(param_.latency);
-        const int status = CameraGetImageBuffer(
-            camera_handles_[i], &frame_info_[i], &raw_buffer_ptr_[i], timeout.count());
+    const cv::Size size{frame_info->iWidth, frame_info->iHeight};
 
-        if (status != CAMERA_STATUS_SUCCESS) {
-            const auto status_name = toStatusName(status);
-            RCLCPP_WARN(
-                this->get_logger(),
-                "miss frame camera=%i, %.*s(%i)",
-                i,
-                len(status_name),
-                status_name.data(),
-                status);
-            continue;
-        }
+    RCLCPP_INFO(this->get_logger(), "called camera #%i callback", idx);
 
-        const cv::Size size{frame_info_[i].iWidth, frame_info_[i].iHeight};
-
-        if (size != frame_sizes_[i]) {
-            RCLCPP_ERROR_STREAM(
-                this->get_logger(),
-                "expected frame size " << frame_sizes_[i] << ", but got " << size);
-            abort();
-        }
+    if (size != frame_sizes_[camera_idxs[idx]]) {
+        RCLCPP_ERROR_STREAM(
+            this->get_logger(),
+            "expected frame size " << frame_sizes_[idx] << ", but got " << size);
+        abort();
     }
 
-    for (int i = 0; i < param_.camera_num; ++i) {
-        if (param_.publish_raw || param_.publish_raw_preview) {
-            publishRawImage(raw_buffer_ptr_[i], now, i);
-        }
-
-        if (param_.publish_bgr || param_.publish_bgr_preview) {
-            publishBGRImage(raw_buffer_ptr_[i], now, i);
-        }
-
-        CameraReleaseImageBuffer(camera_handles_[i], raw_buffer_ptr_[i]);
+    if (param_.publish_raw || param_.publish_raw_preview) {
+        publishRawImage(raw_buffer, now, camera_idxs[idx]);
     }
+
+    if (param_.publish_bgr || param_.publish_bgr_preview) {
+        publishBGRImage(raw_buffer, now, camera_idxs[idx]);
+    }
+
+    // CameraReleaseImageBuffer(camera_handles_[i], raw_buffer_ptr_[i]);
 }
 
 void CameraNode::initCalibParams() {

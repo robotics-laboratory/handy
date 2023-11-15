@@ -19,13 +19,15 @@ namespace handy::camera {
 class CameraNode : public rclcpp::Node {
   public:
     CameraNode();
+    static void cameraCallback(
+        CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info, PVOID camera_node_instance);
 
   private:
     void applyCameraParameters();
     void applyParamsToCamera(int camera_idx);
     void initCalibParams();
 
-    void handleOnTimer();
+    void handleFrame(CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info);
 
     void publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx);
     void publishBGRImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx);
@@ -47,6 +49,7 @@ class CameraNode : public rclcpp::Node {
     } param_{};
 
     std::vector<int> camera_handles_ = {};
+    std::map<int, int> camera_idxs = {};
     std::vector<uint8_t*> raw_buffer_ptr_ = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<tSdkFrameHead> frame_info_ = {};
@@ -65,7 +68,7 @@ class CameraNode : public rclcpp::Node {
     } signals_{};
 
     struct Timers {
-        rclcpp::TimerBase::SharedPtr camera_capture = nullptr;
+        rclcpp::TimerBase::SharedPtr camera_soft_trigger = nullptr;
     } timer_{};
 };
 
