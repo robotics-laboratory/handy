@@ -48,15 +48,10 @@ int maxBufSize(const std::vector<cv::Size>& frame_sizes) {
 }
 }  // namespace
 
-void CameraNode::cameraCallback(
-    CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info, PVOID camera_node_instance) {
-    reinterpret_cast<CameraNode*>(camera_node_instance)->handleFrame(idx, raw_buffer, frame_info);
-}
-
 CameraNode::CameraNode() : Node("camera_node") {
     abortIfNot("camera init", CameraSdkInit(0));
 
-    int camera_num = 100;  // attach all conntected cameras
+    int camera_num = 100;  // attach all connected cameras
     tSdkCameraDevInfo cameras_list[100];
     abortIfNot("camera listing", CameraEnumerateDevice(cameras_list, &camera_num));
 
@@ -75,20 +70,33 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     RCLCPP_INFO_STREAM(this->get_logger(), "frame preview size=" << param_.preview_frame_size);
 
+    param_.hardware_triger = this->declare_parameter<bool>("hardware_triger", false);
+
+    RCLCPP_INFO(this->get_logger(), "hardware triger mode: %i", param_.hardware_triger);
+
     camera_handles_ = std::vector<int>(param_.camera_num);
-    raw_buffer_ptr_ = std::vector<uint8_t*>(param_.camera_num);
     frame_info_ = std::vector<tSdkFrameHead>(param_.camera_num);
     frame_sizes_ = std::vector<cv::Size>(param_.camera_num);
+    state_.frame_cnts = std::vector<int>(param_.camera_num, 0);
+    state_.last_trigger_time = this->get_clock()->now();
+
+    int strobe_polarity = this->declare_parameter<int>("strobe_polarity", 1);
+    RCLCPP_INFO_STREAM(
+        this->get_logger(), "strobe polarity mode: " << (strobe_polarity == 1) ? "LOW" : "HIGH");
+    int strobe_pulse_width = this->declare_parameter<int>("strobe_pulse_width", 500);
+    RCLCPP_INFO_STREAM(this->get_logger(), "strobe pulse width = " << strobe_pulse_width);
+    int master_camera_id = this->declare_parameter<int>("master_camera_id", 1);
+    RCLCPP_INFO_STREAM(this->get_logger(), "master camera id = " << master_camera_id);
 
     for (int i = 0; i < param_.camera_num; ++i) {
         abortIfNot(
             "camera init " + std::to_string(i),
             CameraInit(&cameras_list[i], -1, -1, &camera_handles_[i]));
+
         camera_idxs[camera_handles_[i]] = i;
+
         abortIfNot("set icp", i, CameraSetIspOutFormat(camera_handles_[i], CAMERA_MEDIA_TYPE_BGR8));
 
-        void* placeholder_1;
-        CAMERA_SNAP_PROC* placeholder_2;
         auto func = [](CameraHandle idx,
                        BYTE* raw_buffer,
                        tSdkFrameHead* frame_info,
@@ -96,20 +104,32 @@ CameraNode::CameraNode() : Node("camera_node") {
             reinterpret_cast<CameraNode*>(camera_node_instance)
                 ->handleFrame(idx, raw_buffer, frame_info);
         };
-        CameraSetCallbackFunction(camera_handles_[i], std::move(func), this, placeholder_2);
+        CameraSetCallbackFunction(camera_handles_[i], std::move(func), this, NULL);
 
-        CameraSetTriggerMode(camera_handles_[i], (i == 0) ? SOFT_TRIGGER : EXTERNAL_TRIGGER);
-        if (i != 0) {
-            CameraSetExtTrigSignalType(camera_handles_[i], EXT_TRIG_HIGH_LEVEL);
-            CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_TRIG_INPUT);
+        CameraSetTriggerMode(camera_handles_[i], SOFT_TRIGGER);
+
+        if (param_.hardware_triger) {
+            if (handleToId(camera_handles_[i]) != master_camera_id) {  // if not master camera
+                CameraSetTriggerMode(camera_handles_[i], EXTERNAL_TRIGGER);
+                CameraSetExtTrigSignalType(camera_handles_[i], EXT_TRIG_HIGH_LEVEL);
+                CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_TRIG_INPUT);
+            } else {
+                CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_STROBE_OUTPUT);
+                CameraSetStrobeMode(camera_handles_[i], STROBE_SYNC_WITH_TRIG_MANUAL);
+                CameraSetStrobePolarity(camera_handles_[i], strobe_polarity);
+                CameraSetStrobeDelayTime(camera_handles_[i], 0);
+                CameraSetStrobePulseWidth(camera_handles_[i], strobe_pulse_width);
+            }
         }
-        CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_STROBE_OUTPUT);
-        CameraSetStrobeMode(camera_handles_[i], STROBE_SYNC_WITH_TRIG_MANUAL);
-        CameraSetStrobePolarity(camera_handles_[i], 1);
-        CameraSetStrobeDelayTime(camera_handles_[i], 0);
-        CameraSetStrobePulseWidth(camera_handles_[i], 500);
-
+        applyParamsToCamera(camera_handles_[i]);
         abortIfNot("start", CameraPlay(camera_handles_[i]));
+
+        // to support invariance that the master camera is the first element in vector
+        if (param_.hardware_triger && handleToId(camera_handles_[i]) == master_camera_id) {
+            std::swap(camera_handles_[0], camera_handles_[i]);
+            camera_idxs[camera_handles_[0]] = 0;
+        }
+        camera_idxs[camera_handles_[i]] = i;
     }
 
     RCLCPP_INFO_STREAM(this->get_logger(), "all cameras started!");
@@ -177,32 +197,61 @@ CameraNode::CameraNode() : Node("camera_node") {
     param_.latency = std::chrono::duration<double>(1 / fps);
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
 
+    call_group_.trigger_timer =
+        this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     timer_.camera_soft_trigger = this->create_wall_timer(
-        param_.latency, [this]() -> void { CameraSoftTrigger(camera_handles_[0]); });
-
-    applyCameraParameters();
+        param_.latency, std::bind(&CameraNode::triggerOnTimer, this), call_group_.trigger_timer);
 
     param_.max_buffer_size = maxBufSize(frame_sizes_);
     bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * param_.max_buffer_size);
+}
 
-    if (param_.publish_rectified_preview) {
-        initCalibParams();
+CameraNode::~CameraNode() {
+    for (int i = 0; i < param_.camera_num; ++i) {
+        abortIfNot("camera " + std::to_string(i) + " stop", CameraStop(camera_handles_[i]));
+        abortIfNot("camera " + std::to_string(i) + " uninit", CameraUnInit(camera_handles_[i]));
     }
+}
+
+void CameraNode::triggerOnTimer() {
+    bool are_syncronized = true;
+    for (int i = 1; i < param_.camera_num && are_syncronized; ++i) {
+        are_syncronized = are_syncronized && (state_.frame_cnts[i] == state_.frame_cnts[i - 1]);
+    }
+    if (!are_syncronized) {
+        rclcpp::sleep_for(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(param_.latency * 2.));
+        RCLCPP_INFO(this->get_logger(), "sleeped for doubled latency, renewed counters");
+        std::fill(state_.frame_cnts.begin(), state_.frame_cnts.end(), 0);
+    }
+    CameraSoftTrigger(camera_handles_[0]);
+    state_.last_trigger_time = this->get_clock()->now();
+    if (!param_.hardware_triger) {
+        for (int i = 1; i < param_.camera_num; ++i) {
+            CameraSoftTrigger(camera_handles_[i]);
+        }
+    }
+}
+
+int CameraNode::handleToId(int camera_handle) {
+    uint8_t camera_id;
+    abortIfNot("getting camera id", CameraLoadUserData(camera_handle, 0, &camera_id, 1));
+    return static_cast<int>(camera_id);
 }
 
 void CameraNode::applyCameraParameters() {
     for (int i = 0; i < param_.camera_num; ++i) {
-        applyParamsToCamera(i);
+        applyParamsToCamera(camera_handles_[i]);
     }
 }
 
-void CameraNode::applyParamsToCamera(int camera_idx) {
-    int handle = camera_handles_[camera_idx];
-    std::string prefix = "camera_" + std::to_string(camera_idx) + ".";
+void CameraNode::applyParamsToCamera(int handle) {
+    // applying exposure params
+    int camera_idx = camera_idxs[handle];
+    std::string prefix = std::to_string(handleToId(handle)) + ".exposure_params.";
     {
         tSdkCameraCapbility camera_capability;
-        abortIfNot(
-            "get image size", CameraGetCapability(camera_handles_[camera_idx], &camera_capability));
+        abortIfNot("get image size", CameraGetCapability(handle, &camera_capability));
         tSdkImageResolution* resolution_data = camera_capability.pImageSizeDesc;
         RCLCPP_INFO(
             this->get_logger(),
@@ -304,6 +353,31 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         abortIfNot("set sharpness", CameraSetSharpness(handle, sharpness));
         RCLCPP_INFO(this->get_logger(), "camera=%i, sharpness=%i", camera_idx, sharpness);
     }
+
+    if (!param_.publish_rectified_preview) {
+        return;
+    }
+
+    prefix = std::to_string(handleToId(handle)) + ".intrinsic_params.";
+    const std::vector<std::string> param_names = {
+        "image_size", "camera_matrix", "distorsion_coefs"};
+    bool has_all_params = std::all_of(
+        param_names.begin(), param_names.end(), [&prefix, this](const std::string& param_name) {
+            return this->has_parameter(prefix + param_name);
+        });
+    if (!has_all_params) {
+        RCLCPP_ERROR(this->get_logger(), "camera %d failed to read instrinsic params", camera_idx);
+        abort();
+    }
+    // loading intrinsic parameters
+    const std::vector<int64_t> param_image_size =
+        this->declare_parameter<std::vector<int64_t>>(prefix + "image_size");
+    const std::vector<double> param_camera_matrix =
+        this->declare_parameter<std::vector<double>>(prefix + "camera_matrix");
+    const std::vector<double> param_dist_coefs =
+        this->declare_parameter<std::vector<double>>(prefix + "distorsion_coefs");
+    cameras_intrinsics_.push_back(CameraIntrinsicParameters::loadFromParams(
+        param_image_size, param_camera_matrix, param_dist_coefs));
 }
 
 namespace {
@@ -376,37 +450,26 @@ void CameraNode::publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp,
     }
 }
 
-void CameraNode::handleFrame(CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
-    const auto now = this->get_clock()->now();
+void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
+    ++state_.frame_cnts[camera_idxs[handle]];
+    frame_info_[camera_idxs[handle]] = *frame_info;
 
     const cv::Size size{frame_info->iWidth, frame_info->iHeight};
-
-    RCLCPP_INFO(this->get_logger(), "called camera #%i callback", idx);
-
-    if (size != frame_sizes_[camera_idxs[idx]]) {
+    if (size != frame_sizes_[camera_idxs[handle]]) {
         RCLCPP_ERROR_STREAM(
             this->get_logger(),
-            "expected frame size " << frame_sizes_[idx] << ", but got " << size);
+            "expected frame size " << frame_sizes_[handle] << ", but got " << size);
         abort();
     }
 
     if (param_.publish_raw || param_.publish_raw_preview) {
-        publishRawImage(raw_buffer, now, camera_idxs[idx]);
+        publishRawImage(raw_buffer, state_.last_trigger_time, camera_idxs[handle]);
     }
 
     if (param_.publish_bgr || param_.publish_bgr_preview) {
-        publishBGRImage(raw_buffer, now, camera_idxs[idx]);
+        publishBGRImage(raw_buffer, state_.last_trigger_time, camera_idxs[handle]);
     }
-
-    // CameraReleaseImageBuffer(camera_handles_[i], raw_buffer_ptr_[i]);
+    CameraReleaseImageBuffer(handle, raw_buffer);
 }
 
-void CameraNode::initCalibParams() {
-    for (int idx = 0; idx < param_.camera_num; ++idx) {
-        RCLCPP_INFO_STREAM(this->get_logger(), "loading camera " << idx << " parameters");
-        std::string calibration_name = "camera_" + std::to_string(idx);
-        cameras_intrinsics_.push_back(
-            CameraIntrinsicParameters::loadFromYaml(param_.calibration_file_path));
-    }
-}
 }  // namespace handy::camera
