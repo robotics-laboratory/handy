@@ -13,7 +13,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <algorithm>
 
 namespace handy::camera {
 
@@ -21,8 +20,6 @@ class CameraNode : public rclcpp::Node {
   public:
     CameraNode();
     ~CameraNode();
-    static void cameraCallback(
-        CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info, PVOID camera_node_instance);
 
   private:
     void applyCameraParameters();

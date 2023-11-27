@@ -2,6 +2,7 @@
 #include "camera_status.h"
 
 #include <cv_bridge/cv_bridge.hpp>
+#include <algorithm>
 
 namespace handy::camera {
 
@@ -215,8 +216,11 @@ CameraNode::~CameraNode() {
 
 void CameraNode::triggerOnTimer() {
     bool are_syncronized = true;
-    for (int i = 1; i < param_.camera_num && are_syncronized; ++i) {
-        are_syncronized = are_syncronized && (state_.frame_cnts[i] == state_.frame_cnts[i - 1]);
+    for (int i = 1; i < param_.camera_num; ++i) {
+        if (state_.frame_cnts[i] != state_.frame_cnts[i - 1]) {
+            are_syncronized = false;
+            break;
+        }
     }
     if (!are_syncronized) {
         rclcpp::sleep_for(
