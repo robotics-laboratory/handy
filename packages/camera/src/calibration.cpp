@@ -53,7 +53,7 @@ using namespace boost::geometry;
  *
  * @param corners vector all corners in cv::Point2f format
  * @param pattern_size width and height of chessboard
- * @return vector of points of closed polyline  
+ * @return vector of points of closed polyline
  */
 Polygon convertToBoostPolygon(const std::vector<cv::Point2f>& corners, cv::Size pattern_size) {
     // clang-format off
@@ -124,6 +124,12 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     timer_.calibration_state =
         this->create_wall_timer(250ms, std::bind(&CalibrationNode::publishCalibrationState, this));
 
+    param_.dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+    param_.charuco_board = new cv::aruco::CharucoBoard(
+        param_.pattern_size, 0.04f, 0.02f, param_.dictionary);
+    param_.charuco_board_params = cv::makePtr<cv::aruco::DetectorParameters>();
+    param_.charuco_board_params->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
+
     signal_.detected_boards->publish(state_.board_markers_array);
 }
 
@@ -133,6 +139,7 @@ void CalibrationNode::declareLaunchParams() {
     param_.path_to_save_params = this->declare_parameter<std::string>("calibration_file_path", "param_path");
 
     param_.required_board_coverage = this->declare_parameter<double>("required_board_coverage", 0.7);
+    param_.min_required_aruco_detected = this->declare_parameter<int>("required_aruco_detected", 2);
     param_.min_accepted_error = this->declare_parameter<double>("min_accepted_calib_error", 0.75);
     param_.iou_treshhold = this->declare_parameter<double>("iou_threshold", 0.5);
     param_.marker_color = this->declare_parameter<std::vector<double>>("marker_color", {0.0f, 1.0f, 0.0f, 0.12f});
@@ -153,6 +160,8 @@ void CalibrationNode::initSignals() {
         "/calibration_1/board_markers", 10);
     signal_.detected_corners = this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
         "/calibration_1/corner_markers", 10);
+    signal_.board_corners_image = this->create_publisher<sensor_msgs::msg::CompressedImage>(
+        "/calibration_1/board_corners_image", 10);
 
     signal_.calibration_state =
         this->create_publisher<std_msgs::msg::Int16>("/calibration_1/state", 10);
@@ -172,9 +181,37 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
         state_.frame_size->width == image_ptr->image.cols &&
         state_.frame_size->height == image_ptr->image.rows);
 
+    bool found = false;
     std::vector<cv::Point2f> detected_corners;
-    bool found = cv::findChessboardCorners(
-        image_ptr->image, param_.pattern_size, detected_corners, cv::CALIB_CB_FAST_CHECK);
+    std::vector<int> marker_ids;
+    std::vector<std::vector<cv::Point2f>> marker_corners;
+    cv::aruco::detectMarkers(
+        image_ptr->image,
+        cv::makePtr<cv::aruco::Dictionary>(param_.dictionary),
+        marker_corners,
+        marker_ids,
+        param_.charuco_board_params);
+    RCLCPP_INFO(this->get_logger(), "detected %ld markers", marker_ids.size());
+
+    if (marker_ids.size() > param_.min_required_aruco_detected) {
+        std::vector<int> charucoIds;
+        cv::aruco::interpolateCornersCharuco(
+            marker_corners,
+            marker_ids,
+            image_ptr->image,
+            param_.charuco_board,
+            detected_corners,
+            charucoIds);
+        RCLCPP_INFO(this->get_logger(), "interpolated, got %ld corners", detected_corners.size());
+        cv::aruco::drawDetectedMarkers(image_ptr->image, marker_corners, marker_ids);
+        if (charucoIds.size() > 4) {
+            cv::aruco::drawDetectedCornersCharuco(
+                image_ptr->image, detected_corners, charucoIds, cv::Scalar(255, 0, 0));
+            found = true;
+        }
+    }
+    // bool found = cv::findChessboardCorners(
+    //     image_ptr->image, param_.pattern_size, detected_corners, cv::CALIB_CB_FAST_CHECK);
 
     state_.board_corners_array.markers.clear();
     if (!found) {
@@ -193,6 +230,7 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
             getBoardMarkerFromCorners(detected_corners, image_ptr->header));
         signal_.detected_boards->publish(state_.board_markers_array);
     }
+    signal_.board_corners_image->publish(toJpegMsg(image_ptr->image));
 
     state_.detected_corners_all.push_back(detected_corners);
     state_.object_points_all.push_back(param_.square_obj_points);

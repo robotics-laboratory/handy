@@ -11,6 +11,7 @@ launch:
     # calibration
     - {name: "calibration_file_path", value: "$(var calibration_file_path)"} # only .yaml file
     - {name: "iou_threshold", value: 0.5}
+    - {name: "required_aruco_detected", value: 2}
     - {name: "min_accepted_calib_error", value: 0.7}
     - {name: "required_board_coverage", value: 0.7}
     - {name: "marker_color", value: [0.0, 1.0, 0.0, 0.12]} #  [R, G, B, A], each in range 0.0-1.0
