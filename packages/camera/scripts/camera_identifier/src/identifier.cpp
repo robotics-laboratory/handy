@@ -58,6 +58,7 @@ int main(int argc, char* argv[]) {
     abortIfNot("set new camera_id", CameraSaveUserData(camera_handle, 0, &required_camera_id, 1));
 
     abortIfNot("camera uninit", CameraUnInit(camera_handle));
+    printf("success\n");
 
     return 0;
 }
