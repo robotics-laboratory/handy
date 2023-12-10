@@ -13,13 +13,28 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <queue>
+#include <mutex>
 
 namespace handy::camera {
+
+struct StampedImagePtr {
+    std::shared_ptr<uint8_t[]> buffer = nullptr;
+    tSdkFrameHead frame_info;
+    rclcpp::Time timestamp;
+    int source_idx = 0;
+
+    StampedImagePtr(
+        std::shared_ptr<uint8_t[]> buf, tSdkFrameHead* frame_inf, rclcpp::Time stamp, int source)
+        : buffer(buf), frame_info(std::move(*frame_inf)), timestamp(stamp), source_idx(source) {}
+};
 
 class CameraNode : public rclcpp::Node {
   public:
     CameraNode();
     ~CameraNode();
+    
+    static constexpr int NUM_OF_BUFFERS = 3;
 
   private:
     void applyCameraParameters();
@@ -28,9 +43,11 @@ class CameraNode : public rclcpp::Node {
 
     void triggerOnTimer();
     void handleFrame(CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info);
+    void handleQueue();
 
-    void publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx);
-    void publishBGRImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx);
+    void publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
+    void publishBGRImage(
+        uint8_t* buffer, rclcpp::Time timestamp, int camera_idx, tSdkFrameHead& frame_inf);
 
     void abortIfNot(std::string_view msg, int status);
     void abortIfNot(std::string_view msg, int camera_idx, int status);
@@ -50,8 +67,10 @@ class CameraNode : public rclcpp::Node {
     } param_{};
 
     struct State {
-        rclcpp::Time last_trigger_time;
-        std::vector<int> frame_cnts;
+        std::vector<std::queue<StampedImagePtr>> recieved_buffers;
+        std::vector<std::mutex> recieved_buffers_mutexes;
+        std::vector<std::vector<std::shared_ptr<uint8_t[]>>> free_buffers;
+        std::vector<std::mutex> free_buffers_mutexes;
     } state_{};
 
     std::vector<int> camera_handles_ = {};
@@ -78,6 +97,7 @@ class CameraNode : public rclcpp::Node {
 
     struct Timers {
         rclcpp::TimerBase::SharedPtr camera_soft_trigger = nullptr;
+        rclcpp::TimerBase::SharedPtr camera_handle_queue_timer = nullptr;
     } timer_{};
 };
 

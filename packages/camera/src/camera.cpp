@@ -78,8 +78,11 @@ CameraNode::CameraNode() : Node("camera_node") {
     camera_handles_ = std::vector<int>(param_.camera_num);
     frame_info_ = std::vector<tSdkFrameHead>(param_.camera_num);
     frame_sizes_ = std::vector<cv::Size>(param_.camera_num);
-    state_.frame_cnts = std::vector<int>(param_.camera_num, 0);
-    state_.last_trigger_time = this->get_clock()->now();
+
+    state_.recieved_buffers = std::vector<std::queue<StampedImagePtr>>(param_.camera_num);
+    state_.recieved_buffers_mutexes = std::vector<std::mutex>(param_.camera_num);
+    state_.free_buffers = std::vector<std::vector<std::shared_ptr<uint8_t[]>>>(param_.camera_num);
+    state_.free_buffers_mutexes = std::vector<std::mutex>(param_.camera_num);
 
     int strobe_polarity = this->declare_parameter<int>("strobe_polarity", 1);
     RCLCPP_INFO_STREAM(
@@ -197,6 +200,8 @@ CameraNode::CameraNode() : Node("camera_node") {
     const auto fps = this->declare_parameter<double>("fps", 20.0);
     param_.latency = std::chrono::duration<double>(1 / fps);
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
+    param_.max_buffer_size = MaxBufSize(frame_sizes_);
+    bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * param_.max_buffer_size);
 
     call_group_.trigger_timer =
         this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -205,6 +210,8 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     param_.max_buffer_size = maxBufSize(frame_sizes_);
     bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * param_.max_buffer_size);
+    timer_.camera_handle_queue_timer =
+        this->create_wall_timer(param_.latency, std::bind(&CameraNode::handleQueue, this));
 }
 
 CameraNode::~CameraNode() {
@@ -215,21 +222,7 @@ CameraNode::~CameraNode() {
 }
 
 void CameraNode::triggerOnTimer() {
-    bool are_syncronized = true;
-    for (int i = 1; i < param_.camera_num; ++i) {
-        if (state_.frame_cnts[i] != state_.frame_cnts[i - 1]) {
-            are_syncronized = false;
-            break;
-        }
-    }
-    if (!are_syncronized) {
-        rclcpp::sleep_for(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(param_.latency * 2.));
-        RCLCPP_INFO(this->get_logger(), "sleeped for doubled latency, renewed counters");
-        std::fill(state_.frame_cnts.begin(), state_.frame_cnts.end(), 0);
-    }
     CameraSoftTrigger(camera_handles_[0]);
-    state_.last_trigger_time = this->get_clock()->now();
     if (!param_.hardware_triger) {
         for (int i = 1; i < param_.camera_num; ++i) {
             CameraSoftTrigger(camera_handles_[i]);
@@ -264,6 +257,10 @@ void CameraNode::applyParamsToCamera(int handle) {
             resolution_data->iWidth,
             resolution_data->iHeight);
         frame_sizes_[camera_idx] = cv::Size(resolution_data->iWidth, resolution_data->iHeight);
+        for (int i = 0; i < NUM_OF_BUFFERS; ++i) {
+            state_.free_buffers[camera_idx].push_back(std::shared_ptr<uint8_t[]>(
+                new uint8_t[resolution_data->iWidth * resolution_data->iHeight * 3]));
+        }
     }
 
     {
@@ -382,6 +379,7 @@ void CameraNode::applyParamsToCamera(int handle) {
         this->declare_parameter<std::vector<double>>(prefix + "distorsion_coefs");
     cameras_intrinsics_.push_back(CameraIntrinsicParameters::loadFromParams(
         param_image_size, param_camera_matrix, param_dist_coefs));
+    RCLCPP_INFO(this->get_logger(), "camera=%i loaded intrinsics", camera_idx);
 }
 
 namespace {
@@ -413,12 +411,12 @@ cv::Mat rescale(const cv::Mat& image, const cv::Size& size) {
 
 }  // namespace
 
-void CameraNode::publishBGRImage(uint8_t* buffer, const rclcpp::Time& timestamp, int idx) {
+void CameraNode::publishBGRImage(
+    uint8_t* buffer, rclcpp::Time timestamp, int idx, tSdkFrameHead& frame_inf) {
     const auto header = makeHeader(timestamp, idx);
     auto* const bgr_buffer = bgr_buffer_.get() + idx * param_.max_buffer_size;
 
-    abortIfNot(
-        "get bgr", CameraImageProcess(camera_handles_[idx], buffer, bgr_buffer, &frame_info_[idx]));
+    abortIfNot("get bgr", CameraImageProcess(camera_handles_[idx], buffer, bgr_buffer, &frame_inf));
     cv::Mat image(frame_sizes_[idx], CV_8UC3, bgr_buffer);
 
     if (param_.publish_bgr) {
@@ -427,7 +425,7 @@ void CameraNode::publishBGRImage(uint8_t* buffer, const rclcpp::Time& timestamp,
     }
 
     if (param_.publish_bgr_preview) {
-        cv_bridge::CvImage cv_image(header, "bgr8", rescale(image, param_.preview_frame_size));
+        cv_bridge::CvImage cv_image(header, "bgr8", rescale(image, cv::Size(720, 480)));
         signals_.bgr_preview_img[idx]->publish(toJpegMsg(cv_image));
     }
 
@@ -455,9 +453,6 @@ void CameraNode::publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp,
 }
 
 void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
-    ++state_.frame_cnts[camera_idxs[handle]];
-    frame_info_[camera_idxs[handle]] = *frame_info;
-
     const cv::Size size{frame_info->iWidth, frame_info->iHeight};
     if (size != frame_sizes_[camera_idxs[handle]]) {
         RCLCPP_ERROR_STREAM(
@@ -465,15 +460,67 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
             "expected frame size " << frame_sizes_[handle] << ", but got " << size);
         abort();
     }
-
-    if (param_.publish_raw || param_.publish_raw_preview) {
-        publishRawImage(raw_buffer, state_.last_trigger_time, camera_idxs[handle]);
+    int camera_id = camera_idxs[handle];
+    std::shared_ptr<uint8_t[]> selected_ptr = nullptr;
+    int buffer_source = 0;
+    {
+        std::scoped_lock free_buffer_lock(state_.free_buffers_mutexes[camera_id]);
+        frame_info_[camera_id] = *frame_info;
+        for (int i = 0; i < NUM_OF_BUFFERS; ++i) {
+            if (state_.free_buffers[camera_id][i]) {
+                selected_ptr = state_.free_buffers[camera_id][i];
+                state_.free_buffers[camera_id][i] = nullptr;
+                buffer_source = i;
+                break;
+            }
+        }
+        if (!selected_ptr) {
+            RCLCPP_ERROR(
+                this->get_logger(), "failed to find free buffer for camera id %d", camera_id);
+            abort();
+        }
     }
 
-    if (param_.publish_bgr || param_.publish_bgr_preview) {
-        publishBGRImage(raw_buffer, state_.last_trigger_time, camera_idxs[handle]);
-    }
+    std::lock_guard recieved_buffer_lock(state_.recieved_buffers_mutexes[camera_id]);
+    std::memmove(selected_ptr.get(), raw_buffer, size.width * size.height);
+    state_.recieved_buffers[camera_id].push(
+        StampedImagePtr(selected_ptr, frame_info, this->get_clock()->now(), buffer_source));
+
     CameraReleaseImageBuffer(handle, raw_buffer);
+}
+
+void CameraNode::handleQueue() {
+    for (int i = 0; i < param_.camera_num; ++i) {
+        state_.recieved_buffers_mutexes[i].lock();
+        if (state_.recieved_buffers[i].empty()) {
+            state_.recieved_buffers_mutexes[i].unlock();
+            return;
+        }
+        state_.recieved_buffers_mutexes[i].unlock();
+    }
+    if (!state_.recieved_buffers_mutexes[0].try_lock() ||
+        !state_.recieved_buffers_mutexes[1].try_lock()) {
+        RCLCPP_INFO(this->get_logger(), "ERROR");
+    }
+
+    for (int i = 0; i < param_.camera_num; ++i) {
+        state_.recieved_buffers_mutexes[i].lock();
+        StampedImagePtr top_frame = state_.recieved_buffers[i].front();
+        state_.recieved_buffers[i].pop();
+
+        if (param_.publish_raw || param_.publish_raw_preview) {
+            publishRawImage(top_frame.buffer.get(), top_frame.timestamp, i);
+        }
+
+        if (param_.publish_bgr || param_.publish_bgr_preview) {
+            publishBGRImage(top_frame.buffer.get(), top_frame.timestamp, i, top_frame.frame_info);
+        }
+        state_.recieved_buffers_mutexes[i].unlock();
+
+        state_.free_buffers_mutexes[i].lock();
+        state_.free_buffers[i][top_frame.source_idx] = top_frame.buffer;
+        state_.free_buffers_mutexes[i].unlock();
+    }
 }
 
 }  // namespace handy::camera
