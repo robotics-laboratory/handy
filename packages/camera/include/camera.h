@@ -33,11 +33,10 @@ class CameraNode : public rclcpp::Node {
   public:
     CameraNode();
     ~CameraNode();
-    
+
     static constexpr int NUM_OF_BUFFERS = 3;
 
   private:
-    void applyCameraParameters();
     void applyParamsToCamera(int camera_idx);
     int handleToId(int camera_handle);
 
@@ -62,7 +61,7 @@ class CameraNode : public rclcpp::Node {
         bool publish_raw = false;
         bool publish_raw_preview = false;
         bool publish_rectified_preview = false;
-        bool hardware_triger = false;
+        bool hardware_trigger = false;
         int max_buffer_size = 0;
     } param_{};
 
@@ -93,6 +92,7 @@ class CameraNode : public rclcpp::Node {
 
     struct CallbackGroups {
         rclcpp::CallbackGroup::SharedPtr trigger_timer = nullptr;
+        rclcpp::CallbackGroup::SharedPtr handling_queue_timer = nullptr;
     } call_group_{};
 
     struct Timers {

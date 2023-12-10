@@ -71,9 +71,9 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     RCLCPP_INFO_STREAM(this->get_logger(), "frame preview size=" << param_.preview_frame_size);
 
-    param_.hardware_triger = this->declare_parameter<bool>("hardware_triger", false);
+    param_.hardware_trigger = this->declare_parameter<bool>("hardware_trigger", false);
 
-    RCLCPP_INFO(this->get_logger(), "hardware triger mode: %i", param_.hardware_triger);
+    RCLCPP_INFO(this->get_logger(), "hardware trigger mode: %i", param_.hardware_trigger);
 
     camera_handles_ = std::vector<int>(param_.camera_num);
     frame_info_ = std::vector<tSdkFrameHead>(param_.camera_num);
@@ -112,7 +112,7 @@ CameraNode::CameraNode() : Node("camera_node") {
 
         CameraSetTriggerMode(camera_handles_[i], SOFT_TRIGGER);
 
-        if (param_.hardware_triger) {
+        if (param_.hardware_trigger) {
             if (handleToId(camera_handles_[i]) != master_camera_id) {  // if not master camera
                 CameraSetTriggerMode(camera_handles_[i], EXTERNAL_TRIGGER);
                 CameraSetExtTrigSignalType(camera_handles_[i], EXT_TRIG_HIGH_LEVEL);
@@ -129,7 +129,7 @@ CameraNode::CameraNode() : Node("camera_node") {
         abortIfNot("start", CameraPlay(camera_handles_[i]));
 
         // to support invariance that the master camera is the first element in vector
-        if (param_.hardware_triger && handleToId(camera_handles_[i]) == master_camera_id) {
+        if (param_.hardware_trigger && handleToId(camera_handles_[i]) == master_camera_id) {
             std::swap(camera_handles_[0], camera_handles_[i]);
             camera_idxs[camera_handles_[0]] = 0;
         }
@@ -208,10 +208,12 @@ CameraNode::CameraNode() : Node("camera_node") {
     timer_.camera_soft_trigger = this->create_wall_timer(
         param_.latency, std::bind(&CameraNode::triggerOnTimer, this), call_group_.trigger_timer);
 
-    param_.max_buffer_size = maxBufSize(frame_sizes_);
-    bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * param_.max_buffer_size);
-    timer_.camera_handle_queue_timer =
-        this->create_wall_timer(param_.latency, std::bind(&CameraNode::handleQueue, this));
+    call_group_.handling_queue_timer =
+        this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    timer_.camera_handle_queue_timer = this->create_wall_timer(
+        param_.latency,
+        std::bind(&CameraNode::handleQueue, this),
+        call_group_.handling_queue_timer);
 }
 
 CameraNode::~CameraNode() {
@@ -223,7 +225,7 @@ CameraNode::~CameraNode() {
 
 void CameraNode::triggerOnTimer() {
     CameraSoftTrigger(camera_handles_[0]);
-    if (!param_.hardware_triger) {
+    if (!param_.hardware_trigger) {
         for (int i = 1; i < param_.camera_num; ++i) {
             CameraSoftTrigger(camera_handles_[i]);
         }
@@ -234,12 +236,6 @@ int CameraNode::handleToId(int camera_handle) {
     uint8_t camera_id;
     abortIfNot("getting camera id", CameraLoadUserData(camera_handle, 0, &camera_id, 1));
     return static_cast<int>(camera_id);
-}
-
-void CameraNode::applyCameraParameters() {
-    for (int i = 0; i < param_.camera_num; ++i) {
-        applyParamsToCamera(camera_handles_[i]);
-    }
 }
 
 void CameraNode::applyParamsToCamera(int handle) {
@@ -491,20 +487,14 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
 
 void CameraNode::handleQueue() {
     for (int i = 0; i < param_.camera_num; ++i) {
-        state_.recieved_buffers_mutexes[i].lock();
+        std::scoped_lock tmp_recieve_buf_lock(state_.recieved_buffers_mutexes[i]);
         if (state_.recieved_buffers[i].empty()) {
-            state_.recieved_buffers_mutexes[i].unlock();
             return;
         }
-        state_.recieved_buffers_mutexes[i].unlock();
-    }
-    if (!state_.recieved_buffers_mutexes[0].try_lock() ||
-        !state_.recieved_buffers_mutexes[1].try_lock()) {
-        RCLCPP_INFO(this->get_logger(), "ERROR");
     }
 
     for (int i = 0; i < param_.camera_num; ++i) {
-        state_.recieved_buffers_mutexes[i].lock();
+        std::scoped_lock tmp_recieve_buf_lock(state_.recieved_buffers_mutexes[i]);
         StampedImagePtr top_frame = state_.recieved_buffers[i].front();
         state_.recieved_buffers[i].pop();
 
@@ -515,11 +505,9 @@ void CameraNode::handleQueue() {
         if (param_.publish_bgr || param_.publish_bgr_preview) {
             publishBGRImage(top_frame.buffer.get(), top_frame.timestamp, i, top_frame.frame_info);
         }
-        state_.recieved_buffers_mutexes[i].unlock();
 
-        state_.free_buffers_mutexes[i].lock();
+        std::scoped_lock tmp_free_buf_lock(state_.free_buffers_mutexes[i]);
         state_.free_buffers[i][top_frame.source_idx] = top_frame.buffer;
-        state_.free_buffers_mutexes[i].unlock();
     }
 }
 
