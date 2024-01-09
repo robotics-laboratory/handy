@@ -4,6 +4,7 @@
 #include <sensor_msgs/msg/compressed_image.hpp>
 
 #include <opencv2/core/core.hpp>
+#include <boost/lockfree/queue.hpp>
 
 #include "CameraApi.h"
 #include "params.h"
@@ -15,18 +16,14 @@
 #include <string_view>
 #include <queue>
 #include <mutex>
+#include <atomic>
 
 namespace handy::camera {
 
 struct StampedImagePtr {
-    std::shared_ptr<uint8_t[]> buffer = nullptr;
+    uint8_t* buffer = nullptr;
     tSdkFrameHead frame_info;
-    rclcpp::Time timestamp;
-    int source_idx = 0;
-
-    StampedImagePtr(
-        std::shared_ptr<uint8_t[]> buf, tSdkFrameHead* frame_inf, rclcpp::Time stamp, int source)
-        : buffer(buf), frame_info(std::move(*frame_inf)), timestamp(stamp), source_idx(source) {}
+    uint64_t timestamp_nanosec;
 };
 
 class CameraNode : public rclcpp::Node {
@@ -34,7 +31,7 @@ class CameraNode : public rclcpp::Node {
     CameraNode();
     ~CameraNode();
 
-    static constexpr int NUM_OF_BUFFERS = 3;
+    static constexpr int NUM_OF_BUFFERS = 5;
 
   private:
     void applyParamsToCamera(int camera_idx);
@@ -66,16 +63,13 @@ class CameraNode : public rclcpp::Node {
     } param_{};
 
     struct State {
-        std::vector<std::queue<StampedImagePtr>> recieved_buffers;
-        std::vector<std::mutex> recieved_buffers_mutexes;
-        std::vector<std::vector<std::shared_ptr<uint8_t[]>>> free_buffers;
-        std::vector<std::mutex> free_buffers_mutexes;
+        std::vector<boost::lockfree::queue<StampedImagePtr>*> camera_images = {};
+        std::vector<std::mutex> camera_bgr_buffer_mutexes = {};
     } state_{};
 
     std::vector<int> camera_handles_ = {};
     std::map<int, int> camera_idxs = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
-    std::vector<tSdkFrameHead> frame_info_ = {};
     std::vector<CameraIntrinsicParameters> cameras_intrinsics_ = {};
     std::vector<cv::Size> frame_sizes_ = {};
 
