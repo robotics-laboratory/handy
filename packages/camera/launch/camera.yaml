@@ -23,7 +23,7 @@ launch:
     exec: "camera"
     name: "camera"
     param:
-    - {name: "camera_num", value: 1}
+    - {name: "camera_num", value: 2}
     - {name: "fps", value: 10.0}
     - {name: "preview/width", value: 1280}
     - {name: "preview/height", value: 1024}
@@ -32,19 +32,18 @@ launch:
     - {name: "publish_bgr", value: "$(var publish_bgr)"}
     - {name: "publish_raw", value: "$(var publish_raw)"}
     - {name: "publish_rectified_preview", value: "$(var publish_rectified_preview)"}
-    - {name: "calibration_file_path", value: "$(var calibration_file_path)"}
 
     # external trigger mode and parameters
     - { name: "hardware_triger", value: False }  # if True only master is sent trigger signal
     - { name: "strobe_pulse_width", value: 500 } # in microseconds
     - { name: "strobe_polarity", value: 1 }      # 0 is valid at low level, 1 is valid at high level
-    - { name: "master_camera_id", value: 1 }
+    - { name: "master_camera_id", value: "1" }
 
     # name of a camera is its ID (see camera identifier script)
     - name: "1"
-        param:
+      param:
         - name: "exposure_params"
-            param:
+          param:
             - { name: "exposure_time", value: 6000 }       # range: ...
             - { name: "contrast", value: 100 }             # range: 0-100
             - { name: "gain_rgb", value: [120, 120, 120] } # range: 0-400, auto default if analog_gain != -1
@@ -54,7 +53,27 @@ launch:
             - { name: "sharpness", value: 0 }              # range: 0-100
             - { name: "auto_exposure", value: False }
         - name: "intrinsic_params"
-            param:
+          param:
+            - name: "image_size"
+              param:
+                - { name: "width", value: 1920 }
+                - { name: "height", value: 1200 }
+            - { name: "camera_matrix", value: [2909.92107945441, 0., 582.1724561319506, 0., 3134.621273608562, 532.0677320807733, 0., 0., 1.] }
+            - { name: "distorsion_coefs", value: [-0.7151398, 10.59934, 1.975451e-05, 0.07159046, 1.047479]}
+    - name: "2"
+      param:
+        - name: "exposure_params"
+          param:
+            - { name: "exposure_time", value: 6000 }       # range: ...
+            - { name: "contrast", value: 100 }             # range: 0-100
+            - { name: "gain_rgb", value: [120, 120, 120] } # range: 0-400, auto default if analog_gain != -1
+            - { name: "analog_gain", value: 50 }
+            - { name: "gamma", value: 80 }                 # range: 0-250
+            - { name: "saturation", value: 100 }           # range: 0-200
+            - { name: "sharpness", value: 0 }              # range: 0-100
+            - { name: "auto_exposure", value: False }
+        - name: "intrinsic_params"
+          param:
             - { name: "image_size", value: [1920, 1200] }
             - { name: "camera_matrix", value: [2909.92107945441, 0., 582.1724561319506, 0., 3134.621273608562, 532.0677320807733, 0., 0., 1.] }
             - { name: "distorsion_coefs", value: [-0.7151398, 10.59934, 1.975451e-05, 0.07159046, 1.047479]}

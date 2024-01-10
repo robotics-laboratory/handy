@@ -23,7 +23,7 @@ namespace handy::camera {
 struct StampedImagePtr {
     uint8_t* buffer = nullptr;
     tSdkFrameHead frame_info;
-    uint64_t timestamp_nanosec;
+    int64_t timestamp_nanosec;
 };
 
 class CameraNode : public rclcpp::Node {
@@ -35,7 +35,7 @@ class CameraNode : public rclcpp::Node {
 
   private:
     void applyParamsToCamera(int camera_idx);
-    int handleToId(int camera_handle);
+    int getCameraId(int camera_handle);
 
     void triggerOnTimer();
     void handleFrame(CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info);
@@ -60,6 +60,7 @@ class CameraNode : public rclcpp::Node {
         bool publish_rectified_preview = false;
         bool hardware_trigger = false;
         int max_buffer_size = 0;
+        int master_camera_idx = -1;
     } param_{};
 
     struct State {
@@ -68,7 +69,7 @@ class CameraNode : public rclcpp::Node {
     } state_{};
 
     std::vector<int> camera_handles_ = {};
-    std::map<int, int> camera_idxs = {};
+    std::map<int, int> handle_to_camera_idx = {};
     std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
     std::vector<CameraIntrinsicParameters> cameras_intrinsics_ = {};
     std::vector<cv::Size> frame_sizes_ = {};

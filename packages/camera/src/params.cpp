@@ -5,8 +5,6 @@
 #include <yaml-cpp/yaml.h>
 
 #include <exception>
-#include <fstream>
-#include <iomanip>
 
 namespace handy {
 
@@ -69,11 +67,11 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(const std::str
 }
 
 CameraIntrinsicParameters CameraIntrinsicParameters::loadFromParams(
-    const std::vector<int64_t>& param_image_size, const std::vector<double>& param_camera_matrix,
+    const cv::Size& param_image_size, const std::vector<double>& param_camera_matrix,
     const std::vector<double>& param_dist_coefs) {
     CameraIntrinsicParameters result{};
 
-    result.image_size = cv::Size(param_image_size[0], param_image_size[1]);
+    result.image_size = param_image_size;
     result.camera_matrix = cv::Mat(param_camera_matrix, true);
     result.dist_coefs = cv::Mat(param_dist_coefs, true);
     result.initUndistortMaps();
