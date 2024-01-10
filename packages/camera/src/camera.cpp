@@ -89,7 +89,7 @@ CameraNode::CameraNode() : Node("camera_node") {
     RCLCPP_INFO_STREAM(this->get_logger(), "strobe pulse width = " << strobe_pulse_width);
     std::string str_master_camera_id =
         this->declare_parameter<std::string>("master_camera_id", "1");
-    RCLCPP_INFO_STREAM(this->get_logger(), "master camera id = %s" << str_master_camera_id.c_str());
+    RCLCPP_INFO(this->get_logger(), "master camera id = %s", str_master_camera_id.c_str());
     int master_camera_id;
     try {
         master_camera_id = std::stoi(str_master_camera_id);
@@ -103,6 +103,10 @@ CameraNode::CameraNode() : Node("camera_node") {
         abortIfNot(
             "camera init " + std::to_string(i),
             CameraInit(&cameras_list[i], -1, -1, &camera_handles_[i]));
+        RCLCPP_INFO(
+            this->get_logger(),
+            "allocated image queue for camera ID = %d",
+            getCameraId(camera_handles_[i]));
 
         handle_to_camera_idx[camera_handles_[i]] = i;
 
@@ -136,13 +140,23 @@ CameraNode::CameraNode() : Node("camera_node") {
         // to support invariance that the master camera is the first element in vector
         if (param_.hardware_trigger && getCameraId(camera_handles_[i]) == master_camera_id) {
             param_.master_camera_idx = i;
+            RCLCPP_INFO(
+                this->get_logger(),
+                "camera ID = %d  idx = %d is saved as master camera",
+                getCameraId(camera_handles_[i]),
+                i);
         }
+        RCLCPP_INFO(
+            this->get_logger(), "inited API for camera ID = %d", getCameraId(camera_handles_[i]));
     }
     if (param_.hardware_trigger &&
         param_.master_camera_idx == -1) {  // provided master camera id was not found
         RCLCPP_ERROR(
             this->get_logger(), "master camera id was not found: %s", str_master_camera_id.c_str());
         abort();
+    }
+    if (!param_.hardware_trigger) {
+        param_.master_camera_idx = 0;
     }
 
     RCLCPP_INFO_STREAM(this->get_logger(), "all cameras started!");
@@ -224,14 +238,14 @@ CameraNode::~CameraNode() {
         abortIfNot("camera " + std::to_string(i) + " uninit", CameraUnInit(camera_handles_[i]));
         StampedImagePtr stamped_image;
         while (state_.camera_images[i]->pop(stamped_image)) {
-            free(stamped_image.buffer);
+            delete[] stamped_image.buffer;
         }
-        free(state_.camera_images[i]);
+        delete state_.camera_images[i];
     }
 }
 
 void CameraNode::triggerOnTimer() {
-    // RCLCPP_INFO(this->get_logger(), "SOFT TRIGGER");
+    // RCLCPP_INFO(this->get_logger(), "soft trigger");
     CameraSoftTrigger(camera_handles_[param_.master_camera_idx]);
     if (!param_.hardware_trigger) {
         for (int i = 0; i < param_.camera_num; ++i) {
@@ -472,6 +486,7 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
     }
     uint8_t* buffer_to_copy = new uint8_t[frame_info->iWidth * frame_info->iHeight];
     std::memmove(buffer_to_copy, raw_buffer, frame_info->iWidth * frame_info->iHeight);
+    // RCLCPP_INFO(this->get_logger(), "buffer allocated, imaged moved: camera %d", handle);
     state_.camera_images[handle_to_camera_idx[handle]]->push(
         {buffer_to_copy, std::move(*frame_info), this->get_clock()->now().nanoseconds()});
     CameraReleaseImageBuffer(handle, raw_buffer);
@@ -494,7 +509,7 @@ void CameraNode::handleQueue() {
                 i,
                 stamped_image.frame_info);
         }
-        free(stamped_image.buffer);
+        delete[] stamped_image.buffer;
         // RCLCPP_INFO(this->get_logger(), "queue #%d done", i);
     }
 }
