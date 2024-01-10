@@ -1,6 +1,7 @@
 from typing import List, Callable, Dict, Any
 from torch import Tensor
-from albumentations.core.transforms_interface import DualTransform
+import numpy as np
+from albumentations.core.transforms_interface import DualTransform, BasicTransform
 from .base import AugmentationBase
 
 class SequentialAugmentation(AugmentationBase):
@@ -33,7 +34,7 @@ class SequentialAugmentation(AugmentationBase):
 
         # Apply each augmentation in the list to the data
         for augmentation in self.augmentation_list:
-            if isinstance(augmentation, DualTransform):
+            if isinstance(augmentation, DualTransform) or isinstance(augmentation, BasicTransform):
                 data.update(augmentation(**data))
             else:
                 data["image"] = augmentation(data["image"])
@@ -48,7 +49,7 @@ class SequentialAugmentation(AugmentationBase):
         # If bboxes are in data, scale them by the width and height of the image
         if "bboxes" in data:
             for i in range(len(data["bboxes"])):
-                data["bboxes"][i] = [data["bboxes"][i][0] * width, data["bboxes"][i][1] * height, data["bboxes"][i][2] * width, data["bboxes"][i][3] * height]
+                data["bboxes"][i] = np.array([int(data["bboxes"][i][0] * width), int(data["bboxes"][i][1] * height), int(data["bboxes"][i][2] * width), int(data["bboxes"][i][3] * height)])
 
         return data  
 
