@@ -31,8 +31,6 @@ class CameraNode : public rclcpp::Node {
     CameraNode();
     ~CameraNode();
 
-    static constexpr int NUM_OF_BUFFERS = 5;
-
   private:
     void applyParamsToCamera(int camera_idx);
     int getCameraId(int camera_handle);

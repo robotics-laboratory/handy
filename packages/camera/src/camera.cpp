@@ -1,3 +1,5 @@
+#define INT_10E6 1000000
+
 #include "camera.h"
 #include "camera_status.h"
 
@@ -124,10 +126,18 @@ CameraNode::CameraNode() : Node("camera_node") {
         CameraSetTriggerMode(camera_handles_[i], SOFT_TRIGGER);
 
         if (param_.hardware_trigger && getCameraId(camera_handles_[i]) != master_camera_id) {
+            RCLCPP_INFO(
+                this->get_logger(),
+                "treating as slave camera ID = %d",
+                getCameraId(camera_handles_[i]));
             CameraSetTriggerMode(camera_handles_[i], EXTERNAL_TRIGGER);
             CameraSetExtTrigSignalType(camera_handles_[i], EXT_TRIG_HIGH_LEVEL);
             CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_TRIG_INPUT);
         } else {
+            RCLCPP_INFO(
+                this->get_logger(),
+                "treating as master camera ID = %d",
+                getCameraId(camera_handles_[i]));
             CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_STROBE_OUTPUT);
             CameraSetStrobeMode(camera_handles_[i], STROBE_SYNC_WITH_TRIG_MANUAL);
             CameraSetStrobePolarity(camera_handles_[i], strobe_polarity);
@@ -147,7 +157,9 @@ CameraNode::CameraNode() : Node("camera_node") {
                 i);
         }
         RCLCPP_INFO(
-            this->get_logger(), "inited API for camera ID = %d", getCameraId(camera_handles_[i]));
+            this->get_logger(),
+            "inited API and started camera ID = %d",
+            getCameraId(camera_handles_[i]));
     }
     if (param_.hardware_trigger &&
         param_.master_camera_idx == -1) {  // provided master camera id was not found
@@ -245,7 +257,7 @@ CameraNode::~CameraNode() {
 }
 
 void CameraNode::triggerOnTimer() {
-    // RCLCPP_INFO(this->get_logger(), "soft trigger");
+    // RCLCPP_INFO(this->get_logger(), "SOFT TRIGGER");
     CameraSoftTrigger(camera_handles_[param_.master_camera_idx]);
     if (!param_.hardware_trigger) {
         for (int i = 0; i < param_.camera_num; ++i) {
@@ -477,6 +489,7 @@ void CameraNode::publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp,
 
 void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
     // RCLCPP_INFO(this->get_logger(), "recieved image from camera %d", handle);
+    // int64_t start_time = this->get_clock()->now().nanoseconds();
     const cv::Size size{frame_info->iWidth, frame_info->iHeight};
     if (size != frame_sizes_[handle_to_camera_idx[handle]]) {
         RCLCPP_ERROR_STREAM(
@@ -487,13 +500,24 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
     uint8_t* buffer_to_copy = new uint8_t[frame_info->iWidth * frame_info->iHeight];
     std::memmove(buffer_to_copy, raw_buffer, frame_info->iWidth * frame_info->iHeight);
     // RCLCPP_INFO(this->get_logger(), "buffer allocated, imaged moved: camera %d", handle);
-    state_.camera_images[handle_to_camera_idx[handle]]->push(
-        {buffer_to_copy, std::move(*frame_info), this->get_clock()->now().nanoseconds()});
+    if (!state_.camera_images[handle_to_camera_idx[handle]]->push(
+            {buffer_to_copy, std::move(*frame_info), this->get_clock()->now().nanoseconds()})) {
+        RCLCPP_ERROR(this->get_logger(), "unable to fit into queue! aborting");
+        timer_.camera_handle_queue_timer.get()->cancel();
+        timer_.camera_soft_trigger.get()->cancel();
+        this->~CameraNode();
+        abort();
+    }
     CameraReleaseImageBuffer(handle, raw_buffer);
+    // int64_t cpu_time = this->get_clock()->now().nanoseconds() - start_time;
+    //  RCLCPP_INFO(
+    //  this->get_logger(), "handleFrame for camera %d CPU time is %ldms", handle, cpu_time /
+    //  INT_10E6);
 }
 
 void CameraNode::handleQueue() {
-    RCLCPP_INFO(this->get_logger(), "handling queue");
+    // RCLCPP_INFO(this->get_logger(), "handling queue");
+    // int64_t start_time = this->get_clock()->now().nanoseconds();
     for (int i = 0; i < param_.camera_num; ++i) {
         StampedImagePtr stamped_image;
         if (!state_.camera_images[i]->pop(stamped_image)) {
@@ -512,6 +536,8 @@ void CameraNode::handleQueue() {
         delete[] stamped_image.buffer;
         // RCLCPP_INFO(this->get_logger(), "queue #%d done", i);
     }
+    // int64_t cpu_time = this->get_clock()->now().nanoseconds() - start_time;
+    // RCLCPP_INFO(this->get_logger(), "handleQueue CPU time is %ldms", cpu_time / INT_10E6);
 }
 
 }  // namespace handy::camera
