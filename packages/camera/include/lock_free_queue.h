@@ -22,6 +22,8 @@ class LockFreeQueue {
     }
 
     LockFreeQueue() = default;
+    LockFreeQueue(LockFreeQueue&& other) = delete;
+    LockFreeQueue(const LockFreeQueue& other) = delete;
 
     int getSize(int tail, int head) {
         if (head <= tail) {
@@ -29,6 +31,7 @@ class LockFreeQueue {
         }
         return tail + (max_size_ - head);
     }
+
     bool push(const T& value) {
         // while could not proccess
         while (1) {
@@ -49,6 +52,7 @@ class LockFreeQueue {
         }
         return true;
     }
+
     bool pop(T& data) {
         while (1) {
             if (getSize(tail_.load(), head_.load()) == 0) {
@@ -69,9 +73,6 @@ class LockFreeQueue {
         }
         return true;
     }
-
-    LockFreeQueue(LockFreeQueue&& other) = delete;
-    LockFreeQueue(const LockFreeQueue& other) = delete;
 
   private:
     // head ------- tail
