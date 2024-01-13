@@ -4,7 +4,6 @@
 #include <sensor_msgs/msg/compressed_image.hpp>
 
 #include <opencv2/core/core.hpp>
-#include <boost/lockfree/queue.hpp>
 
 #include "CameraApi.h"
 #include "params.h"

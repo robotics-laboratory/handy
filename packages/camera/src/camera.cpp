@@ -209,7 +209,9 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
 
     const auto fps = this->declare_parameter<double>("fps", 20.0);
     param_.latency = std::chrono::duration<double>(1 / fps);
+    std::chrono::duration<double> queue_handling_latency(std::max(0.01, (1 / fps) / (fps / 5)));
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
+    RCLCPP_INFO(this->get_logger(), "queue_latency=%fs", queue_handling_latency.count());
     param_.max_buffer_size = MaxBufSize(frame_sizes_);
     for (int i = 0; i < QUEUE_CAPACITY; ++i) {
         std::shared_ptr<uint8_t[]> new_bgr_buffer(new uint8_t[param_.max_buffer_size]);
@@ -227,7 +229,7 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
     call_group_.handling_queue_timer =
         this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
     timer_.camera_handle_queue_timer = this->create_wall_timer(
-        param_.latency,
+        queue_handling_latency,
         std::bind(&CameraNode::handleQueue, this),
         call_group_.handling_queue_timer);
 }
