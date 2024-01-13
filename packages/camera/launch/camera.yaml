@@ -23,7 +23,6 @@ launch:
     exec: "camera"
     name: "camera"
     param:
-    - {name: "camera_num", value: 2}
     - {name: "fps", value: 10.0}
     - {name: "preview/width", value: 1280}
     - {name: "preview/height", value: 1024}

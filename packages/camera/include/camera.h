@@ -8,28 +8,29 @@
 
 #include "CameraApi.h"
 #include "params.h"
+#include "lock_free_queue.h"
 
 #include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
-#include <queue>
-#include <mutex>
-#include <atomic>
 
 namespace handy::camera {
 
 struct StampedImagePtr {
-    uint8_t* buffer = nullptr;
-    tSdkFrameHead frame_info;
-    int64_t timestamp_nanosec;
+    std::shared_ptr<uint8_t[]> buffer = nullptr;
+    tSdkFrameHead frame_info{};
+    rclcpp::Time timestamp{};
 };
 
 class CameraNode : public rclcpp::Node {
   public:
     CameraNode();
     ~CameraNode();
+
+    constexpr static int QUEUE_CAPACITY = 8;
+    constexpr static int MAX_CAMERA_NUM = 10;
 
   private:
     void applyParamsToCamera(int camera_idx);
@@ -50,7 +51,7 @@ class CameraNode : public rclcpp::Node {
         cv::Size preview_frame_size = cv::Size(640, 480);
         std::chrono::duration<double> latency{50.0};
         std::string calibration_file_path = "";
-        int camera_num = 0;
+        int camera_num = MAX_CAMERA_NUM;  // 10
         bool publish_bgr = false;
         bool publish_bgr_preview = false;
         bool publish_raw = false;
@@ -62,13 +63,12 @@ class CameraNode : public rclcpp::Node {
     } param_{};
 
     struct State {
-        std::vector<boost::lockfree::queue<StampedImagePtr>*> camera_images = {};
-        std::vector<std::mutex> camera_bgr_buffer_mutexes = {};
+        std::array<std::unique_ptr<LockFreeQueue<StampedImagePtr>>, MAX_CAMERA_NUM> camera_images;
     } state_{};
 
     std::vector<int> camera_handles_ = {};
     std::map<int, int> handle_to_camera_idx = {};
-    std::unique_ptr<uint8_t[]> bgr_buffer_ = nullptr;
+    LockFreeQueue<std::shared_ptr<uint8_t[]>> free_bgr_buffer_;
     std::vector<CameraIntrinsicParameters> cameras_intrinsics_ = {};
     std::vector<cv::Size> frame_sizes_ = {};
 
