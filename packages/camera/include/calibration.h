@@ -12,6 +12,7 @@
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/aruco/charuco.hpp>
+#include <opencv2/aruco/aruco_calib.hpp>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -75,7 +76,8 @@ class CalibrationNode : public rclcpp::Node {
             nullptr;
         rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr detected_corners =
             nullptr;
-        rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr board_corners_image = nullptr;
+        rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr board_corners_image =
+            nullptr;
 
         rclcpp::Publisher<std_msgs::msg::Int16>::SharedPtr calibration_state = nullptr;
     } signal_{};
@@ -90,7 +92,7 @@ class CalibrationNode : public rclcpp::Node {
 
     struct Params {
         std::string path_to_save_params = "";
-        cv::Size pattern_size = cv::Size(9, 6);
+        cv::Size pattern_size = cv::Size(7, 10);
 
         std::vector<cv::Point3f> square_obj_points;
 
@@ -112,8 +114,8 @@ class CalibrationNode : public rclcpp::Node {
     struct State {
         std::optional<cv::Size> frame_size = std::nullopt;
 
-        std::vector<std::vector<cv::Point2f>> detected_corners_all;
-        std::vector<std::vector<cv::Point3f>> object_points_all;
+        std::vector<std::vector<cv::Point2f>> charuco_corners_all;
+        std::vector<std::vector<int>> charuco_ids_all;
         std::vector<Polygon> polygons_all;
         foxglove_msgs::msg::ImageMarkerArray board_markers_array;
         foxglove_msgs::msg::ImageMarkerArray board_corners_array;
