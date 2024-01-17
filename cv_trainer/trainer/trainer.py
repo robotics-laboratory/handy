@@ -11,7 +11,7 @@ from metrics import IoU
 
 
 class Trainer:
-    def __init__(self, model, optimizer, scheduler, criterion, device, config, dataloaders, metrics):
+    def __init__(self, model, criterion, optimizer, device, config, dataloaders, metrics, scheduler = None):
         self.device = device
         self.config = config
         self.logger = config.get_logger("trainer", config["trainer"]["verbosity"])

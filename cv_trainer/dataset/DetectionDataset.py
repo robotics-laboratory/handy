@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import os
 import json
+import torch
 
 class DetectionDataset(Dataset):
     TEST_SIZE = 0.2  # Define the test size
@@ -67,4 +68,25 @@ class DetectionDataset(Dataset):
             bbox = augmented["bboxes"][0]
 
         # Return the image, bounding box, and mark
-        return image, bbox, mark
+        return {
+            'image': image,
+            'bbox': bbox,
+            'mark': mark
+        }
+    
+    @staticmethod
+    def collate_fn(batch):
+        images = [item['image'] for item in batch]
+        marks = [item['mark'] for item in batch]
+        bboxes = [item['bbox'] for item in batch]
+
+        images = torch.stack(images, axis=0)
+        bboxes = torch.tensor(bboxes)  
+        marks = torch.tensor(marks)
+
+        return {
+            'images': images,
+            'bboxes': bboxes,
+            'marks': marks
+        }
+    
