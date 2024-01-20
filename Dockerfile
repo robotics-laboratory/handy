@@ -103,7 +103,7 @@ RUN apt-get update && \
         libomp-dev \
         libjpeg-dev \
         zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/* apt-get clean
+    && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 ENV TORCHVISION_VERSION=0.14.0
 
