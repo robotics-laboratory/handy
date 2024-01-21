@@ -57,25 +57,12 @@ using namespace boost::geometry;
  * @return vector of points of closed polyline
  */
 Polygon convertToBoostPolygon(const std::vector<cv::Point2f>& corners, cv::Size pattern_size) {
-    // clang-format off
-    const std::vector<cv::Point2f> cv_points = {
-        corners[0],                                               // top left
-        corners[pattern_size.width - 1],                          // top right
-        corners[pattern_size.width * pattern_size.height - 1],    // bottom right
-        corners[pattern_size.width * (pattern_size.height - 1)],  // bottom left
-    };
-    // clang-format on
-
-    const std::vector<Point> points = {
-        {cv_points[0].x, cv_points[0].y},  // top left
-        {cv_points[3].x, cv_points[3].y},  // top right
-        {cv_points[2].x, cv_points[2].y},  // bottom right
-        {cv_points[1].x, cv_points[1].y},  // bottom left
-        {cv_points[0].x, cv_points[0].y}};
-
-    Polygon poly;
-    append(poly, points);
-    return poly;
+    Polygon poly, hull;
+    for (int i = 0; i < corners.size(); ++i) {
+        append(poly, Point{corners[i].x, corners[i].y});
+    }
+    convex_hull(poly, hull);
+    return hull;
 }
 
 /**
@@ -127,12 +114,15 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
 
     param_.dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     param_.charuco_board =
-        new cv::aruco::CharucoBoard(param_.pattern_size, 0.04f, 0.02f, param_.dictionary);
-    cv::Mat board_image;
-    param_.charuco_board->generateImage(cv::Size(900, 700), board_image);
-    cv::imwrite("sample_board.png", board_image);
-    param_.charuco_board_params = cv::makePtr<cv::aruco::DetectorParameters>();
-    param_.charuco_board_params->cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
+        cv::aruco::CharucoBoard(param_.pattern_size, 0.04f, 0.02f, param_.dictionary);
+    param_.charuco_board.setLegacyPattern(true);
+
+    param_.detector_params = cv::aruco::DetectorParameters();
+    param_.detector_params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
+    param_.board_params = cv::aruco::CharucoParameters();
+
+    param_.charuco_detector = std::move(std::make_unique<cv::aruco::CharucoDetector>(
+        param_.charuco_board, param_.board_params, param_.detector_params));
 
     signal_.detected_boards->publish(state_.board_markers_array);
 }
@@ -185,53 +175,39 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
         state_.frame_size->width == image_ptr->image.cols &&
         state_.frame_size->height == image_ptr->image.rows);
 
-    bool found = false;
+    std::vector<int> current_ids;
+    std::vector<cv::Point2f> current_corners;
+    std::vector<cv::Point2f> current_image_points;
+    std::vector<cv::Point3f> current_obj_points;
 
-    std::vector<int> marker_ids;
-    std::vector<std::vector<cv::Point2f>> marker_corners;
-    cv::aruco::detectMarkers(
-        image_ptr->image,
-        cv::makePtr<cv::aruco::Dictionary>(param_.dictionary),
-        marker_corners,
-        marker_ids,
-        param_.charuco_board_params);
-    if (!marker_ids.size()) {
+    param_.charuco_detector->detectBoard(image_ptr->image, current_corners, current_ids);
+    std::string debug_str;
+    for (int i = 0; i < current_ids.size(); ++i) {
+        debug_str += std::to_string(current_ids[i]) + " ";
+    }
+    RCLCPP_INFO_STREAM(this->get_logger(), debug_str);
+    RCLCPP_INFO(this->get_logger(), "detected %ld corners", current_corners.size());
+
+    if (current_corners.size() < 20) {
         state_.board_corners_array.markers.clear();
         signal_.detected_corners->publish(state_.board_corners_array);
         return;
     }
-
-    RCLCPP_INFO(this->get_logger(), "detected %ld markers", marker_ids.size());
-
-    std::vector<int> charuco_ids;
-    std::vector<cv::Point2f> detected_corners;
-    cv::aruco::interpolateCornersCharuco(
-        marker_corners,
-        marker_ids,
-        image_ptr->image,
-        param_.charuco_board,
-        detected_corners,
-        charuco_ids);
-    RCLCPP_INFO(this->get_logger(), "interpolated, got %ld corners", detected_corners.size());
-    // cv::aruco::drawDetectedMarkers(image_ptr->image, marker_corners, marker_ids);
-    if (charuco_ids.size() > 4) {
-        cv::aruco::drawDetectedCornersCharuco(
-            image_ptr->image, detected_corners, charuco_ids, cv::Scalar(255, 0, 0));
-        found = true;
-    }
+    param_.charuco_board.matchImagePoints(
+        current_corners, current_ids, current_obj_points, current_image_points);
 
     state_.board_corners_array.markers.clear();
-    if (!found) {
+    if (current_ids.size() < 30;) {
         signal_.detected_corners->publish(state_.board_corners_array);
         return;
     }
     if (param_.publish_preview_markers) {
-        appendCornerMarkers(detected_corners);
+        appendCornerMarkers(current_corners);
         signal_.detected_corners->publish(state_.board_corners_array);
     }
-    // if (!checkMaxSimilarity(detected_corners)) {
-    //     return;
-    // }
+    if (!checkMaxSimilarity(current_corners)) {
+        return;
+    }
     // if (param_.publish_preview_markers) {
     //     state_.board_markers_array.markers.push_back(
     //         getBoardMarkerFromCorners(detected_corners, image_ptr->header));
@@ -239,9 +215,9 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
     // }
     signal_.board_corners_image->publish(toJpegMsg(*image_ptr));
 
-    state_.charuco_corners_all.push_back(detected_corners);
-    state_.charuco_ids_all.push_back(charuco_ids);
-    // state_.polygons_all.push_back(convertToBoostPolygon(detected_corners, param_.pattern_size));
+    state_.obj_points_all.push_back(current_obj_points);
+    state_.image_points_all.push_back(current_image_points);
+    state_.polygons_all.push_back(convertToBoostPolygon(current_corners, param_.pattern_size));
 }
 
 void CalibrationNode::onButtonClick(
@@ -349,8 +325,8 @@ void CalibrationNode::handleBadCalibration() {
 
 void CalibrationNode::handleResetCommand() {
     state_.calibration_state = NOT_CALIBRATED;
-    state_.charuco_corners_all.clear();
-    state_.charuco_ids_all.clear();
+    state_.image_points_all.clear();
+    state_.obj_points_all.clear();
     state_.board_markers_array.markers.clear();
     state_.polygons_all.clear();
     signal_.detected_boards->publish(state_.board_markers_array);
@@ -360,30 +336,29 @@ void CalibrationNode::calibrate() {
     state_.calibration_state = CALIBRATING;
     publishCalibrationState();
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration inialized");
-    // int coverage_percentage = getImageCoverage();
-    // if (coverage_percentage < param_.required_board_coverage) {
-    //     RCLCPP_INFO(this->get_logger(), "Coverage of %d is not sufficient", coverage_percentage);
-    //     handleBadCalibration();
-    //     return;
-    // }
-    std::vector<cv::Mat> _1, _2;
+    int coverage_percentage = getImageCoverage();
+    if (coverage_percentage < param_.required_board_coverage) {
+        RCLCPP_INFO(this->get_logger(), "Coverage of %d is not sufficient", coverage_percentage);
+        handleBadCalibration();
+        return;
+    }
+
     CameraIntrinsicParameters intrinsic_params{};
     intrinsic_params.image_size = *state_.frame_size;
-    double rms = cv::aruco::calibrateCameraCharuco(
-        state_.charuco_corners_all,
-        state_.charuco_ids_all,
-        param_.charuco_board,
+    double rms = cv::calibrateCamera(
+        state_.obj_points_all,
+        state_.image_points_all,
         *state_.frame_size,
         intrinsic_params.camera_matrix,
         intrinsic_params.dist_coefs,
-        _1,
-        _2);
+        cv::noArray(),
+        cv::noArray());
 
-    // RCLCPP_INFO(
-    //     this->get_logger(),
-    //     "Calibration done with error of %f and coverage of %d%%",
-    //     rms,
-    //     coverage_percentage);
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Calibration done with error of %f and coverage of %d%%",
+        rms,
+        coverage_percentage);
     RCLCPP_INFO(this->get_logger(), "Calibration done with error of %f", rms);
     if (rms < param_.min_accepted_error) {
         intrinsic_params.storeYaml(param_.path_to_save_params);

@@ -21,6 +21,7 @@
 #include <vector>
 #include <string>
 #include <optional>
+#include <memory>
 
 namespace handy::calibration {
 
@@ -96,8 +97,10 @@ class CalibrationNode : public rclcpp::Node {
 
         std::vector<cv::Point3f> square_obj_points;
 
-        cv::Ptr<cv::aruco::CharucoBoard> charuco_board;
-        cv::Ptr<cv::aruco::DetectorParameters> charuco_board_params;
+        cv::aruco::CharucoBoard charuco_board;
+        cv::aruco::DetectorParameters detector_params;
+        cv::aruco::CharucoParameters board_params;
+        std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector = nullptr;
         cv::aruco::Dictionary dictionary;
 
         bool publish_preview_markers = true;
@@ -105,7 +108,6 @@ class CalibrationNode : public rclcpp::Node {
 
         std::vector<double> marker_color = {0.0, 1.0, 0.0, 0.12};
         double min_accepted_error = 0.75;
-        double alpha_chn_increase = 0.12;
         double iou_treshhold = 0.5;
         int min_required_aruco_detected = 2;
         double required_board_coverage = 0.7;
@@ -114,15 +116,15 @@ class CalibrationNode : public rclcpp::Node {
     struct State {
         std::optional<cv::Size> frame_size = std::nullopt;
 
-        std::vector<std::vector<cv::Point2f>> charuco_corners_all;
-        std::vector<std::vector<int>> charuco_ids_all;
+        std::vector<std::vector<cv::Point2f>> image_points_all;
+        std::vector<std::vector<cv::Point3f>> obj_points_all;
         std::vector<Polygon> polygons_all;
         foxglove_msgs::msg::ImageMarkerArray board_markers_array;
         foxglove_msgs::msg::ImageMarkerArray board_corners_array;
 
         int last_marker_id = 0;
         int calibration_state = NOT_CALIBRATED;
-    } state_;
+    } state_{};
 
     struct Timer {
         rclcpp::TimerBase::SharedPtr calibration_state = nullptr;
