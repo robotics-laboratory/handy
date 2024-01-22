@@ -12,7 +12,6 @@
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/aruco/charuco.hpp>
-#include <opencv2/aruco/aruco_calib.hpp>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>

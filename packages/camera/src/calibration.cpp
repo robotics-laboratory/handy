@@ -20,26 +20,12 @@ geometry_msgs::msg::Point toMsgPoint(cv::Point2f cv_point) {
     return point;
 }
 
-/**
- * Converts all detected corners into a vector of top/bottom left/right corners
- *
- * @param cv_point OpenCV point that will be converted
- * @return vector of 4 corners of detected pattern
- */
-std::vector<geometry_msgs::msg::Point> toBoardMsgCorners(
-    const std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size) {
-    cv::Point2f board_cv_corners[4] = {
-        detected_corners[0],
-        detected_corners[pattern_size.width - 1],
-        detected_corners[pattern_size.width * pattern_size.height - 1],
-        detected_corners[pattern_size.width * (pattern_size.height - 1)],
-    };
-
-    std::vector<geometry_msgs::msg::Point> marker_points(4);
-    for (int i = 0; i < 4; ++i) {
-        marker_points[i] = toMsgPoint(board_cv_corners[i]);
-    }
-    return marker_points;
+// overload to accept Boost 2D point as an argument
+geometry_msgs::msg::Point toMsgPoint(boost::geometry::model::d2::point_xy<double> boost_point) {
+    geometry_msgs::msg::Point point;
+    point.x = boost_point.x();
+    point.y = boost_point.y();
+    return point;
 }
 
 }  // namespace
@@ -59,10 +45,32 @@ using namespace boost::geometry;
 Polygon convertToBoostPolygon(const std::vector<cv::Point2f>& corners, cv::Size pattern_size) {
     Polygon poly, hull;
     for (int i = 0; i < corners.size(); ++i) {
-        append(poly, Point{corners[i].x, corners[i].y});
+        poly.outer().push_back(Point{corners[i].x, corners[i].y});
+        // append(poly, Point{corners[i].x, corners[i].y});
     }
     convex_hull(poly, hull);
     return hull;
+}
+
+/**
+ * Converts all detected corners into a vector of top/bottom left/right corners
+ *
+ * @param cv_point OpenCV point that will be converted
+ * @return vector of 4 corners of detected pattern
+ */
+std::vector<geometry_msgs::msg::Point> toBoardMsgCorners(
+    const std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size) {
+    Polygon poly, hull;
+    for (int i = 0; i < detected_corners.size(); ++i) {
+        poly.outer().push_back(Point{detected_corners[i].x, detected_corners[i].y});
+    }
+    convex_hull(poly, hull);
+
+    std::vector<geometry_msgs::msg::Point> marker_points;
+    for (int i = 0; i < hull.outer().size(); ++i) {
+        marker_points.push_back(toMsgPoint(hull.outer()[i]));
+    }
+    return marker_points;
 }
 
 /**
@@ -118,7 +126,8 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     param_.charuco_board.setLegacyPattern(true);
 
     param_.detector_params = cv::aruco::DetectorParameters();
-    param_.detector_params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
+    param_.detector_params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_APRILTAG;
+    param_.detector_params.cornerRefinementWinSize = 10;
     param_.board_params = cv::aruco::CharucoParameters();
 
     param_.charuco_detector = std::move(std::make_unique<cv::aruco::CharucoDetector>(
@@ -181,12 +190,6 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
     std::vector<cv::Point3f> current_obj_points;
 
     param_.charuco_detector->detectBoard(image_ptr->image, current_corners, current_ids);
-    std::string debug_str;
-    for (int i = 0; i < current_ids.size(); ++i) {
-        debug_str += std::to_string(current_ids[i]) + " ";
-    }
-    RCLCPP_INFO_STREAM(this->get_logger(), debug_str);
-    RCLCPP_INFO(this->get_logger(), "detected %ld corners", current_corners.size());
 
     if (current_corners.size() < 20) {
         state_.board_corners_array.markers.clear();
@@ -197,7 +200,7 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
         current_corners, current_ids, current_obj_points, current_image_points);
 
     state_.board_corners_array.markers.clear();
-    if (current_ids.size() < 30;) {
+    if (current_ids.size() < 30) {
         signal_.detected_corners->publish(state_.board_corners_array);
         return;
     }
@@ -208,11 +211,12 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
     if (!checkMaxSimilarity(current_corners)) {
         return;
     }
-    // if (param_.publish_preview_markers) {
-    //     state_.board_markers_array.markers.push_back(
-    //         getBoardMarkerFromCorners(detected_corners, image_ptr->header));
-    //     signal_.detected_boards->publish(state_.board_markers_array);
-    // }
+    if (param_.publish_preview_markers) {
+        state_.board_markers_array.markers.push_back(
+            getBoardMarkerFromCorners(current_corners, image_ptr->header));
+        signal_.detected_boards->publish(state_.board_markers_array);
+    }
+    cv::aruco::drawDetectedCornersCharuco(image_ptr->image, current_corners, current_ids);
     signal_.board_corners_image->publish(toJpegMsg(*image_ptr));
 
     state_.obj_points_all.push_back(current_obj_points);
@@ -359,7 +363,6 @@ void CalibrationNode::calibrate() {
         "Calibration done with error of %f and coverage of %d%%",
         rms,
         coverage_percentage);
-    RCLCPP_INFO(this->get_logger(), "Calibration done with error of %f", rms);
     if (rms < param_.min_accepted_error) {
         intrinsic_params.storeYaml(param_.path_to_save_params);
         state_.calibration_state = OK_CALIBRATION;
