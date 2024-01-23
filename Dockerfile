@@ -91,7 +91,7 @@ RUN apt-get update -yq && \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
-ENV OPENCV_VERSION="4.7.0"
+ENV OPENCV_VERSION="4.8.0"
 
 # PREPARE FOR TORCH
 
@@ -103,7 +103,7 @@ RUN apt-get update && \
         libomp-dev \
         libjpeg-dev \
         zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/* apt-get clean
+    && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 ENV TORCHVISION_VERSION=0.14.0
 
