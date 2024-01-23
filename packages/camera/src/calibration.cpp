@@ -3,24 +3,17 @@
 
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/core/types.hpp>
 #include <deque>
 
 namespace {
 
 /**
- * Converts OpenCV point to ROS2 message
+ * Converts Boost point to ROS2 message
  *
- * @param cv_point OpenCV point that will be converted
+ * @param boost_point Boost point that will be converted
  * @return converted point of ROS2 message
  */
-geometry_msgs::msg::Point toMsgPoint(cv::Point2f cv_point) {
-    geometry_msgs::msg::Point point;
-    point.x = cv_point.x;
-    point.y = cv_point.y;
-    return point;
-}
-
-// overload to accept Boost 2D point as an argument
 geometry_msgs::msg::Point toMsgPoint(boost::geometry::model::d2::point_xy<double> boost_point) {
     geometry_msgs::msg::Point point;
     point.x = boost_point.x();
@@ -38,36 +31,35 @@ using namespace boost::geometry;
  * Converts all corners of detected chessboard into a closed polyline of
  * top/bottom left/right corners (Boost points)
  *
- * @param corners vector all corners in cv::Point2f format
- * @param pattern_size width and height of chessboard
- * @return vector of points of closed polyline
+ * @param corners vector all detected charuco corners in cv::Point2f format
+ * @param pattern_size width and height of chessboard (in squares)
+ * @return Boost polygon of convex hull containing given corner points
  */
 Polygon convertToBoostPolygon(const std::vector<cv::Point2f>& corners, cv::Size pattern_size) {
     Polygon poly, hull;
-    for (int i = 0; i < corners.size(); ++i) {
+    for (size_t i = 0; i < corners.size(); ++i) {
         poly.outer().push_back(Point{corners[i].x, corners[i].y});
-        // append(poly, Point{corners[i].x, corners[i].y});
     }
     convex_hull(poly, hull);
     return hull;
 }
 
 /**
- * Converts all detected corners into a vector of top/bottom left/right corners
+ * Converts all detected charuco corners into a closed polyline of convex hull
  *
- * @param cv_point OpenCV point that will be converted
- * @return vector of 4 corners of detected pattern
+ * @param cv_point OpenCV points that will be converted
+ * @return vector of corners, forming a closed polyline of convex hull
  */
 std::vector<geometry_msgs::msg::Point> toBoardMsgCorners(
     const std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size) {
     Polygon poly, hull;
-    for (int i = 0; i < detected_corners.size(); ++i) {
+    for (size_t i = 0; i < detected_corners.size(); ++i) {
         poly.outer().push_back(Point{detected_corners[i].x, detected_corners[i].y});
     }
     convex_hull(poly, hull);
 
     std::vector<geometry_msgs::msg::Point> marker_points;
-    for (int i = 0; i < hull.outer().size(); ++i) {
+    for (size_t i = 0; i < hull.outer().size(); ++i) {
         marker_points.push_back(toMsgPoint(hull.outer()[i]));
     }
     return marker_points;
@@ -144,7 +136,7 @@ void CalibrationNode::declareLaunchParams() {
     param_.required_board_coverage = this->declare_parameter<double>("required_board_coverage", 0.7);
     param_.min_required_aruco_detected = this->declare_parameter<int>("required_aruco_detected", 2);
     param_.min_accepted_error = this->declare_parameter<double>("min_accepted_calib_error", 0.75);
-    param_.iou_treshhold = this->declare_parameter<double>("iou_threshold", 0.5);
+    param_.iou_threshold = this->declare_parameter<double>("iou_threshold", 0.5);
     param_.marker_color = this->declare_parameter<std::vector<double>>("marker_color", {0.0f, 1.0f, 0.0f, 0.12f});
     // clang-format on
 }
@@ -163,8 +155,6 @@ void CalibrationNode::initSignals() {
         "/calibration_1/board_markers", 10);
     signal_.detected_corners = this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
         "/calibration_1/corner_markers", 10);
-    signal_.board_corners_image = this->create_publisher<sensor_msgs::msg::CompressedImage>(
-        "/calibration_1/board_corners_image", 10);
 
     signal_.calibration_state =
         this->create_publisher<std_msgs::msg::Int16>("/calibration_1/state", 10);
@@ -216,8 +206,6 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
             getBoardMarkerFromCorners(current_corners, image_ptr->header));
         signal_.detected_boards->publish(state_.board_markers_array);
     }
-    cv::aruco::drawDetectedCornersCharuco(image_ptr->image, current_corners, current_ids);
-    signal_.board_corners_image->publish(toJpegMsg(*image_ptr));
 
     state_.obj_points_all.push_back(current_obj_points);
     state_.image_points_all.push_back(current_image_points);
@@ -245,7 +233,7 @@ bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f>& corners) cons
     Polygon new_poly = convertToBoostPolygon(corners, param_.pattern_size);
     return std::all_of(
         state_.polygons_all.begin(), state_.polygons_all.end(), [&](const Polygon& prev_poly) {
-            return getIou(prev_poly, new_poly) <= param_.iou_treshhold;
+            return getIou(prev_poly, new_poly) <= param_.iou_threshold;
         });
 }
 
@@ -349,6 +337,7 @@ void CalibrationNode::calibrate() {
 
     CameraIntrinsicParameters intrinsic_params{};
     intrinsic_params.image_size = *state_.frame_size;
+    std::vector<double> per_view_errors;
     double rms = cv::calibrateCamera(
         state_.obj_points_all,
         state_.image_points_all,
@@ -356,13 +345,55 @@ void CalibrationNode::calibrate() {
         intrinsic_params.camera_matrix,
         intrinsic_params.dist_coefs,
         cv::noArray(),
-        cv::noArray());
+        cv::noArray(),
+        cv::noArray(),
+        cv::noArray(),
+        per_view_errors,
+        cv::CALIB_FIX_PRINCIPAL_POINT | cv::CALIB_FIX_TAUX_TAUY,
+        cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
     RCLCPP_INFO(
         this->get_logger(),
-        "Calibration done with error of %f and coverage of %d%%",
+        "Calibration done with error of %f and coverage of %d",
         rms,
         coverage_percentage);
+
+    std::pair<std::vector<double>::iterator, std::vector<double>::iterator> minmax_elem =
+        boost::minmax_element(per_view_errors.begin(), per_view_errors.end());
+    // to eliminate 10% as bad calibration data
+    double border_value =
+        std::max(2.0, *minmax_elem.first + 0.9 * (*minmax_elem.second - *minmax_elem.first));
+
+    for (size_t i = 0; i < state_.obj_points_all.size(); ++i) {
+        if (per_view_errors[i] > border_value) {
+            state_.obj_points_all.erase(state_.obj_points_all.begin() + i);
+            state_.image_points_all.erase(state_.image_points_all.begin() + i);
+            state_.polygons_all.erase(state_.polygons_all.begin() + i);
+        }
+    }
+
+    // recalibrate more thoroughly without bad images
+    rms = cv::calibrateCamera(
+        state_.obj_points_all,
+        state_.image_points_all,
+        *state_.frame_size,
+        intrinsic_params.camera_matrix,
+        intrinsic_params.dist_coefs,
+        cv::noArray(),
+        cv::noArray(),
+        cv::noArray(),
+        cv::noArray(),
+        per_view_errors,
+        cv::CALIB_USE_INTRINSIC_GUESS,
+        cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+
+    coverage_percentage = getImageCoverage();
+    RCLCPP_INFO(
+        this->get_logger(),
+        "Calibration redone with error of %f and coverage of %d",
+        rms,
+        coverage_percentage);
+
     if (rms < param_.min_accepted_error) {
         intrinsic_params.storeYaml(param_.path_to_save_params);
         state_.calibration_state = OK_CALIBRATION;
