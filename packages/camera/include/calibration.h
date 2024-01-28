@@ -106,7 +106,6 @@ class CalibrationNode : public rclcpp::Node {
         std::vector<double> marker_color = {0.0, 1.0, 0.0, 0.12};
         double min_accepted_error = 0.75;
         double iou_threshold = 0.5;
-        int min_required_aruco_detected = 2;
         double required_board_coverage = 0.7;
     } param_;
 

@@ -134,7 +134,6 @@ void CalibrationNode::declareLaunchParams() {
     param_.path_to_save_params = this->declare_parameter<std::string>("calibration_file_path", "param_path");
 
     param_.required_board_coverage = this->declare_parameter<double>("required_board_coverage", 0.7);
-    param_.min_required_aruco_detected = this->declare_parameter<int>("required_aruco_detected", 2);
     param_.min_accepted_error = this->declare_parameter<double>("min_accepted_calib_error", 0.75);
     param_.iou_threshold = this->declare_parameter<double>("iou_threshold", 0.5);
     param_.marker_color = this->declare_parameter<std::vector<double>>("marker_color", {0.0f, 1.0f, 0.0f, 0.12f});
