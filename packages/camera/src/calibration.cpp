@@ -349,48 +349,15 @@ void CalibrationNode::calibrate() {
         cv::noArray(),
         cv::noArray(),
         per_view_errors,
-        cv::CALIB_FIX_PRINCIPAL_POINT | cv::CALIB_FIX_TAUX_TAUY,
-        cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+        cv::CALIB_FIX_PRINCIPAL_POINT | cv::CALIB_FIX_TAUX_TAUY | cv::CALIB_FIX_S1_S2_S3_S4 |
+            cv::CALIB_ZERO_TANGENT_DIST,
 
-    RCLCPP_INFO(
-        this->get_logger(),
-        "Calibration done with error of %f and coverage of %d",
-        rms,
-        coverage_percentage);
-
-    std::pair<std::vector<double>::iterator, std::vector<double>::iterator> minmax_elem =
-        boost::minmax_element(per_view_errors.begin(), per_view_errors.end());
-    // to eliminate 10% as bad calibration data
-    double border_value =
-        std::max(2.0, *minmax_elem.first + 0.9 * (*minmax_elem.second - *minmax_elem.first));
-
-    for (size_t i = 0; i < state_.obj_points_all.size(); ++i) {
-        if (per_view_errors[i] > border_value) {
-            state_.obj_points_all.erase(state_.obj_points_all.begin() + i);
-            state_.image_points_all.erase(state_.image_points_all.begin() + i);
-            state_.polygons_all.erase(state_.polygons_all.begin() + i);
-        }
-    }
-
-    // recalibrate more thoroughly without bad images
-    rms = cv::calibrateCamera(
-        state_.obj_points_all,
-        state_.image_points_all,
-        *state_.frame_size,
-        intrinsic_params.camera_matrix,
-        intrinsic_params.dist_coefs,
-        cv::noArray(),
-        cv::noArray(),
-        cv::noArray(),
-        cv::noArray(),
-        per_view_errors,
-        cv::CALIB_USE_INTRINSIC_GUESS,
         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
     coverage_percentage = getImageCoverage();
     RCLCPP_INFO(
         this->get_logger(),
-        "Calibration redone with error of %f and coverage of %d",
+        "Calibration done with error of %f and coverage of %d",
         rms,
         coverage_percentage);
 
