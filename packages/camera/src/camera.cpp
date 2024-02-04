@@ -20,7 +20,7 @@ void CameraNode::abortIfNot(std::string_view msg, int status) {
             len(status_name),
             status_name.data(),
             status);
-        abort();
+        exit(-1);
     }
 }
 
@@ -36,7 +36,7 @@ void CameraNode::abortIfNot(std::string_view msg, int camera_idx, int status) {
             len(status_name),
             status_name.data(),
             status);
-        abort();
+        exit(-1);
     }
 }
 
@@ -86,7 +86,7 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
         } catch (std::exception&) {
             RCLCPP_ERROR(
                 this->get_logger(), "invalid master camera id '%s'!", str_master_camera_id.c_str());
-            abort();
+            exit(-1);
         }
     }();
 
@@ -147,7 +147,7 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
     if (param_.hardware_trigger &&
         param_.master_camera_idx == -1) {  // provided master camera id was not found
         RCLCPP_ERROR(this->get_logger(), "master camera id was not found: %d", master_camera_id);
-        abort();
+        exit(-1);
     }
     if (!param_.hardware_trigger) {
         param_.master_camera_idx = 0;
@@ -217,7 +217,7 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
         std::shared_ptr<uint8_t[]> new_bgr_buffer(new uint8_t[param_.max_buffer_size]);
         if (!free_bgr_buffer_.push(new_bgr_buffer)) {
             RCLCPP_ERROR(this->get_logger(), "failed to push to queue BGR buffer #%d", i);
-            abort();
+            exit(-1);
         }
     }
 
@@ -296,7 +296,7 @@ void CameraNode::applyParamsToCamera(int handle) {
                 exposure.count(),
                 camera_idx,
                 param_.latency.count());
-            abort();
+            exit(-1);
         }
 
         abortIfNot("set exposure", camera_idx, CameraSetExposureTime(handle, exposure.count()));
@@ -381,7 +381,7 @@ void CameraNode::applyParamsToCamera(int handle) {
         });
     if (!has_all_params) {
         RCLCPP_ERROR(this->get_logger(), "camera %d failed to read instrinsic params", camera_idx);
-        abort();
+        exit(-1);
     }
 
     // loading intrinsic parameters
@@ -458,7 +458,7 @@ void CameraNode::publishBGRImage(
     }
     if (!free_bgr_buffer_.push(bgr_buffer)) {
         RCLCPP_ERROR(this->get_logger(), "unable to push bgr buffer back after use");
-        abort();
+        exit(-1);
     }
 }
 
@@ -483,7 +483,7 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
         RCLCPP_ERROR_STREAM(
             this->get_logger(),
             "expected frame size " << frame_sizes_[handle] << ", but got " << size);
-        abort();
+        exit(-1);
     }
     int frame_size_px = frame_info->iWidth * frame_info->iHeight;
     std::shared_ptr<uint8_t[]> buffer_to_copy(new uint8_t[frame_size_px]);
@@ -495,7 +495,7 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
         timer_.camera_handle_queue_timer.get()->cancel();
         timer_.camera_soft_trigger.get()->cancel();
         this->~CameraNode();
-        abort();
+        exit(-1);
     }
     CameraReleaseImageBuffer(handle, raw_buffer);
 }
