@@ -1,2 +1,4 @@
 [core]
-    autostage = true
+    remote = public
+['remote "public"']
+    url = https://the-lab-bucket.storage.yandexcloud.net/dvc/
