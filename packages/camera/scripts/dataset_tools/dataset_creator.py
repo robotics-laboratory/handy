@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import os
 import argparse
-
+import yaml
 
 BGR_UNDISTORT_PATH = "bgr_image_undistort"
 BGR_DISTORT_PATH = "bgr_image_distort"
@@ -10,25 +10,18 @@ RAW_UNDISTORT_PATH = "raw_image_undistort"
 
 
 class Intrinsics:
-    def __init__(self, camera_matrix, dist_coefs):
-        self.camera_matrix = np.array(
-            [
-                [1049.749496618372, 0, 912.9238734274475],
-                [0, 1028.307877419058, 523.1240537565553],
-                [0, 0, 1],
-            ]
-        )
-
-        self.dist_coefs = np.array([-0.1519539, 0.337941, 0.0, 0.0, -0.1424794])
-        self.image_size = None
+    def __init__(self, camera_matrix, dist_coefs, image_size):
+        self.camera_matrix = camera_matrix
+        self.dist_coefs = dist_coefs
+        self.image_size = image_size
         self.mapx, self.mapy = None, None
 
     def undistort_image(self, image):
         cur_image_size = image.shape[:2]
-        if not self.image_size:
-            self.image_size = cur_image_size
         if self.image_size != cur_image_size:
-            raise ValueError("Images of different sizes were provided")
+            raise ValueError(
+                f"Images of different sizes were provided: {self.image_size} != {cur_image_size}"
+            )
 
         if self.mapx is None or self.mapy is None:
             self.mapx, self.mapy = cv2.initUndistortRectifyMap(
@@ -36,7 +29,7 @@ class Intrinsics:
                 self.dist_coefs,
                 None,
                 self.camera_matrix,
-                self.image_size[::-1],
+                self.image_size[::-1],  # (width, height)
                 5,
             )
 
@@ -45,8 +38,19 @@ class Intrinsics:
 
     @staticmethod
     def create_from_yaml(path_to_file):
-        obj = Intrinsics(None, None)
-        return obj
+        with open(path_to_file, "r") as stream:
+            try:
+                data = yaml.safe_load(stream)
+            except yaml.YAMLError as e:
+                print(e)
+                return None
+            camera_matrix = np.array(data["camera_matrix"], dtype=np.double).reshape(
+                (3, 3)
+            )
+            dist_coefs = np.array(data["distorsion_coefs"], dtype=np.double)
+            image_size = tuple(data["image_size"][::-1])  # (height, width)
+            assert len(image_size) == 2
+            return Intrinsics(camera_matrix, dist_coefs, image_size)
 
 
 def init_parser():
@@ -75,8 +79,6 @@ def main():
     export_dir = args.export
     source_dir = args.source
     params_path = args.params_path
-    if params_path:
-        raise NotImplementedError("Reading YAML with intrinsics is not implemented. Params are hardcoded for now")
 
     if not any([store_distort_bgr, store_undistort_bgr, store_undistort_raw]):
         print("At least one convertation flag must be specified")
@@ -90,6 +92,8 @@ def main():
 
     if store_undistort_bgr:
         intrinsic_params = Intrinsics.create_from_yaml(params_path)
+        if intrinsic_params is None:
+            return
         if not os.path.isdir(os.path.join(export_dir, BGR_UNDISTORT_PATH)):
             os.mkdir(os.path.join(export_dir, BGR_UNDISTORT_PATH))
     if store_distort_bgr and not os.path.isdir(
@@ -97,11 +101,14 @@ def main():
     ):
         os.mkdir(os.path.join(export_dir, BGR_DISTORT_PATH))
     if store_undistort_raw:
-        intrinsic_params = Intrinsics.create_from_yaml(params_path)
+        if intrinsic_params is None:
+            intrinsic_params = Intrinsics.create_from_yaml(params_path)
+            if intrinsic_params is None:
+                return
         if not os.path.isdir(os.path.join(export_dir, RAW_UNDISTORT_PATH)):
             os.mkdir(os.path.join(export_dir, RAW_UNDISTORT_PATH))
 
-    for filename in os.listdir(source_dir)[:10]:
+    for filename in os.listdir(source_dir):
         path_to_file = os.path.join(source_dir, filename)
         image = cv2.imread(path_to_file)
 
