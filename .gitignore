@@ -43,5 +43,5 @@ packages/install
 packages/log
 
 # DVC data
-/ball_dataset_side_1
-/ball_dataset_side_2
+datasets/ball_dataset_side_1
+datasets/ball_dataset_side_2
