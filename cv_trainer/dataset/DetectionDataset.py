@@ -5,11 +5,12 @@ import numpy as np
 import os
 import json
 import torch
+from random import shuffle
 
 class DetectionDataset(Dataset):
     TEST_SIZE = 0.2  # Define the test size
 
-    def __init__(self, image_dir: str, total_dir: str, bbox_json: str, is_train: bool = True, transforms = None, random_seed: int = 42, negatives_p: float = 0.5):
+    def __init__(self, image_dir: str, total_dir: str, bbox_json: str, is_train: bool = True, transforms = None, random_seed: int = 42, negatives_p: float = 0.5, **kwargs):
         super().__init__()
         self.image_dir = image_dir  # Directory for images with ball
         self.total_dir = total_dir  # Directory for total images
@@ -33,6 +34,7 @@ class DetectionDataset(Dataset):
 
         # Extend the image names with negative files
         self.image_names.extend((train_neg if is_train else test_neg)[:int(len(self.image_names) * negatives_p)])
+        shuffle(self.image_names)
 
     def __len__(self):
         # Return the total number of images
@@ -73,20 +75,19 @@ class DetectionDataset(Dataset):
             'bbox': bbox,
             'mark': mark
         }
-    
-    @staticmethod
-    def collate_fn(batch):
-        images = [item['image'] for item in batch]
-        marks = [item['mark'] for item in batch]
-        bboxes = [item['bbox'] for item in batch]
+ 
 
-        images = torch.stack(images, axis=0)
-        bboxes = torch.tensor(bboxes)  
-        marks = torch.tensor(marks)
+def collate_fn(batch):
+    images = [item['image'] for item in batch]
+    marks = [item['mark'] for item in batch]
+    bboxes = [item['bbox'] for item in batch]
 
-        return {
-            'images': images,
-            'bboxes': bboxes,
-            'marks': marks
-        }
-    
+    images = torch.stack(images, axis=0)
+    bboxes = torch.tensor(bboxes)  
+    marks = torch.tensor(marks)
+
+    return {
+        'image': images,
+        'bbox': bboxes,
+        'mark': marks
+    }

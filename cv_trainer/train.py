@@ -7,7 +7,7 @@ import torch
 
 import loss as module_loss
 import metrics as module_metric
-import model as module_arch
+import models as module_arch
 from trainer import Trainer
 from utils import prepare_device
 from utils.object_loading import get_dataloaders

@@ -1,4 +1,4 @@
-from .DetectionDataset import DetectionDataset
+from .DetectionDataset import DetectionDataset, collate_fn
 from .SegmentationDataset import SegmentationDataset
 
 __all__ = [

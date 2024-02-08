@@ -1,7 +1,8 @@
-import tqdm
+from tqdm import tqdm
 import wandb
 import torch
 import numpy as np
+import pandas as pd
 import torchvision.transforms as T
 
 from random import shuffle
@@ -19,19 +20,20 @@ class Trainer:
         self.model = model
         self.optimizer = optimizer
         self.criterion = criterion
-        self.scheduler = scheduler
+        self.lr_scheduler = scheduler
 
-        self.epochs = config["epochs"]
-        self.save_period = config["save_period"]
+        self.epochs = config["trainer"]["epochs"]
+        self.save_period = config["trainer"]["save_period"]
         self.start_epoch = 1
 
         self.checkpoint_dir = config.save_dir
         self.writer = WanDBWriter(config, self.logger)
 
-        self.train_data_loader = dataloaders["train"]
-        self.eval_dataloader = {k: v for k, v in dataloaders.items() if k != "train"}
-        self.len_epoch = len(self.train_data_loader)
-
+        self.train_dataloader = dataloaders["train"]
+        self.evaluation_dataloaders = {k: v for k, v in dataloaders.items() if k != "train"}
+        self.len_epoch = len(self.train_dataloader)
+        
+        self.metrics = metrics
         self.train_metrics = MetricTracker("loss", *[m.name for m in metrics], writer=self.writer)
         self.eval_metrics = MetricTracker("loss", *[m.name for m in metrics], writer=self.writer)
 
@@ -134,14 +136,14 @@ class Trainer:
                     is_train=False,
                     metrics=self.eval_metrics,
                 )
-                predictions.extend(batch["preds"].cpu()[:, 0].tolist())
-                labels.extend(batch["labels"].cpu().tolist())
+                predictions.extend(batch["predicted_bbox"].cpu()[:, 0].tolist())
+                labels.extend(batch["bbox"].cpu().tolist())
             
             for metric in self.metrics:
-                self.evaluation_metrics.update(metric.name, metric(np.array(predictions), np.array(labels)))
+                self.eval_metrics.update(metric.name, metric(torch.tensor(predictions), torch.tensor(labels)))
 
             self.writer.set_step(epoch * self.len_epoch, part)
-            self._log_scalars(self.evaluation_metrics)
+            self._log_scalars(self.eval_metrics)
             self._log_predictions(**batch, is_train=False)
 
         return self.eval_metrics.result()
@@ -153,6 +155,7 @@ class Trainer:
         """
         for tensor_for_gpu in ["image", "bbox", "mark"]:
             batch[tensor_for_gpu] = batch[tensor_for_gpu].to(device)
+        batch["bbox"] = batch["bbox"].to(torch.float32)
         return batch
     
     def process_batch(self, batch, is_train, metrics):
@@ -168,8 +171,8 @@ class Trainer:
         if is_train:
             loss.backward()
             self.optimizer.step()
-            if self.scheduler is not None:
-                self.scheduler.step()
+            if self.lr_scheduler is not None:
+                self.lr_scheduler.step()
         batch.update({"loss": loss.item()})
         metrics.update("loss", loss.item())
 
@@ -181,51 +184,53 @@ class Trainer:
         for metric_name in metric_tracker.keys():
             self.writer.add_scalar(f"{metric_name}", metric_tracker.avg(metric_name))
     
-    def _log_predictions(self, image, bbox, mark, pred_bbox, pred_mark, examples_tp_log=5):
+    def _log_predictions(self, image, bbox, mark, predicted_bbox, predicted_mark, examples_tp_log=5, **kwargs):
         if self.writer is None:
             return
-        results = list(zip(image, bbox, mark, pred_bbox, pred_mark))
+        results = list(zip(image, bbox, mark, predicted_bbox, predicted_mark))
         shuffle(results)
-        rows = {}
-        for i, image, bbox, mark, pred_bbox, pred_mark in enumerate(results[:examples_tp_log]):
-            pil_image = T.ToPILImage()(image.cpu())
+        table = wandb.Table(columns=["ID", "Image", "Mark", "Predicted prob", "IOU"])
+        for i, (image, bbox, mark, pred_bbox, pred_mark) in enumerate(results[:examples_tp_log]):
+            mean = [0.485, 0.456, 0.406]
+            std = [0.229, 0.224, 0.225]
+            #denorm_image = T.Normalize(mean=[-m/s for m, s in zip(mean, std)], std=[1/s for s in std])(image.cpu())
+            pil_image = T.ToPILImage()(image)
+            
             wandb_image = wandb.Image(pil_image, 
-                                      caption=f"GT: {mark}, Pred: {pred_mark}",
                                       boxes={
                                             "predictions": {
                                                 "box_data": [{
                                                     "position": {
-                                                        "minX": pred_bbox[0],
-                                                        "maxX": pred_bbox[2],
-                                                        "minY": pred_bbox[1],
-                                                        "maxY": pred_bbox[3]
+                                                        "minX": int(pred_bbox[0]),
+                                                        "maxX": int(pred_bbox[2]),
+                                                        "minY": int(pred_bbox[1]),
+                                                        "maxY": int(pred_bbox[3])
                                                     },
+                                                    "domain": "pixel",
                                                     "class_id": 0,
-                                                    "box_caption": "prdicted ball",
+                                                    "scores": {"p": torch.nn.functional.softmax(pred_mark)[1].item()}
                                                 }
-                                                ]
+                                                ],
+                                                "class_labels": {0: "ball"}
                                             },
                                             "ground_truth": {
                                                 "box_data": [{
                                                     "position": {
-                                                        "minX": bbox[0],
-                                                        "maxX": bbox[2],
-                                                        "minY": bbox[1],
-                                                        "maxY": bbox[3]
+                                                        "minX": int(bbox[0]),
+                                                        "maxX": int(bbox[2]),
+                                                        "minY": int(bbox[1]),
+                                                        "maxY": int(bbox[3])
                                                     },
+                                                    "domain": "pixel",
                                                     "class_id": 1,
-                                                    "box_caption": "ground truth ball",
+                                                    "scores": {"p": 1}
                                                 }
-                                                ]
+                                                ],
+                                                "class_labels": {1: "gt_ball"}
                                             }
                                         })
-            rows[f"image_{i}"] = {
-                "image": wandb_image,
-                "gt": mark,
-                "pred": pred_mark,
-                "iou": IoU()(bbox, pred_bbox)
-            }
-        self.writer.add_table("predictions", rows)
+            table.add_data(i, wandb_image, mark, torch.nn.functional.softmax(pred_mark)[1].item(), IoU()(bbox, pred_bbox))
+        self.writer.add_table("predictions", table)
     
     def _save_checkpoint(self, epoch, save_best=False):
         """
@@ -237,7 +242,7 @@ class Trainer:
             "epoch": epoch,
             "state_dict": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
-            "scheduler": self.scheduler.state_dict(),
+            "lr_scheduler": self.lr_scheduler.state_dict(),
             "config": self.config,
         }
         filename = str(self.checkpoint_dir / "checkpoint.pth")

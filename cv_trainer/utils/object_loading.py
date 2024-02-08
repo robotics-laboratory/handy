@@ -2,8 +2,7 @@ from operator import xor
 
 from torch.utils.data import ConcatDataset, DataLoader
 
-import dataset
-from collate_fn.collate import collate_fn
+import dataset as ds_module
 from utils.parse_config import ConfigParser
 from augmentations import get_augmentations
 
@@ -14,16 +13,13 @@ def get_dataloaders(configs: ConfigParser):
         num_workers = params.get("num_workers", 1)
 
         # set train augmentations
-        if split == 'train':
-            augs = get_augmentations(True)
-        else:
-            augs = get_augmentations(False)
+        augs = get_augmentations((split == 'train'))
 
         # create and join datasets
         datasets = []
         for ds in params["datasets"]:
             datasets.append(configs.init_obj(
-                ds, dataset, config_parser=configs,
+                ds, ds_module, config_parser=configs,
                 transforms = augs))
         assert len(datasets)
         if len(datasets) > 1:
@@ -47,7 +43,7 @@ def get_dataloaders(configs: ConfigParser):
 
         # create dataloader
         dataloader = DataLoader(
-            dataset, batch_size=bs, collate_fn=collate_fn,
+            dataset, batch_size=bs, collate_fn=ds_module.collate_fn,
             shuffle=shuffle, num_workers=num_workers,
             batch_sampler=batch_sampler
         )

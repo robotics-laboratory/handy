@@ -84,8 +84,8 @@ class WanDBWriter:
             self._scalar_name(scalar_name): hist
         }, step=self.step)
 
-    def add_table(self, table_name, table: pd.DataFrame):
-        self.wandb.log({self._scalar_name(table_name): wandb.Table(dataframe=table)},
+    def add_table(self, table_name, table):
+        self.wandb.log({self._scalar_name(table_name): table},
                        step=self.step)
 
     def add_images(self, scalar_name, images):

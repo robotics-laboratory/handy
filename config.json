@@ -1,0 +1,100 @@
+{
+    "name": "Ball Detection",
+    "n_gpu": 1,
+    "arch": {
+        "type": "BaseLine",
+        "args": {
+            "kernel_size": [3, 3, 3],
+            "channels": [[3, 16], [16, 32], [32, 64]],
+            "pool_stride": [[2, 2], [2, 2], [2, 2]],
+            "hidden_size": 65536
+        }
+    },
+    "data": {
+        "train": {
+            "batch_size": 16,
+            "num_workers": 2,
+            "datasets": [
+                {
+                    "type": "DetectionDataset",
+                    "args": {
+                        "image_dir": "/Users/danny.paleyev/ball_dataset/POV1/ball_all",
+                        "total_dir": "/Users/danny.paleyev/ball_dataset/POV1/camera_1_bgr_image",
+                        "bbox_json": "/Users/danny.paleyev/ball_dataset/POV1/bbox.json",
+                        "is_train": true,
+                        "negatives_p": 0
+                    }
+                },
+                {
+                    "type": "DetectionDataset",
+                    "args": {
+                        "image_dir": "/Users/danny.paleyev/ball_dataset/POV2/ball_all",
+                        "total_dir": "/Users/danny.paleyev/ball_dataset/POV2/camera_1_bgr_image",
+                        "bbox_json": "/Users/danny.paleyev/ball_dataset/POV2/bbox.json",
+                        "is_train": true,
+                        "negatives_p": 0
+                    }
+                }
+            ]
+        },
+        "val": {
+            "batch_size": 32,
+            "num_workers": 8,
+            "datasets": [
+                {
+                    "type": "DetectionDataset",
+                    "args": {
+                        "image_dir": "/Users/danny.paleyev/ball_dataset/POV1/ball_all",
+                        "total_dir": "/Users/danny.paleyev/ball_dataset/POV1/camera_1_bgr_image",
+                        "bbox_json": "/Users/danny.paleyev/ball_dataset/POV1/bbox.json",
+                        "is_train": false,
+                        "negatives_p": 0.5
+                    }
+                },
+                {
+                    "type": "DetectionDataset",
+                    "args": {
+                        "image_dir": "/Users/danny.paleyev/ball_dataset/POV2/ball_all",
+                        "total_dir": "/Users/danny.paleyev/ball_dataset/POV2/camera_1_bgr_image",
+                        "bbox_json": "/Users/danny.paleyev/ball_dataset/POV2/bbox.json",
+                        "is_train": false,
+                        "negatives_p": 0.5
+                    }
+                }
+            ]
+        }
+    },
+    "optimizer": {
+        "type": "AdamW",
+        "args": {
+            "lr": 0.0003,
+            "weight_decay": 0.00001
+        }
+    },
+    "lr_scheduler": {
+        "type": "ExponentialLR",
+        "args": {
+            "gamma": 0.99999
+        }
+    },
+    "loss": {
+        "type": "DetectionLoss",
+        "args": {}
+    },
+    "metrics": [
+        {
+            "type": "IoU",
+            "args": {
+                "name": "IoU"
+            }
+        }
+    ],
+    "trainer": {
+        "epochs": 30,
+        "save_dir": "saved/",
+        "save_period": 1,
+        "verbosity": 2,
+        "visualize": "wandb",
+        "wandb_project": "ball_detection"
+    }
+}

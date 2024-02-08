@@ -1,13 +1,13 @@
-from base import BaseMetric
+from .base import BaseMetric
 
 class IoU(BaseMetric):
     def __init__(self, name=None, *args, **kwargs):
         super().__init__(name, *args, **kwargs)
     
     def __call__(self, bbox, predicted_bbox, **kwargs):
-        if bbox.dim == 1:
+        if bbox.dim() == 1:
             bbox = bbox.unsqueeze(0)
-        if predicted_bbox.dim == 1:
+        if predicted_bbox.dim() == 1:
             predicted_bbox = predicted_bbox.unsqueeze(0)
         # Calculate IoU for a single pair of bounding boxes
         def calculate_iou(box1, box2):
