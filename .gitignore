@@ -45,3 +45,4 @@ packages/log
 # DVC data
 datasets/ball_dataset_side_1
 datasets/ball_dataset_side_2
+datasets/annotated_12_02_23
