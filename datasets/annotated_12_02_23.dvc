@@ -1,0 +1,6 @@
+outs:
+- md5: f06b595f7166d7cc9428201da84d9650.dir
+  size: 5030610519
+  nfiles: 5161
+  hash: md5
+  path: annotated_12_02_23
