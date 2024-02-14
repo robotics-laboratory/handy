@@ -1,0 +1,53 @@
+name: ROS2 CI
+
+on:
+  pull_request:
+    branches: [ "master" ]
+    types: [ opened, reopened, ready_for_review, synchronize ]
+
+jobs:
+  build-and-check:
+    env:
+      check_changed_codestyle_only: true
+
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Start Docker Container
+      run: docker compose up -d --no-build --quiet-pull;
+            cont_hash=$(docker compose ps -q)
+            echo $cont_hash;
+            docker ps -a;
+
+    - name: Build ROS2 packages
+      run: |
+        echo $(docker compose ps -q);
+        docker exec $(docker compose ps -q) bash -c "source /opt/ros/iron/setup.bash;
+              cd packages;
+              mkdir -p camera/params;
+              colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1;
+              source install/setup.bash"
+
+    - name: Test ROS2 packages
+      run: |
+        docker exec $(docker compose ps -q) bash -c "cd packages; colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers 8 --return-code-on-test-failure"
+
+    - name: Setup Clang-Tidy
+      run: sudo apt-get install -y clang-tidy
+
+    - name: Run Clang-Tidy
+      if: ${{ env.check_changed_codestyle_only }}
+      run: |
+        cd packages
+        git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }};
+        git diff --diff-filter=ACMRT --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E "\.hpp$|\.cpp$|\.h$" > changed_files.txt
+        cat changed_files.txt
+        cat changed_files.txt | xargs clang-tidy -p build
+        rm changed_files.txt
+          
+    - name: Stop Docker Container
+      if: always()
+      run: docker compose down
+                                                                              
