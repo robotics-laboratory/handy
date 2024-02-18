@@ -8,55 +8,60 @@ on:
 jobs:
   extract-image:
     runs-on: ubuntu-latest
+    outputs:
+      image-url: ${{ steps.extractor.outputs.image_url }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Extract image URL
+        id: extractor
         run: |
           IMAGE_URL=$(grep -o 'image:\s*[^ ]*' docker-compose.yaml | cut -d' ' -f2)
-          echo "::set-output name=image_url::$IMAGE_URL"
+          echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
 
       - name: Print Image URL
-        run: echo ${{ steps.extract-image.outputs.image_url }}
+        run: echo $IMAGE_URL
 
   build-and-check:
+    needs: extract-image
     env:
       check_changed_only: true
 
     runs-on: ubuntu-20.04
 
     container:
-      image: ${{ needs.extract-image.outputs.image_url }}
-      volumes:
-        - "/handy:/handy"
-      options: -w /handy
+      image: ${{ needs.extract-image.outputs.image-url}}
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.8
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Build ROS2 packages
-      run: |
-        source /opt/ros/iron/setup.bash;
-        cd packages;
-        mkdir -p camera/params;
-        colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1;
-        source install/setup.bash
+      - name: Build ROS2 packages
+        shell: bash
+        run: |
+          echo "${{ needs.extract-image.outputs.image-url}}"
+          echo $ROS_ROOT/setup.bash;
+          source $ROS_ROOT/setup.bash
+          cd $GITHUB_WORKSPACE/packages
+          mkdir -p camera/params;
+          colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1
+          source install/setup.bash
 
-    - name: Test ROS2 packages
-      run: |
-        pwd
-        ls
-        colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers 8 --return-code-on-test-failure
+      - name: Test ROS2 packages
+        shell: bash
+        run: |
+          cd $GITHUB_WORKSPACE/packages
+          colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers 8 --return-code-on-test-failure
 
-    - name: Fetch base branch
-      run: git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }};
+      - name: Fetch PR base branch
+        shell: bash
+        run: |
+          git config --global --add safe.directory $GITHUB_WORKSPACE
+          git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }};
 
-    - name: Launching pre-commit
-      uses: pre-commit/action@v3.0.1
-      with:
-        extra_args: --from-ref ${{ github.event.pull_request.base.sha }} --to-ref ${{ github.sha }}
+      - name: Launching clang-tidy
+        uses: pre-commit/action@v3.0.1
+        with:
+          #extra_args: clang-tidy --from-ref ${{ github.event.pull_request.base.sha }} --to-ref ${{ github.sha }}
+          extra_args: clang-tidy --all-files
