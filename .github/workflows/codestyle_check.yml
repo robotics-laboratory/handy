@@ -5,8 +5,14 @@ on:
     branches: [ "master" ]
     types: [ opened, reopened, ready_for_review, synchronize ]
 
+env:
+  SKIP: "clang-tidy"
+
 jobs: 
   code-style:
+    env:
+      check_changed_only: true
+
     name: Code Style Check
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -21,22 +27,11 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip 
-          pip install flake8 yamllint
-          sudo apt-get update
-          sudo apt-get install -y clang-format findutils
-
-      - name: Check Python code style
-        run: flake8 . --exclude=venv,build,log,install --statistics
-
-      - name: Format check C++
-        if: always()
-        run: |
-          find . -type f \( -name "*.cpp" -o -name "*.h" -o -name "*.hpp" \) -not -path "*/install/*" -not -path "*/log/*" -not -path "*/build/*" | xargs clang-format -i --dry-run --Werror
-        
-      - name: "Fail if any checks failed"
-        if: failure()
-        run: exit 1
+      
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }};
+      
+      - name: Launching pre-commit
+        uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: --from-ref ${{ github.event.pull_request.base.sha }} --to-ref ${{ github.sha }}

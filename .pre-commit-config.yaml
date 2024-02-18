@@ -3,10 +3,15 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
+      - id: check-added-large-files
+        args: [--maxkb=512, --enforce-all]
+      - id: check-merge-conflict
+      - id: check-xml
+      - id: check-yaml
       - id: end-of-file-fixer
       - id: mixed-line-ending
       - id: trailing-whitespace
-      - id: check-merge-conflict
+
 
   # Python linters & formatters
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -23,4 +28,4 @@ repos:
       - id: clang-format
         args: [-i]
       - id: clang-tidy
-        args: [--fix, -p=packages/build]
+        args: [--fix,  -p=packages/build]

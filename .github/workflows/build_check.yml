@@ -6,48 +6,57 @@ on:
     types: [ opened, reopened, ready_for_review, synchronize ]
 
 jobs:
+  extract-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Extract image URL
+        run: |
+          IMAGE_URL=$(grep -o 'image:\s*[^ ]*' docker-compose.yaml | cut -d' ' -f2)
+          echo "::set-output name=image_url::$IMAGE_URL"
+
+      - name: Print Image URL
+        run: echo ${{ steps.extract-image.outputs.image_url }}
+
   build-and-check:
     env:
-      check_changed_codestyle_only: true
+      check_changed_only: true
 
     runs-on: ubuntu-20.04
 
+    container:
+      image: ${{ needs.extract-image.outputs.image_url }}
+      volumes:
+        - "/handy:/handy"
+      options: -w /handy
+
     steps:
     - uses: actions/checkout@v3
-
-    - name: Start Docker Container
-      run: docker compose up -d --no-build --quiet-pull;
-            cont_hash=$(docker compose ps -q)
-            echo $cont_hash;
-            docker ps -a;
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
 
     - name: Build ROS2 packages
       run: |
-        echo $(docker compose ps -q);
-        docker exec $(docker compose ps -q) bash -c "source /opt/ros/iron/setup.bash;
-              cd packages;
-              mkdir -p camera/params;
-              colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1;
-              source install/setup.bash"
+        source /opt/ros/iron/setup.bash;
+        cd packages;
+        mkdir -p camera/params;
+        colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1;
+        source install/setup.bash
 
     - name: Test ROS2 packages
       run: |
-        docker exec $(docker compose ps -q) bash -c "cd packages; colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers 8 --return-code-on-test-failure"
+        pwd
+        ls
+        colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers 8 --return-code-on-test-failure
 
-    - name: Setup Clang-Tidy
-      run: sudo apt-get install -y clang-tidy
+    - name: Fetch base branch
+      run: git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }};
 
-    - name: Run Clang-Tidy
-      if: ${{ env.check_changed_codestyle_only }}
-      run: |
-        cd packages
-        git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }};
-        git diff --diff-filter=ACMRT --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E "\.hpp$|\.cpp$|\.h$" > changed_files.txt
-        cat changed_files.txt
-        cat changed_files.txt | xargs clang-tidy -p build
-        rm changed_files.txt
-          
-    - name: Stop Docker Container
-      if: always()
-      run: docker compose down
-                                                                              
+    - name: Launching pre-commit
+      uses: pre-commit/action@v3.0.1
+      with:
+        extra_args: --from-ref ${{ github.event.pull_request.base.sha }} --to-ref ${{ github.sha }}
