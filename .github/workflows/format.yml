@@ -12,7 +12,7 @@ env:
 jobs: 
   code-style:
     name: Code format
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
