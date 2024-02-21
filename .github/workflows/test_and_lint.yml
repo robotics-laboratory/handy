@@ -13,9 +13,6 @@ on:
         default: true
         type: boolean
 
-env:
-  CHECK_ALL_FILES: ${{ github.event.inputs.check_all_files || 'false' }}
-
 jobs:
   extract-image:
     name: Extraction of configs
