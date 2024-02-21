@@ -1,4 +1,4 @@
-name: Codestyle Check
+name: Lint
 
 on:
   pull_request:
