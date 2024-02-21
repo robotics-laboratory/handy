@@ -5,8 +5,17 @@ on:
     branches: [ "master" ]
     types: [ opened, reopened, ready_for_review, synchronize ]
 
+  workflow_dispatch:
+    inputs:
+      check_all_files:
+        description: 'Flag whether to lint all files'
+        required: false
+        default: true
+        type: boolean
+
 jobs:
   extract-image:
+    name: Extraction of configs
     runs-on: ubuntu-latest
     outputs:
       image-url: ${{ steps.extractor.outputs.image_url }}
@@ -17,18 +26,14 @@ jobs:
       - name: Extract image URL
         id: extractor
         run: |
-          IMAGE_URL=$(grep -o 'image:\s*[^ ]*' docker-compose.yaml | cut -d' ' -f2)
+          IMAGE_URL=$(grep -o 'image:\s*[^ ]*' docker-compose.yaml | cut -d ' ' -f2)
           echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
-
-      - name: Print Image URL
-        run: echo $IMAGE_URL
+          echo $IMAGE_URL
 
   build-and-check:
+    name: Building, testing, linting
     needs: extract-image
-    env:
-      check_changed_only: true
-
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     container:
       image: ${{ needs.extract-image.outputs.image-url}}
@@ -40,11 +45,9 @@ jobs:
       - name: Build ROS2 packages
         shell: bash
         run: |
-          echo "${{ needs.extract-image.outputs.image-url}}"
-          echo $ROS_ROOT/setup.bash;
           source $ROS_ROOT/setup.bash
           cd $GITHUB_WORKSPACE/packages
-          mkdir -p camera/params;
+          mkdir -p camera/params
           colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1
           source install/setup.bash
 
@@ -52,16 +55,22 @@ jobs:
         shell: bash
         run: |
           cd $GITHUB_WORKSPACE/packages
-          colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers 8 --return-code-on-test-failure
+          colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers $(nproc) --return-code-on-test-failure
 
       - name: Fetch PR base branch
         shell: bash
         run: |
           git config --global --add safe.directory $GITHUB_WORKSPACE
-          git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }};
+          git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }}
 
-      - name: Launching clang-tidy
+      - name: Lint changed files only
+        if: ${{ !inputs.check_all_files }}
         uses: pre-commit/action@v3.0.1
         with:
-          #extra_args: clang-tidy --from-ref ${{ github.event.pull_request.base.sha }} --to-ref ${{ github.sha }}
+          extra_args: clang-tidy --from-ref ${{ github.event.pull_request.base.sha }} --to-ref ${{ github.sha }}
+
+      - name: Lint all files
+        if: ${{ inputs.check_all_files }}
+        uses: pre-commit/action@v3.0.1
+        with:
           extra_args: clang-tidy --all-files
