@@ -63,8 +63,10 @@ Checks:          '-*,
                   '
 HeaderFilterRegex: ''
 AnalyzeTemporaryDtors: false
-WarningsAsErrors: '*'
-#UseColor: 'true'
+WarningsAsErrors:  '-*,
+                    modernize-use-*,
+                    llvm-*
+                    '
 CheckOptions:
   - key:             llvm-namespace-comment.ShortNamespaceLines
     value:           '10'

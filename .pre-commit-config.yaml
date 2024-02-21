@@ -26,6 +26,6 @@ repos:
     rev: 336fdd7
     hooks:
       - id: clang-format
-        args: [-i]
+        args: [-i, -style=file]
       - id: clang-tidy
         args: [--fix, -p=packages/build]
