@@ -5,15 +5,17 @@ on:
     branches: [ "master" ]
     types: [ opened, reopened, ready_for_review, synchronize ]
 
+  workflow_dispatch:
+
 env:
   # to skip clang-tidy linter in pre-commit action
   SKIP: "clang-tidy"
 
-jobs: 
+jobs:
   code-style:
     name: Code format
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -22,7 +24,7 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
-            
+
       - name: Launching pre-commit
         uses: pre-commit/action@v3.0.1
         with:
