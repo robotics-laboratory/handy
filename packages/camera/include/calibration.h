@@ -90,15 +90,8 @@ class CalibrationNode : public rclcpp::Node {
 
     struct Params {
         std::string path_to_save_params = "";
-        cv::Size pattern_size = cv::Size(7, 10);
-
         std::vector<cv::Point3f> square_obj_points;
-
         cv::aruco::CharucoBoard charuco_board;
-        cv::aruco::DetectorParameters detector_params;
-        cv::aruco::CharucoParameters board_params;
-        std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector = nullptr;
-        cv::aruco::Dictionary dictionary;
 
         bool publish_preview_markers = true;
         bool auto_calibrate = true;
@@ -120,10 +113,12 @@ class CalibrationNode : public rclcpp::Node {
 
         int last_marker_id = 0;
         int calibration_state = NOT_CALIBRATED;
-    } state_{};
+    } state_;
 
     struct Timer {
         rclcpp::TimerBase::SharedPtr calibration_state = nullptr;
     } timer_{};
+
+    std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector = nullptr;
 };
 }  // namespace handy::calibration

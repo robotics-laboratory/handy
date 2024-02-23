@@ -12,9 +12,9 @@ namespace {
  * Converts Boost point to ROS2 message
  *
  * @param boost_point Boost point that will be converted
- * @return converted point of ROS2 message
+ * @return ROS2 Point message
  */
-geometry_msgs::msg::Point toMsgPoint(boost::geometry::model::d2::point_xy<double> boost_point) {
+geometry_msgs::msg::Point toMsgPoint(const handy::calibration::Point& boost_point) {
     geometry_msgs::msg::Point point;
     point.x = boost_point.x();
     point.y = boost_point.y();
@@ -28,33 +28,31 @@ using namespace std::chrono_literals;
 using namespace boost::geometry;
 
 /**
- * Converts all corners of detected chessboard into a closed polyline of
- * top/bottom left/right corners (Boost points)
+ * Converts all corners of detected chessboard into a convex hull 
  *
- * @param corners vector all detected charuco corners in cv::Point2f format
- * @param pattern_size width and height of chessboard (in squares)
- * @return Boost polygon of convex hull containing given corner points
+ * @param corners vector of OpenCV points that should be covered by a convex hull
+ * @return convex hull as a boost polygon
  */
-Polygon convertToBoostPolygon(const std::vector<cv::Point2f>& corners, cv::Size pattern_size) {
+Polygon convertToBoostPolygon(const std::vector<cv::Point2f>& corners) {
     Polygon poly, hull;
     for (size_t i = 0; i < corners.size(); ++i) {
-        poly.outer().push_back(Point{corners[i].x, corners[i].y});
+        poly.outer().emplace_back(corners[i].x, corners[i].y);
     }
     convex_hull(poly, hull);
     return hull;
 }
 
 /**
- * Converts all detected charuco corners into a closed polyline of convex hull
+ * Converts all detected charuco corners into a convex hull polyline
  *
- * @param cv_point OpenCV points that will be converted
- * @return vector of corners, forming a closed polyline of convex hull
+ * @param detected_corners vector of OpenCV points that should be covered by a convex hull
+ * @return vector of markers to display
  */
 std::vector<geometry_msgs::msg::Point> toBoardMsgCorners(
-    const std::vector<cv::Point2f>& detected_corners, cv::Size pattern_size) {
+    const std::vector<cv::Point2f>& detected_corners) {
     Polygon poly, hull;
     for (size_t i = 0; i < detected_corners.size(); ++i) {
-        poly.outer().push_back(Point{detected_corners[i].x, detected_corners[i].y});
+        poly.outer().emplace_back(detected_corners[i].x, detected_corners[i].y);
     }
     convex_hull(poly, hull);
 
@@ -66,11 +64,11 @@ std::vector<geometry_msgs::msg::Point> toBoardMsgCorners(
 }
 
 /**
- * Calculates "intersection over union" metric as a measure of similarity between two polygons
+ * Calculates intersection over union metric as a measure of similarity between two polygons
  *
  * @param first Boost polygon
  * @param second Boost polygon
- * @return double value of metric
+ * @return the metric value
  */
 
 double getIou(const Polygon& first, const Polygon& second) {
@@ -103,8 +101,9 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     initSignals();
     RCLCPP_INFO_STREAM(this->get_logger(), "Signals initialised");
 
-    for (int i = 0; i < param_.pattern_size.height; ++i) {
-        for (int j = 0; j < param_.pattern_size.width; ++j) {
+    cv::Size pattern_size{7, 10};
+    for (int i = 0; i < pattern_size.height; ++i) {
+        for (int j = 0; j < pattern_size.width; ++j) {
             param_.square_obj_points.push_back(cv::Point3f(i, j, 0));
         }
     }
@@ -112,18 +111,18 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     timer_.calibration_state =
         this->create_wall_timer(250ms, std::bind(&CalibrationNode::publishCalibrationState, this));
 
-    param_.dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+    cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     param_.charuco_board =
-        cv::aruco::CharucoBoard(param_.pattern_size, 0.04f, 0.02f, param_.dictionary);
+        cv::aruco::CharucoBoard(pattern_size, 0.04f, 0.02f, dictionary);
     param_.charuco_board.setLegacyPattern(true);
 
-    param_.detector_params = cv::aruco::DetectorParameters();
-    param_.detector_params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_APRILTAG;
-    param_.detector_params.cornerRefinementWinSize = 10;
-    param_.board_params = cv::aruco::CharucoParameters();
+    cv::aruco::DetectorParameters detector_params;
+    detector_params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_APRILTAG;
+    detector_params.cornerRefinementWinSize = 10;
+    cv::aruco::CharucoParameters board_params;
 
-    param_.charuco_detector = std::move(std::make_unique<cv::aruco::CharucoDetector>(
-        param_.charuco_board, param_.board_params, param_.detector_params));
+    charuco_detector = std::make_unique<cv::aruco::CharucoDetector>(
+        param_.charuco_board, board_params, detector_params);
 
     signal_.detected_boards->publish(state_.board_markers_array);
 }
@@ -178,7 +177,7 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
     std::vector<cv::Point2f> current_image_points;
     std::vector<cv::Point3f> current_obj_points;
 
-    param_.charuco_detector->detectBoard(image_ptr->image, current_corners, current_ids);
+    charuco_detector->detectBoard(image_ptr->image, current_corners, current_ids);
 
     if (current_corners.size() < 20) {
         state_.board_corners_array.markers.clear();
@@ -208,7 +207,7 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
 
     state_.obj_points_all.push_back(current_obj_points);
     state_.image_points_all.push_back(current_image_points);
-    state_.polygons_all.push_back(convertToBoostPolygon(current_corners, param_.pattern_size));
+    state_.polygons_all.push_back(convertToBoostPolygon(current_corners));
 }
 
 void CalibrationNode::onButtonClick(
@@ -229,7 +228,7 @@ void CalibrationNode::onButtonClick(
 }
 
 bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f>& corners) const {
-    Polygon new_poly = convertToBoostPolygon(corners, param_.pattern_size);
+    Polygon new_poly = convertToBoostPolygon(corners);
     return std::all_of(
         state_.polygons_all.begin(), state_.polygons_all.end(), [&](const Polygon& prev_poly) {
             return getIou(prev_poly, new_poly) <= param_.iou_threshold;
@@ -275,7 +274,7 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getBoardMarkerFromCorners(
     marker.fill_color.b = param_.marker_color[2];
     marker.fill_color.a = param_.marker_color[3];
 
-    marker.points = toBoardMsgCorners(detected_corners, param_.pattern_size);
+    marker.points = toBoardMsgCorners(detected_corners);
     return marker;
 }
 
@@ -348,9 +347,7 @@ void CalibrationNode::calibrate() {
         cv::noArray(),
         cv::noArray(),
         per_view_errors,
-        cv::CALIB_FIX_PRINCIPAL_POINT | cv::CALIB_FIX_TAUX_TAUY | cv::CALIB_FIX_S1_S2_S3_S4 |
-            cv::CALIB_ZERO_TANGENT_DIST,
-
+        cv::CALIB_FIX_S1_S2_S3_S4,
         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
     coverage_percentage = getImageCoverage();
