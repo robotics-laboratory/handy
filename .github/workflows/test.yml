@@ -28,6 +28,8 @@ jobs:
     name: Building, testing, linting
     needs: extract-image
     runs-on: self-hosted
+    env:
+      CMAKE_ARGS: "-DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1"
 
     container:
       image: ${{ needs.extract-image.outputs.image-url}}
@@ -42,7 +44,7 @@ jobs:
           source $ROS_ROOT/setup.bash
           cd $GITHUB_WORKSPACE/packages
           mkdir -p camera/params
-          colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1
+          colcon build --merge-install --cmake-args $CMAKE_ARGS
           source install/setup.bash
 
       - name: Test ROS2 packages
