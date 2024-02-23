@@ -54,7 +54,11 @@ target_link_libraries(camera mvsdk)
 
 install(TARGETS camera calibration
    DESTINATION lib/${PROJECT_NAME})
-  
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/params")
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/params")
+endif()
+
 install(DIRECTORY
     launch params
     DESTINATION share/${PROJECT_NAME})
