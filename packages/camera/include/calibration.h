@@ -11,6 +11,7 @@
 #include <std_msgs/msg/int16.hpp>
 
 #include <opencv2/core/core.hpp>
+#include <opencv2/aruco/charuco.hpp>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -19,6 +20,7 @@
 #include <vector>
 #include <string>
 #include <optional>
+#include <memory>
 
 namespace handy::calibration {
 
@@ -49,7 +51,7 @@ class CalibrationNode : public rclcpp::Node {
     void declareLaunchParams();
     void initSignals();
 
-    void handleFrame(const sensor_msgs::msg::CompressedImage::ConstPtr& msg);
+    void handleFrame(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
     void publishCalibrationState() const;
 
     void onButtonClick(
@@ -88,25 +90,23 @@ class CalibrationNode : public rclcpp::Node {
 
     struct Params {
         std::string path_to_save_params = "";
-        cv::Size pattern_size = cv::Size(9, 6);
-
         std::vector<cv::Point3f> square_obj_points;
+        cv::aruco::CharucoBoard charuco_board;
 
         bool publish_preview_markers = true;
         bool auto_calibrate = true;
 
         std::vector<double> marker_color = {0.0, 1.0, 0.0, 0.12};
         double min_accepted_error = 0.75;
-        double alpha_chn_increase = 0.12;
-        double iou_treshhold = 0.5;
+        double iou_threshold = 0.5;
         double required_board_coverage = 0.7;
     } param_;
 
     struct State {
         std::optional<cv::Size> frame_size = std::nullopt;
 
-        std::vector<std::vector<cv::Point2f>> detected_corners_all;
-        std::vector<std::vector<cv::Point3f>> object_points_all;
+        std::vector<std::vector<cv::Point2f>> image_points_all;
+        std::vector<std::vector<cv::Point3f>> obj_points_all;
         std::vector<Polygon> polygons_all;
         foxglove_msgs::msg::ImageMarkerArray board_markers_array;
         foxglove_msgs::msg::ImageMarkerArray board_corners_array;
@@ -118,5 +118,7 @@ class CalibrationNode : public rclcpp::Node {
     struct Timer {
         rclcpp::TimerBase::SharedPtr calibration_state = nullptr;
     } timer_{};
+
+    std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector = nullptr;
 };
 }  // namespace handy::calibration
