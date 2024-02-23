@@ -51,7 +51,7 @@ class CalibrationNode : public rclcpp::Node {
     void declareLaunchParams();
     void initSignals();
 
-    void handleFrame(const sensor_msgs::msg::CompressedImage::ConstPtr& msg);
+    void handleFrame(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
     void publishCalibrationState() const;
 
     void onButtonClick(

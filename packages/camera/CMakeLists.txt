@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.8)
 project(camera)
 
-add_compile_options(-Wall -Wextra -Wpedantic -Wno-dev)
+add_compile_options(-Wall -Wextra -Werror=unused-variable -Wpedantic)
 
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)

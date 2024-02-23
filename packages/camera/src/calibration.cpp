@@ -28,7 +28,7 @@ using namespace std::chrono_literals;
 using namespace boost::geometry;
 
 /**
- * Converts all corners of detected chessboard into a convex hull 
+ * Converts all corners of detected chessboard into a convex hull
  *
  * @param corners vector of OpenCV points that should be covered by a convex hull
  * @return convex hull as a boost polygon
@@ -112,8 +112,7 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
         this->create_wall_timer(250ms, std::bind(&CalibrationNode::publishCalibrationState, this));
 
     cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-    param_.charuco_board =
-        cv::aruco::CharucoBoard(pattern_size, 0.04f, 0.02f, dictionary);
+    param_.charuco_board = cv::aruco::CharucoBoard(pattern_size, 0.04f, 0.02f, dictionary);
     param_.charuco_board.setLegacyPattern(true);
 
     cv::aruco::DetectorParameters detector_params;
@@ -158,7 +157,7 @@ void CalibrationNode::initSignals() {
         this->create_publisher<std_msgs::msg::Int16>("/calibration_1/state", 10);
 }
 
-void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::ConstPtr& msg) {
+void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg) {
     if (state_.calibration_state != CAPTURING) {
         return;
     }

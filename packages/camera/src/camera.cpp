@@ -88,7 +88,7 @@ CameraNode::CameraNode() : Node("camera_node") {
     param_.calibration_file_path = this->declare_parameter<std::string>(
         "calibration_file_path", "param_save/camera_params.yaml");
     RCLCPP_INFO(
-        this->get_logger(), "parameters will be read from: %s", param_.calibration_file_path);
+        this->get_logger(), "parameters will be read from: %s", param_.calibration_file_path.c_str());
 
     param_.publish_raw = this->declare_parameter<bool>("publish_raw", false);
     RCLCPP_INFO(this->get_logger(), "publish raw: %i", param_.publish_raw);
