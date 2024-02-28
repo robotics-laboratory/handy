@@ -52,13 +52,12 @@ jobs:
           cd $GITHUB_WORKSPACE/packages
           colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers $(nproc) --return-code-on-test-failure
 
-      - name: Fetch PR base branch
+      - name: Run Clang-Tidy
         shell: bash
         run: |
-          git config --global --add safe.directory $GITHUB_WORKSPACE
-          git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }}
-
-      - name: Lint files
-        uses: pre-commit/action@v3.0.1
-        with:
-          extra_args: clang-tidy --all-files
+          FILES=$(find . \( -name '*.h' -or -name '*.cpp' -or -name '*.cc' \) -not -path '*/build/*' -not -path '*/install/*' -not -path '*/log/*')
+          echo "Files to be linted:"
+          echo "$FILES"
+          for FILE in $FILES; do
+            clang-tidy --fix -p=packages/build $FILE
+          done

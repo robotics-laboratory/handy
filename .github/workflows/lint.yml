@@ -7,10 +7,6 @@ on:
 
   workflow_dispatch:
 
-env:
-  # to skip clang-tidy linter in pre-commit action
-  SKIP: "clang-tidy"
-
 jobs:
   code-style:
     name: Code format
