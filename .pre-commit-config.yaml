@@ -20,7 +20,8 @@ repos:
       - id: ruff
         args: [--show-fixes]
       - id: ruff-format
-        args: [--target-version=py38, --line-length=99, --respect-gitignore, "--exclude=build,log,install"]
+        args: ["--target-version=py38", "--respect-gitignore",
+               "--exclude=build", "--exclude=log", "--exclude=install"]
 
   # C++ linters & formatters
   - repo: https://github.com/pocc/pre-commit-hooks
