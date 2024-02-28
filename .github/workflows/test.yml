@@ -28,6 +28,7 @@ jobs:
     name: Building, testing, linting
     needs: extract-image
     runs-on: self-hosted
+    continue-on-error: true
     env:
       CMAKE_ARGS: "-DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1"
 
@@ -61,3 +62,24 @@ jobs:
           for FILE in $FILES; do
             clang-tidy --fix -p=packages/build $FILE
           done
+
+  code-style:
+    name: Building, testing, linting
+    needs: extract-image
+    runs-on: self-hosted
+    continue-on-error: true
+
+    container:
+      image: ${{ needs.extract-image.outputs.image-url}}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # temporary solution until pre-commit is not installed in the container
+      - name: Launching pre-commit
+        shell: bash
+        run: |
+          pip3 install pre-commit
+          git config --global --add safe.directory $(pwd)
+          pre-commit run --all-files
