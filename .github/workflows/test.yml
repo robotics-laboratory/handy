@@ -28,7 +28,6 @@ jobs:
     name: Building, testing, linting
     needs: extract-image
     runs-on: self-hosted
-    continue-on-error: true
     env:
       CMAKE_ARGS: "-DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1"
 
@@ -48,6 +47,7 @@ jobs:
           source install/setup.bash
 
       - name: Test ROS2 packages
+        continue-on-error: true
         shell: bash
         run: |
           cd $GITHUB_WORKSPACE/packages
@@ -64,10 +64,9 @@ jobs:
           done
 
   code-style:
-    name: Building, testing, linting
+    name: Formatting
     needs: extract-image
     runs-on: self-hosted
-    continue-on-error: true
 
     container:
       image: ${{ needs.extract-image.outputs.image-url}}
