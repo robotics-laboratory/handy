@@ -57,12 +57,15 @@ jobs:
         shell: bash
         run: |
           cd $GITHUB_WORKSPACE/packages
-          colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers $(nproc) --return-code-on-test-failure
+          colcon test --ctest-args tests --merge-install \
+            --executor parallel --parallel-workers $(nproc) \
+            --return-code-on-test-failure
 
       - name: Run Clang-Tidy
         shell: bash
         run: |
-          FILES=$(find . \( -name '*.h' -or -name '*.cpp' -or -name '*.cc' \) -not -path '*/build/*' -not -path '*/install/*' -not -path '*/log/*')
+          FILES=$(find . \( -name '*.h' -or -name '*.cpp' -or -name '*.cc' \) \
+            -not -path '*/build/*' -not -path '*/install/*' -not -path '*/log/*')
           echo "Files to be linted:"
           echo "$FILES"
           for FILE in $FILES; do
@@ -72,22 +75,22 @@ jobs:
 
   code-style:
     name: Formatting
-    needs: extract-image
-    runs-on: self-hosted
+    # FIXME
+    runs-on: ubuntu-latest
+    # needs: extract-image
+    # runs-on: self-hosted
     concurrency:
       group: code-style-${{ github.ref }}
       cancel-in-progress: true
 
-    container:
-      image: ${{ needs.extract-image.outputs.image-url}}
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v3
+      - uses: pre-commit/action@v3.0.1
 
       # temporary solution until pre-commit is not installed in the container
-      - name: Launching pre-commit
-        shell: bash
-        run: |
-          pip3 install pre-commit
-          pre-commit run --color=always --all-files
+      # - name: Launching pre-commit
+      #   shell: bash
+      #   run: |
+      #     pip3 install pre-commit
+      #     pre-commit run --color=always --all-files

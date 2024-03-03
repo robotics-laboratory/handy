@@ -12,8 +12,8 @@ services:
       dockerfile: Dockerfile
       context: .
       tags:
-          - "registry.robotics-lab.ru/handy:latest"
-          - "registry.robotics-lab.ru/handy:0.7.0"
+        - "registry.robotics-lab.ru/handy:latest"
+        - "registry.robotics-lab.ru/handy:0.7.0"
       x-bake:
         platforms: [linux/arm64, linux/amd64]
         cache-to: "type=registry,ref=registry.robotics-lab.ru/handy:cache,mode=max"

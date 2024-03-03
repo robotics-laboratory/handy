@@ -20,21 +20,20 @@ repos:
     rev: v1.35.1
     hooks:
       - id: yamllint
-        types: [file, yaml]
-        entry: yamllint --strict -d relaxed
         exclude: ^.clang-tidy$
+        # TODO: Discuss yamllint settings (e.g. line-length)
+        args: [--strict, -d, "{extends: relaxed, rules: {line-length: {max: 120}}}"]
 
   # Python linters & formatters
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.1.3
     hooks:
       - id: ruff
-        args: [--fix]
+        args: [--fix, --show-fixes]
       - id: ruff-format
 
-  # C++ linters & formatters
-  - repo: https://github.com/pocc/pre-commit-hooks
-    rev: 336fdd7
+  # C++ formatter
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v17.0.6
     hooks:
       - id: clang-format
-        args: [-i, -style=file]
