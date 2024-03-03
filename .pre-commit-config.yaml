@@ -4,24 +4,33 @@ repos:
     rev: v4.5.0
     hooks:
       - id: check-added-large-files
-        args: [--maxkb=512, --enforce-all]
       - id: check-merge-conflict
       - id: check-xml
+      - id: check-json
       - id: check-yaml
+      - id: check-toml
       - id: end-of-file-fixer
       - id: mixed-line-ending
       - id: trailing-whitespace
+      - id: pretty-format-json
+        args: [--autofix, --no-sort-keys]
 
+  # YAML linter
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        types: [file, yaml]
+        entry: yamllint --strict -d relaxed
+        exclude: ^.clang-tidy$
 
   # Python linters & formatters
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.1.3
     hooks:
       - id: ruff
-        args: [--show-fixes]
+        args: [--fix]
       - id: ruff-format
-        args: ["--target-version=py38", "--respect-gitignore",
-               "--exclude=build", "--exclude=log", "--exclude=install"]
 
   # C++ linters & formatters
   - repo: https://github.com/pocc/pre-commit-hooks
