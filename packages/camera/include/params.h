@@ -8,7 +8,8 @@ namespace handy {
 struct CameraIntrinsicParameters {
     CameraIntrinsicParameters() = default;
 
-    CameraIntrinsicParameters(cv::Size size, cv::Mat camera_matrix, const cv::Vec<float, 5> &distort_coefs);
+    CameraIntrinsicParameters(
+        cv::Size size, cv::Mat camera_matrix, const cv::Vec<float, 5>& distort_coefs);
 
     void initUndistortMaps();
     cv::Mat undistortImage(cv::Mat& src);

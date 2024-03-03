@@ -174,7 +174,6 @@ WarningsAsErrors:  'bugprone-argument-comment,
                     google-readability-casting,
                     google-runtime-int,
 
-                    llvm-header-guard,
                     llvm-include-order,
                     llvm-namespace-comment,
 
@@ -191,7 +190,6 @@ WarningsAsErrors:  'bugprone-argument-comment,
                     misc-unused-using-decls,
                     misc-use-anonymous-namespace,
 
-                    modernize-avoid-bind,
                     modernize-concat-nested-namespaces,
                     modernize-deprecated-headers,
                     modernize-deprecated-ios-base-aliases,

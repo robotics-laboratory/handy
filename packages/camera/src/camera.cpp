@@ -306,7 +306,7 @@ cv::Mat rescale(const cv::Mat& image, const cv::Size& size) {
 
 void CameraNode::publishBGRImage(uint8_t* buffer, const rclcpp::Time& timestamp, int idx) {
     const auto header = makeHeader(timestamp, idx);
-    auto *const bgr_buffer = bgr_buffer_.get() + idx * param_.max_buffer_size;
+    auto* const bgr_buffer = bgr_buffer_.get() + idx * param_.max_buffer_size;
 
     abortIfNot(
         "get bgr", CameraImageProcess(camera_handles_[idx], buffer, bgr_buffer, &frame_info_[idx]));
