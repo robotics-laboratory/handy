@@ -39,7 +39,7 @@ void CameraNode::abortIfNot(std::string_view msg, int camera_idx, int status) {
 }
 
 namespace {
-int MaxBufSize(const std::vector<cv::Size>& frame_sizes) {
+int maxBufSize(const std::vector<cv::Size>& frame_sizes) {
     int max_size = 0;
     for (size_t i = 0; i < frame_sizes.size(); ++i) {
         max_size = std::max(max_size, 3 * frame_sizes[i].width * frame_sizes[i].height);
@@ -88,7 +88,9 @@ CameraNode::CameraNode() : Node("camera_node") {
     param_.calibration_file_path = this->declare_parameter<std::string>(
         "calibration_file_path", "param_save/camera_params.yaml");
     RCLCPP_INFO(
-        this->get_logger(), "parameters will be read from: %s", param_.calibration_file_path.c_str());
+        this->get_logger(),
+        "parameters will be read from: %s",
+        param_.calibration_file_path.c_str());
 
     param_.publish_raw = this->declare_parameter<bool>("publish_raw", false);
     RCLCPP_INFO(this->get_logger(), "publish raw: %i", param_.publish_raw);
@@ -145,12 +147,11 @@ CameraNode::CameraNode() : Node("camera_node") {
     const auto fps = this->declare_parameter<double>("fps", 20.0);
     param_.latency = std::chrono::duration<double>(1 / fps);
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
-    timer_.camera_capture =
-        this->create_wall_timer(param_.latency, std::bind(&CameraNode::handleOnTimer, this));
+    timer_.camera_capture = this->create_wall_timer(param_.latency, [this] { handleOnTimer(); });
 
     applyCameraParameters();
 
-    param_.max_buffer_size = MaxBufSize(frame_sizes_);
+    param_.max_buffer_size = maxBufSize(frame_sizes_);
     bgr_buffer_ = std::make_unique<uint8_t[]>(param_.camera_num * param_.max_buffer_size);
 
     if (param_.publish_rectified_preview) {
@@ -192,7 +193,7 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
     {
         const std::string param = "exposure_time";
         const std::string full_param = prefix + param;
-        std::chrono::microseconds exposure(this->declare_parameter<long int>(full_param));
+        std::chrono::microseconds exposure(this->declare_parameter<int64_t>(full_param));
 
         if (exposure > param_.latency) {
             RCLCPP_INFO(
@@ -228,8 +229,8 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
         } else {
             const std::string param = "gain_rgb";
             const std::string full_param = prefix + param;
-            const std::vector<long int> gain =
-                this->declare_parameter<std::vector<long int>>(full_param);
+            const std::vector<int64_t> gain =
+                this->declare_parameter<std::vector<int64_t>>(full_param);
 
             if (gain.size() != 3) {
                 RCLCPP_INFO(
@@ -276,7 +277,7 @@ void CameraNode::applyParamsToCamera(int camera_idx) {
 
 namespace {
 
-std_msgs::msg::Header makeHeader(rclcpp::Time timestamp, int camera_idx) {
+std_msgs::msg::Header makeHeader(const rclcpp::Time& timestamp, int camera_idx) {
     std_msgs::msg::Header header;
     header.stamp = timestamp;
     header.frame_id = "camera_" + std::to_string(camera_idx);
@@ -303,9 +304,9 @@ cv::Mat rescale(const cv::Mat& image, const cv::Size& size) {
 
 }  // namespace
 
-void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int idx) {
+void CameraNode::publishBGRImage(uint8_t* buffer, const rclcpp::Time& timestamp, int idx) {
     const auto header = makeHeader(timestamp, idx);
-    const auto bgr_buffer = bgr_buffer_.get() + idx * param_.max_buffer_size;
+    auto* const bgr_buffer = bgr_buffer_.get() + idx * param_.max_buffer_size;
 
     abortIfNot(
         "get bgr", CameraImageProcess(camera_handles_[idx], buffer, bgr_buffer, &frame_info_[idx]));
@@ -329,7 +330,7 @@ void CameraNode::publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int id
     }
 }
 
-void CameraNode::publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx) {
+void CameraNode::publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx) {
     const auto header = makeHeader(timestamp, camera_idx);
     cv::Mat image(frame_sizes_[camera_idx], CV_8UC1, buffer);
 

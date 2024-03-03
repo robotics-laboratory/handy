@@ -1,10 +1,10 @@
 #include "calibration.h"
 #include "params.h"
 
-#include <opencv2/calib3d.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/core/types.hpp>
 #include <deque>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/core/types.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 namespace {
 
@@ -23,10 +23,6 @@ geometry_msgs::msg::Point toMsgPoint(const handy::calibration::Point& boost_poin
 
 }  // namespace
 namespace handy::calibration {
-
-using namespace std::chrono_literals;
-using namespace boost::geometry;
-
 /**
  * Converts all corners of detected chessboard into a convex hull
  *
@@ -34,11 +30,12 @@ using namespace boost::geometry;
  * @return convex hull as a boost polygon
  */
 Polygon convertToBoostPolygon(const std::vector<cv::Point2f>& corners) {
-    Polygon poly, hull;
+    Polygon poly;
+    Polygon hull;
     for (size_t i = 0; i < corners.size(); ++i) {
         poly.outer().emplace_back(corners[i].x, corners[i].y);
     }
-    convex_hull(poly, hull);
+    boost::geometry::convex_hull(poly, hull);
     return hull;
 }
 
@@ -50,11 +47,12 @@ Polygon convertToBoostPolygon(const std::vector<cv::Point2f>& corners) {
  */
 std::vector<geometry_msgs::msg::Point> toBoardMsgCorners(
     const std::vector<cv::Point2f>& detected_corners) {
-    Polygon poly, hull;
+    Polygon poly;
+    Polygon hull;
     for (size_t i = 0; i < detected_corners.size(); ++i) {
         poly.outer().emplace_back(detected_corners[i].x, detected_corners[i].y);
     }
-    convex_hull(poly, hull);
+    boost::geometry::convex_hull(poly, hull);
 
     std::vector<geometry_msgs::msg::Point> marker_points;
     for (size_t i = 0; i < hull.outer().size(); ++i) {
@@ -73,15 +71,16 @@ std::vector<geometry_msgs::msg::Point> toBoardMsgCorners(
 
 double getIou(const Polygon& first, const Polygon& second) {
     std::deque<Polygon> inter_poly;
-    intersection(first, second, inter_poly);
+    boost::geometry::intersection(first, second, inter_poly);
 
     double iou = 0.0;
     if (inter_poly.size() > 1) {
         throw std::logic_error("Intersection is not valid");
     }
     if (!inter_poly.empty()) {
-        double inter_area = area(inter_poly.front());
-        iou = inter_area / (area(first) + area(second) - inter_area);
+        double inter_area = boost::geometry::area(inter_poly.front());
+        iou = inter_area /
+              (boost::geometry::area(first) + boost::geometry::area(second) - inter_area);
     }
     return iou;
 }
@@ -104,12 +103,12 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     cv::Size pattern_size{7, 10};
     for (int i = 0; i < pattern_size.height; ++i) {
         for (int j = 0; j < pattern_size.width; ++j) {
-            param_.square_obj_points.push_back(cv::Point3f(i, j, 0));
+            param_.square_obj_points.emplace_back(i, j, 0);
         }
     }
 
-    timer_.calibration_state =
-        this->create_wall_timer(250ms, std::bind(&CalibrationNode::publishCalibrationState, this));
+    timer_.calibration_state = this->create_wall_timer(
+        std::chrono::milliseconds(250), [this] { publishCalibrationState(); });
 
     cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     param_.charuco_board = cv::aruco::CharucoBoard(pattern_size, 0.04f, 0.02f, dictionary);
@@ -120,7 +119,7 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     detector_params.cornerRefinementWinSize = 10;
     cv::aruco::CharucoParameters board_params;
 
-    charuco_detector = std::make_unique<cv::aruco::CharucoDetector>(
+    charuco_detector_ = std::make_unique<cv::aruco::CharucoDetector>(
         param_.charuco_board, board_params, detector_params);
 
     signal_.detected_boards->publish(state_.board_markers_array);
@@ -158,7 +157,7 @@ void CalibrationNode::initSignals() {
 }
 
 void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg) {
-    if (state_.calibration_state != CAPTURING) {
+    if (state_.calibration_state != kCapturing) {
         return;
     }
 
@@ -176,7 +175,7 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
     std::vector<cv::Point2f> current_image_points;
     std::vector<cv::Point3f> current_obj_points;
 
-    charuco_detector->detectBoard(image_ptr->image, current_corners, current_ids);
+    charuco_detector_->detectBoard(image_ptr->image, current_corners, current_ids);
 
     if (current_corners.size() < 20) {
         state_.board_corners_array.markers.clear();
@@ -210,18 +209,18 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
 }
 
 void CalibrationNode::onButtonClick(
-    const camera_srvs::srv::CalibrationCommand::Request::SharedPtr request,
-    camera_srvs::srv::CalibrationCommand::Response::SharedPtr) {
-    if (state_.calibration_state == CALIBRATING) {
+    const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
+    const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& /*response*/) {
+    if (state_.calibration_state == kCalibrating) {
         return;
     }
-    if (request->cmd == START) {
-        state_.calibration_state = CAPTURING;
+    if (request->cmd == kStart) {
+        state_.calibration_state = kCapturing;
         RCLCPP_INFO_STREAM(this->get_logger(), "State set to capturing");
 
-    } else if (request->cmd == CALIBRATE) {
+    } else if (request->cmd == kCalibrate) {
         calibrate();
-    } else if (request->cmd == RESET) {
+    } else if (request->cmd == kReset) {
         handleResetCommand();
     }
 }
@@ -238,10 +237,11 @@ int CalibrationNode::getImageCoverage() const {
     MultiPolygon current_coverage;
     for (const Polygon& new_poly : state_.polygons_all) {
         MultiPolygon tmp_poly;
-        union_(current_coverage, new_poly, tmp_poly);
+        boost::geometry::union_(current_coverage, new_poly, tmp_poly);
         current_coverage = tmp_poly;
     }
-    float ratio = area(current_coverage) / (state_.frame_size->height * state_.frame_size->width);
+    float ratio = boost::geometry::area(current_coverage) /
+                  (state_.frame_size->height * state_.frame_size->width);
     return static_cast<int>(ratio * 100);
 }
 
@@ -309,11 +309,11 @@ void CalibrationNode::appendCornerMarkers(const std::vector<cv::Point2f>& detect
 void CalibrationNode::handleBadCalibration() {
     RCLCPP_INFO_STREAM(this->get_logger(), "Continue taking frames");
 
-    state_.calibration_state = CAPTURING;
+    state_.calibration_state = kCapturing;
 }
 
 void CalibrationNode::handleResetCommand() {
-    state_.calibration_state = NOT_CALIBRATED;
+    state_.calibration_state = kNotCalibrated;
     state_.image_points_all.clear();
     state_.obj_points_all.clear();
     state_.board_markers_array.markers.clear();
@@ -322,7 +322,7 @@ void CalibrationNode::handleResetCommand() {
 }
 
 void CalibrationNode::calibrate() {
-    state_.calibration_state = CALIBRATING;
+    state_.calibration_state = kCalibrating;
     publishCalibrationState();
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration inialized");
     int coverage_percentage = getImageCoverage();
@@ -358,7 +358,7 @@ void CalibrationNode::calibrate() {
 
     if (rms < param_.min_accepted_error) {
         intrinsic_params.storeYaml(param_.path_to_save_params);
-        state_.calibration_state = OK_CALIBRATION;
+        state_.calibration_state = kOkCalibration;
     } else {
         handleBadCalibration();
     }

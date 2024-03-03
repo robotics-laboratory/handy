@@ -1,5 +1,5 @@
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 #include "CameraApi.h"

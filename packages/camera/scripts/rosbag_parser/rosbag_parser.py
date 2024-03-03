@@ -3,7 +3,6 @@ from rosidl_runtime_py.utilities import get_message
 from rclpy.serialization import deserialize_message
 import cv2
 import os
-import numpy as np
 import argparse
 from cv_bridge import CvBridge
 
@@ -53,7 +52,7 @@ def equalise_hist(img):
 
 def init_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--topics", nargs='*')
+    parser.add_argument("--topics", nargs="*")
     parser.add_argument("--from-bag")
     parser.add_argument("--export")
     parser.add_argument("--increase-exposure", action="store_true")

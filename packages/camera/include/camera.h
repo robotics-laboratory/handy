@@ -27,8 +27,8 @@ class CameraNode : public rclcpp::Node {
 
     void handleOnTimer();
 
-    void publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
-    void publishBGRImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
+    void publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx);
+    void publishBGRImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx);
 
     void abortIfNot(std::string_view msg, int status);
     void abortIfNot(std::string_view msg, int camera_idx, int status);
