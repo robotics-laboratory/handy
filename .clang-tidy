@@ -59,7 +59,6 @@ Checks:          'bugprone-argument-comment,
                   misc-unused-using-decls,
                   misc-use-anonymous-namespace,
 
-                  modernize-avoid-bind,
                   modernize-concat-nested-namespaces,
                   modernize-deprecated-headers,
                   modernize-deprecated-ios-base-aliases,

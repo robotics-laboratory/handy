@@ -23,9 +23,6 @@ geometry_msgs::msg::Point toMsgPoint(const handy::calibration::Point& boost_poin
 
 }  // namespace
 namespace handy::calibration {
-
-using namespace std::chrono_literals;  // NOLINT
-
 /**
  * Converts all corners of detected chessboard into a convex hull
  *
@@ -110,8 +107,8 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
         }
     }
 
-    timer_.calibration_state =
-        this->create_wall_timer(250ms, [this] { publishCalibrationState(); });
+    timer_.calibration_state = this->create_wall_timer(
+        std::chrono::milliseconds(250), [this] { publishCalibrationState(); });
 
     cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
     param_.charuco_board = cv::aruco::CharucoBoard(pattern_size, 0.04f, 0.02f, dictionary);
