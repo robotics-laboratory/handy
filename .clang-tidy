@@ -265,7 +265,7 @@ CheckOptions:
   - key:             readability-operators-representation.BinaryOperators
     value:           "&&;&=;&;|;~;!;!=;||;^;^=" 
   - key:             misc-unused-parameters.StrictMode
-    value:           1
+    value:           true
 
   # type names
   - key:             readability-identifier-naming.ClassCase

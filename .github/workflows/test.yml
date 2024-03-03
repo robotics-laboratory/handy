@@ -28,6 +28,8 @@ jobs:
     name: Building, testing, linting
     needs: extract-image
     runs-on: self-hosted
+    concurrency:
+      group: build-and-check-${{ github.ref }}
     env:
       CMAKE_ARGS: "-DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1"
 
@@ -67,6 +69,8 @@ jobs:
     name: Formatting
     needs: extract-image
     runs-on: self-hosted
+    concurrency:
+      group: code-style-${{ github.ref }}
 
     container:
       image: ${{ needs.extract-image.outputs.image-url}}
@@ -80,5 +84,7 @@ jobs:
         shell: bash
         run: |
           pip3 install pre-commit
-          git config --global --add safe.directory $(pwd)
-          pre-commit run --all-files
+          pre-commit run --color=always --all-files 
+
+
+# git config --global --add safe.directory $(pwd)
