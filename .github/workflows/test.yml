@@ -33,6 +33,7 @@ jobs:
     runs-on: self-hosted
     concurrency:
       group: build-and-check-${{ github.ref }}
+      cancel-in-progress: true
     env:
       CMAKE_ARGS: "-DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1"
 
@@ -75,6 +76,7 @@ jobs:
     runs-on: self-hosted
     concurrency:
       group: code-style-${{ github.ref }}
+      cancel-in-progress: true
 
     container:
       image: ${{ needs.extract-image.outputs.image-url}}
