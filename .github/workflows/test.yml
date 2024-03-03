@@ -1,0 +1,87 @@
+name: Test
+
+on:
+  pull_request:
+    branches: [ "master" ]
+    types: [ opened, reopened, ready_for_review, synchronize ]
+
+  workflow_dispatch:
+
+jobs:
+  extract-image:
+    name: Extraction of configs
+    runs-on: ubuntu-latest
+    outputs:
+      image-url: ${{ steps.extractor.outputs.image_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Extract image URL
+        id: extractor
+        run: |
+          IMAGE_URL=$(grep -o 'image:\s*[^ ]*' docker-compose.yaml | cut -d ' ' -f2)
+          echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
+          echo $IMAGE_URL
+
+  build-and-check:
+    name: Building, testing, linting
+    needs: extract-image
+    runs-on: self-hosted
+    concurrency:
+      group: build-and-check-${{ github.ref }}
+    env:
+      CMAKE_ARGS: "-DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_TOOLS_ADDRESS_SANITIZER=1"
+
+    container:
+      image: ${{ needs.extract-image.outputs.image-url}}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build ROS2 packages
+        shell: bash
+        run: |
+          source $ROS_ROOT/setup.bash
+          cd $GITHUB_WORKSPACE/packages
+          colcon build --merge-install --cmake-args $CMAKE_ARGS
+          source install/setup.bash
+
+      - name: Test ROS2 packages
+        continue-on-error: true
+        shell: bash
+        run: |
+          cd $GITHUB_WORKSPACE/packages
+          colcon test --ctest-args tests --merge-install --executor parallel --parallel-workers $(nproc) --return-code-on-test-failure
+
+      - name: Run Clang-Tidy
+        shell: bash
+        run: |
+          FILES=$(find . \( -name '*.h' -or -name '*.cpp' -or -name '*.cc' \) -not -path '*/build/*' -not -path '*/install/*' -not -path '*/log/*')
+          echo "Files to be linted:"
+          echo "$FILES"
+          for FILE in $FILES; do
+            clang-tidy --fix -p=packages/build $FILE
+          done
+
+  code-style:
+    name: Formatting
+    needs: extract-image
+    runs-on: self-hosted
+    concurrency:
+      group: code-style-${{ github.ref }}
+
+    container:
+      image: ${{ needs.extract-image.outputs.image-url}}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # temporary solution until pre-commit is not installed in the container
+      - name: Launching pre-commit
+        shell: bash
+        run: |
+          pip3 install pre-commit
+          pre-commit run --color=always --all-files 
