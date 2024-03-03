@@ -263,7 +263,7 @@ WarningsAsErrors:  'bugprone-argument-comment,
                     '
 CheckOptions:
   - key:             readability-operators-representation.BinaryOperators
-    value:           "&&;&=;&;|;~;!;!=;||;^;^=" 
+    value:           "&&;&=;&;|;~;!;!=;||;^;^="
   - key:             misc-unused-parameters.StrictMode
     value:           true
 

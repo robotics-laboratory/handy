@@ -13,5 +13,3 @@ launch:
    file: $(find-pkg-share camera)/launch/calibration.yaml
    arg:
    - {name: "calibration_file_path", value: "/handy/packages/camera/param_save/camera_params.yaml"}
-
-

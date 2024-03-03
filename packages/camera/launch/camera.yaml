@@ -34,7 +34,7 @@ launch:
     - {name: "publish_rectified_preview", value: "$(var publish_rectified_preview)"}
     - {name: "calibration_file_path", value: "$(var calibration_file_path)"}
 
-    
+
     - name: "camera_0"
       param:
         - {name: "exposure_time", value: 6000}        # range: ...
@@ -45,4 +45,4 @@ launch:
         - {name: "saturation", value: 100}            # range: 0-200
         - {name: "sharpness", value: 0}               # range: 0-100
         - {name: "auto_exposure", value: False}
-      
+

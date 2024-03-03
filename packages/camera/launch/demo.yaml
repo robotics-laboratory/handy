@@ -8,4 +8,3 @@ launch:
    - {name: "publish_bgr_preview", value: "True"}
    - {name: "publish_raw", value: "False"}
    - {name: "publish_bgr", value: "False"}
-

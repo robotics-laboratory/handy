@@ -53,7 +53,7 @@ def equalise_hist(img):
 
 def init_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--topics", nargs='*')
+    parser.add_argument("--topics", nargs="*")
     parser.add_argument("--from-bag")
     parser.add_argument("--export")
     parser.add_argument("--increase-exposure", action="store_true")

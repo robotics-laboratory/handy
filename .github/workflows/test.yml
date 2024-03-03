@@ -84,4 +84,4 @@ jobs:
         shell: bash
         run: |
           pip3 install pre-commit
-          pre-commit run --color=always --all-files 
+          pre-commit run --color=always --all-files

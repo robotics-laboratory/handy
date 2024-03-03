@@ -166,7 +166,7 @@ ENV PYTORCH_WHL="torch-1.13.0a0+340c4120.nv22.06-cp38-cp38-linux_aarch64.whl"
 ENV PYTORCH_URL="https://developer.download.nvidia.com/compute/redist/jp/v50/pytorch/${PYTORCH_WHL}"
 
 RUN wget --no-check-certificate -qO ${PYTORCH_WHL} ${PYTORCH_URL} \
-    && pip3 install --no-cache-dir ${PYTORCH_WHL} \ 
+    && pip3 install --no-cache-dir ${PYTORCH_WHL} \
     && rm -rf /tmp/*
 
 RUN wget -qO - https://github.com/pytorch/vision/archive/refs/tags/v${TORCHVISION_VERSION}.tar.gz | tar -xz \
@@ -291,7 +291,7 @@ RUN mkdir -p ${ROS_ROOT} \
         std_msgs \
         tf2 \
         vision_opencv \
-        visualization_msgs \   
+        visualization_msgs \
     > ${ROS_ROOT}/ros2.rosinstall \
     && vcs import ${ROS_TMP} < ${ROS_ROOT}/ros2.rosinstall > /dev/null
 
@@ -315,7 +315,7 @@ RUN cd ${ROS_TMP} \
     && colcon build \
         --merge-install \
         --install-base ${ROS_ROOT} \
-        --cmake-args -DBUILD_TESTING=OFF \ 
+        --cmake-args -DBUILD_TESTING=OFF \
     && rm -rf /tmp/*
 
 RUN printf "export ROS_ROOT=${ROS_ROOT}\n" >> ${HOME}/.bashrc \
