@@ -3,7 +3,6 @@ from rosidl_runtime_py.utilities import get_message
 from rclpy.serialization import deserialize_message
 import cv2
 import os
-import numpy as np
 import argparse
 from cv_bridge import CvBridge
 

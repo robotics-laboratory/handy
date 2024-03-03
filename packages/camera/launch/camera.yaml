@@ -45,4 +45,3 @@ launch:
         - {name: "saturation", value: 100}            # range: 0-200
         - {name: "sharpness", value: 0}               # range: 0-100
         - {name: "auto_exposure", value: False}
-

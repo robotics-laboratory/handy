@@ -62,6 +62,7 @@ jobs:
           echo "Files to be linted:"
           echo "$FILES"
           for FILE in $FILES; do
+            echo $FILE
             clang-tidy --fix -p=packages/build $FILE
           done
 

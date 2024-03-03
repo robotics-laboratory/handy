@@ -3,14 +3,15 @@
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
 #include <yaml-cpp/yaml.h>
-#include <fstream>
+
 #include <exception>
+#include <fstream>
 
 namespace handy {
 
 CameraIntrinsicParameters::CameraIntrinsicParameters(
-    cv::Size size, cv::Mat camera_matr, cv::Vec<float, 5> distort_coefs)
-    : image_size(size), camera_matrix(camera_matr), dist_coefs(distort_coefs) {}
+    cv::Size size, cv::Mat camera_matr, const cv::Vec<float, 5>& distort_coefs)
+    : image_size(size), camera_matrix(std::move(camera_matr)), dist_coefs(distort_coefs) {}
 
 void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     std::ofstream param_file(yaml_path);
@@ -52,13 +53,13 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(const std::str
 
     const YAML::Node file = YAML::LoadFile(yaml_path);
 
-    const std::vector<int> yaml_image_size = file["image_size"].as<std::vector<int>>();
+    const auto yaml_image_size = file["image_size"].as<std::vector<int>>();
     result.image_size = cv::Size(yaml_image_size[0], yaml_image_size[1]);
 
-    const std::vector<double> yaml_camera_matrix = file["camera_matrix"].as<std::vector<double>>();
+    const auto yaml_camera_matrix = file["camera_matrix"].as<std::vector<double>>();
     result.camera_matrix = cv::Mat(yaml_camera_matrix, true);
 
-    const std::vector<float> coefs = file["distorsion_coefs"].as<std::vector<float>>();
+    const auto coefs = file["distorsion_coefs"].as<std::vector<float>>();
     result.dist_coefs = cv::Mat(coefs, true);
 
     result.initUndistortMaps();

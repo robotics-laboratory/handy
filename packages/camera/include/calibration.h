@@ -2,31 +2,31 @@
 
 #include "camera_srvs/srv/calibration_command.hpp"
 
-#include <rclcpp/rclcpp.hpp>
 #include <cv_bridge/cv_bridge.hpp>
-#include <sensor_msgs/msg/compressed_image.hpp>
-#include <visualization_msgs/msg/image_marker.hpp>
 #include <foxglove_msgs/msg/image_marker_array.hpp>
 #include <geometry_msgs/msg/point.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
 #include <std_msgs/msg/int16.hpp>
+#include <visualization_msgs/msg/image_marker.hpp>
 
-#include <opencv2/core/core.hpp>
 #include <opencv2/aruco/charuco.hpp>
+#include <opencv2/core/core.hpp>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <vector>
-#include <string>
-#include <optional>
 #include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace handy::calibration {
 
-typedef boost::geometry::model::d2::point_xy<double> Point;
-typedef boost::geometry::model::polygon<Point> Polygon;
-typedef boost::geometry::model::multi_polygon<Polygon> MultiPolygon;
+using Point = boost::geometry::model::d2::point_xy<double>;
+using Polygon = boost::geometry::model::polygon<Point>;
+using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
 
 double getIou(const Polygon& first, const Polygon& second);
 
@@ -39,13 +39,13 @@ class CalibrationNode : public rclcpp::Node {
     CalibrationNode();
 
     enum CalibrationState {
-        NOT_CALIBRATED = 1,
-        CAPTURING = 2,
-        CALIBRATING = 3,
-        OK_CALIBRATION = 5
+        kNotCalibrated = 1,
+        kCapturing = 2,
+        kCalibrating = 3,
+        kOkCalibration = 5
     };
 
-    enum Action { START = 1, CALIBRATE = 2, RESET = 3 };
+    enum Action { kStart = 1, kCalibrate = 2, kReset = 3 };
 
   private:
     void declareLaunchParams();
@@ -55,8 +55,8 @@ class CalibrationNode : public rclcpp::Node {
     void publishCalibrationState() const;
 
     void onButtonClick(
-        const camera_srvs::srv::CalibrationCommand::Request::SharedPtr request,
-        camera_srvs::srv::CalibrationCommand::Response::SharedPtr response);
+        const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
+        const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& response);
 
     void calibrate();
     void handleBadCalibration();
@@ -112,13 +112,13 @@ class CalibrationNode : public rclcpp::Node {
         foxglove_msgs::msg::ImageMarkerArray board_corners_array;
 
         int last_marker_id = 0;
-        int calibration_state = NOT_CALIBRATED;
+        int calibration_state = kNotCalibrated;
     } state_;
 
     struct Timer {
         rclcpp::TimerBase::SharedPtr calibration_state = nullptr;
     } timer_{};
 
-    std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector = nullptr;
+    std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector_ = nullptr;
 };
 }  // namespace handy::calibration
