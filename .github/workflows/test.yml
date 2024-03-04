@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   pre-commit:
-    name: Check pre-commit hooks
+    name: Run pre-commit hooks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -20,7 +20,7 @@ jobs:
       - uses: pre-commit/action@v3.0.1
 
   extract-image:
-    name: Extract image version
+    name: Get image version
     runs-on: ubuntu-latest
     outputs:
       image-url: ${{ steps.extractor.outputs.image_url }}
@@ -39,6 +39,11 @@ jobs:
     runs-on: self-hosted
     container:
       image: ${{ needs.extract-image.outputs.image-url}}
+
+    # TODO: Fix in dockerfile
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - uses: actions/checkout@v3
