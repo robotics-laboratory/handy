@@ -12,8 +12,6 @@ repos:
       - id: end-of-file-fixer
       - id: mixed-line-ending
       - id: trailing-whitespace
-      - id: pretty-format-json
-        args: [--autofix, --no-sort-keys]
 
   # YAML linter
   - repo: https://github.com/adrienverge/yamllint.git
@@ -37,3 +35,4 @@ repos:
     rev: v17.0.6
     hooks:
       - id: clang-format
+        types: [c, c++]
