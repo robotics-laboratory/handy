@@ -1,37 +1,3 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-
 .vscode
 *.png
 *.bin
@@ -41,8 +7,3 @@
 packages/build
 packages/install
 packages/log
-
-# DVC data
-datasets/ball_dataset_side_1
-datasets/ball_dataset_side_2
-datasets/annotated_12_02_23
