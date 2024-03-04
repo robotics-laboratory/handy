@@ -26,7 +26,7 @@ class Intrinsics:
     def undistort_image(self, image):
         cur_image_size = image.shape[:2]
         assert (
-            self.image_size != cur_image_size
+            self.image_size == cur_image_size
         ), f"Images of different sizes were provided: {self.image_size} != {cur_image_size}"
 
         return cv2.remap(image, self.mapx, self.mapy, cv2.INTER_NEAREST)
@@ -73,7 +73,7 @@ def main():
         print("Invalid export directory provided:", args.export)
         return
     if not os.path.isdir(args.source):
-        print("Invalid export directory provided:", args.source)
+        print("Invalid source directory provided:", args.source)
         return
 
     # load params if undistortion is enabled
