@@ -1,0 +1,6 @@
+outs:
+- md5: 59e511f3282db5b869282b1992e8fd41.dir
+  size: 6306722201
+  nfiles: 4578
+  hash: md5
+  path: ball_dataset_side_2

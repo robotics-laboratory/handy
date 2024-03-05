@@ -1,0 +1,9 @@
+.vscode
+*.png
+*.bin
+*.db3
+
+#ROS2 builds
+packages/build
+packages/install
+packages/log
