@@ -102,7 +102,9 @@ def main():
         msg = deserialize_message(data, get_message(type_by_topic[topic]))
         image = bridge.compressed_imgmsg_to_cv2(msg)
 
-        filename = f"{msg.header.stamp.sec}{msg.header.stamp.nanosec}".ljust(19, "0") + ".png"
+        filename = (
+            f"{msg.header.stamp.sec}{msg.header.stamp.nanosec}".ljust(19, "0") + ".png"
+        )
         joint_path = os.path.join(save_folder, topic_to_dir(topic), filename)
         success = cv2.imwrite(joint_path, image)
         print(f"{'OK' if success else 'ERROR'}   {joint_path}")

@@ -65,7 +65,7 @@ def main():
     intrinsic_params = None
     parser = init_parser()
     args = parser.parse_args()
-    if not any([args.store_distort_bgr, 
+    if not any([args.store_distort_bgr,
                 args.store_undistort_bgr, args.store_undistort_raw]):  # fmt:skip
         print("At least one convertation flag must be specified")
 
