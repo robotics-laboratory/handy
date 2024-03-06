@@ -10,56 +10,64 @@
 namespace handy {
 
 CameraIntrinsicParameters::CameraIntrinsicParameters(
-    cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs)
-    : image_size(size), camera_matrix(std::move(camera_matr)), dist_coefs(distort_coefs) {}
+    cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs, const int cam_id)
+    : image_size(size)
+    , camera_matrix(std::move(camera_matr))
+    , dist_coefs(distort_coefs)
+    , camera_id(cam_id) {}
 
 void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
-    std::ofstream param_file(yaml_path);
-    if (!param_file) {
-        throw std::invalid_argument("unable to open file");
+    const std::string camera_id_str = std::to_string(camera_id);
+    YAML::Node config;
+    std::ifstream param_file(yaml_path);
+    if (param_file) {
+        config = YAML::Load(param_file);
+        param_file.close();
     }
 
-    YAML::Emitter output_yaml;
-    output_yaml << YAML::BeginMap;  // global yaml map
+    YAML::Node&& intrinsics = config["intrinsics"];
+    YAML::Node&& camera_id_node = intrinsics[camera_id_str];
 
-    output_yaml << YAML::Key << "image_size";
-    output_yaml << YAML::Value << YAML::Flow << YAML::BeginSeq << image_size.width
-                << image_size.height << YAML::EndSeq;
+    camera_id_node["image_size"] = YAML::Node(YAML::NodeType::Sequence);
+    camera_id_node["image_size"].push_back(image_size.width);
+    camera_id_node["image_size"].push_back(image_size.height);
 
-    output_yaml << YAML::Key << "camera_matrix";
-    output_yaml << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    camera_id_node["camera_matrix"] = YAML::Node(YAML::NodeType::Sequence);
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            output_yaml << camera_matrix.at<double>(i, j);
+            camera_id_node["camera_matrix"].push_back(camera_matrix.at<double>(i, j));
         }
     }
-    output_yaml << YAML::EndSeq;
 
-    output_yaml << YAML::Key << "distorsion_coefs";
-    output_yaml << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    camera_id_node["distortion_coefs"] = YAML::Node(YAML::NodeType::Sequence);
     for (int i = 0; i < 5; ++i) {
-        output_yaml << dist_coefs[i];
+        camera_id_node["distortion_coefs"].push_back(dist_coefs[i]);
     }
-    output_yaml << YAML::EndSeq;
 
-    output_yaml << YAML::EndMap;  // global yaml map
-
-    param_file << output_yaml.c_str();
-    param_file.close();
+    std::ofstream output_file(yaml_path);
+    if (!output_file) {
+        throw std::invalid_argument("unable to open file");
+    }
+    output_file << config;
+    output_file.close();
 }
 
-CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(const std::string& yaml_path) {
+CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
+    const std::string& yaml_path, const int camera_id) {
     CameraIntrinsicParameters result{};
+    result.camera_id = camera_id;
+    const std::string camera_id_str = std::to_string(camera_id);
 
-    const YAML::Node file = YAML::LoadFile(yaml_path);
+    const YAML::Node intrinsics = YAML::LoadFile(yaml_path)["intrinsics"];
 
-    const auto yaml_image_size = file["image_size"].as<std::vector<int>>();
+    const auto yaml_image_size = intrinsics[camera_id_str]["image_size"].as<std::vector<int>>();
     result.image_size = cv::Size(yaml_image_size[0], yaml_image_size[1]);
 
-    const auto yaml_camera_matrix = file["camera_matrix"].as<std::vector<double>>();
+    const auto yaml_camera_matrix =
+        intrinsics[camera_id_str]["camera_matrix"].as<std::vector<double>>();
     result.camera_matrix = cv::Mat(yaml_camera_matrix, true);
 
-    const auto coefs = file["distorsion_coefs"].as<std::vector<double>>();
+    const auto coefs = intrinsics[camera_id_str]["distorsion_coefs"].as<std::vector<float>>();
     result.dist_coefs = cv::Mat(coefs, true);
 
     result.initUndistortMaps();
@@ -84,15 +92,17 @@ void CameraIntrinsicParameters::initUndistortMaps() {
     // note that new camera matrix equals initial camera matrix
     // because neither scaling nor cropping is used when undistoring
     cv::initUndistortRectifyMap(
-        camera_matrix,
-        dist_coefs,
+        result.camera_matrix,
+        result.dist_coefs,
         cv::noArray(),
-        camera_matrix,  // newCameraMatrix == this->camera_matrix
-        image_size,
+        result.camera_matrix,  // newCameraMatrix == this->camera_matrix
+        result.image_size,
         CV_16SC2,
-        cached.undistort_maps.first,
-        cached.undistort_maps.second);
-    cached.undistortedImage = cv::Mat(image_size, CV_8UC3);
+        result.cached.undistort_maps.first,
+        result.cached.undistort_maps.second);
+    result.cached.undistortedImage = cv::Mat(result.image_size, CV_8UC3);
+
+    return result;
 }
 
 cv::Mat CameraIntrinsicParameters::undistortImage(cv::Mat& src) {

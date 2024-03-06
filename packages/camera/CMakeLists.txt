@@ -65,4 +65,8 @@ install(DIRECTORY
     launch params
     DESTINATION share/${PROJECT_NAME})
 
+if(BUILD_TESTING)
+    add_subdirectory("test")
+endif()
+
 ament_package()
