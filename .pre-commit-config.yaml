@@ -22,6 +22,13 @@ repos:
         # TODO: Discuss yamllint settings (e.g. line-length)
         args: [--strict, -d, "{extends: relaxed, rules: {line-length: {max: 120}}}"]
 
+  # CMake linter and formatter
+  - repo: https://github.com/cheshirekow/cmake-format-precommit
+    rev: v0.6.10
+    hooks:
+      - id: cmake-format
+      - id: cmake-lint
+
   # Python linters & formatters
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.1.3
