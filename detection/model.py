@@ -2,9 +2,11 @@ import torchvision
 import torch.nn as nn
 
 from torchvision.models.detection.ssd import SSD, DefaultBoxGenerator, SSDHead
+from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights, mobilenet_v3_large, MobileNet_V3_Large_Weights
 
 
-def get_model(n_classes=2, size=300, nms=0.5, backbone_name='resnet34'):
+
+def get_model(n_classes=2, size=300, nms=0.3, backbone_name='resnet34'):
     if backbone_name == 'resnet34':
         backbone_model = torchvision.models.resnet34(pretrained=True)
         backbone = nn.Sequential(*list(backbone_model.children())[:-2])
@@ -14,11 +16,11 @@ def get_model(n_classes=2, size=300, nms=0.5, backbone_name='resnet34'):
         backbone = backbone_model.features
         out_channels = 1280
     elif backbone_name == 'mobilenet_v3':
-        backbone_model = torchvision.models.mobilenet_v3_small(pretrained=True)
+        backbone_model = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1)
         backbone = backbone_model.features
         out_channels = 576
     elif backbone_name == 'mobilenet_v3_large':
-        backbone_model = torchvision.models.mobilenet_v3_large(pretrained=True)
+        backbone_model = mobilenet_v3_large(weights=MobileNet_V3_Large_Weights.IMAGENET1K_V1)
         backbone = backbone_model.features
         out_channels = 960
     else:
