@@ -48,9 +48,6 @@ class LitDetector(L.LightningModule):
         self.log('mAP@0.50', mAP_result['map_50'])
         self.log('mAP@0.50:0.95', mAP_result['map'])
         self.val_map.reset()
-        
-        scheduler = self.lr_schedulers()
-        scheduler.step()
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(self.parameters(), lr=0.0005, momentum=0.9, nesterov=True)
