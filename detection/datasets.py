@@ -128,7 +128,7 @@ class DetectionDataset(Dataset):
         ymax_resized = int(ymax * self.height / image_height)
 
         bboxes_resized = [[xmin_resized, ymin_resized, xmax_resized, ymax_resized]]
-        labels = [[1]]
+        labels = [1]
 
         target = {}
         target['boxes'] = torch.as_tensor(bboxes_resized, dtype=torch.int64)
@@ -144,6 +144,12 @@ class DetectionDataset(Dataset):
     def __len__(self):
         return len(self.images)
 
+def collate_fn(batch):
+    """
+    To handle the data loading as different images may have different number 
+    of objects and to handle varying size tensors as well.
+    """
+    return tuple(zip(*batch))
 
 class DetectionDataModule(L.LightningDataModule):
     def __init__(self, data_dir, annot_dir, width, height, batch_size):
@@ -163,10 +169,17 @@ class DetectionDataModule(L.LightningDataModule):
                                               transforms=get_valid_transform(), train=False)
     
     def train_dataloader(self):
-        return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=2)
+        return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=2, collate_fn=collate_fn, persistent_workers=True)
     
     def val_dataloader(self):
-        return torch.utils.data.DataLoader(self.valid_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2)
+        return torch.utils.data.DataLoader(self.valid_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2, collate_fn=collate_fn, persistent_workers=True)
+    
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        images, targets = batch
+        
+        images = list(image.to(device) for image in images)
+        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+        return images, targets
     
 
 if __name__ == '__main__':
