@@ -6,7 +6,7 @@ from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights, m
 
 
 
-def get_model(n_classes=2, size=300, nms=0.3, backbone_name='resnet34'):
+def get_model(n_classes=2, size=300, nms=0.45, backbone_name='resnet34'):
     if backbone_name == 'resnet34':
         backbone_model = torchvision.models.resnet34(pretrained=True)
         backbone = nn.Sequential(*list(backbone_model.children())[:-2])
