@@ -1,5 +1,6 @@
 import torchvision
 import torch.nn as nn
+import timm
 
 from torchvision.models.detection.ssd import SSD, DefaultBoxGenerator, SSDHead
 from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights, mobilenet_v3_large, MobileNet_V3_Large_Weights
@@ -11,6 +12,10 @@ def get_model(n_classes=2, size=300, nms=0.45, backbone_name='resnet34'):
         backbone_model = torchvision.models.resnet34(pretrained=True)
         backbone = nn.Sequential(*list(backbone_model.children())[:-2])
         out_channels = 512
+    elif backbone_name == 'vovnet39':
+        backbone_model = timm.create_model('ese_vovnet39b.ra_in1k', pretrained=True)
+        backbone = nn.Sequential(*list(backbone_model.children())[:-1])
+        out_channels = 1024
     elif backbone_name == 'mobilenet_v2':
         backbone_model = torchvision.models.mobilenet_v2(pretrained=True)
         backbone = backbone_model.features
