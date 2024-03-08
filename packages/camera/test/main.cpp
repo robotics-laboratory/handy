@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
 #include "params.h"
-#include <opencv2/core/core.hpp>
 #include <fstream>
+#include <opencv2/core/core.hpp>
 #include <string>
 
-TEST(camera, params_single_read_write) {
+TEST(camera, ParamsSingleReadWrite) {
     const std::string path_to_yaml = "test_params.yaml";
     cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) << 1., 0., 1., 0., -2., 0., 3., 0., 3.);
     cv::Vec<float, 5> distort_coefs(1, 2, 3, 4, 5);
@@ -32,7 +32,7 @@ TEST(camera, params_single_read_write) {
     }
 }
 
-TEST(camera, params_multiple_read_write) {
+TEST(camera, ParamsMultipleReadWrite) {
     // create test params
     const std::string path_to_yaml = "test_params.yaml";
     cv::Mat camera_matrix_1 = (cv::Mat_<double>(3, 3) << 0., 0., 1., 0., -2., 0., 3., 0., 3.);

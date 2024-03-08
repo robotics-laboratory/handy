@@ -531,4 +531,13 @@ void CameraNode::handleQueue(int camera_idx) {
     }
 }
 
+void CameraNode::initCalibParams() {
+    for (int idx = 0; idx < param_.camera_num; ++idx) {
+        RCLCPP_INFO_STREAM(this->get_logger(), "loading camera " << idx << " parameters");
+        std::string calibration_name = "camera_" + std::to_string(idx);
+        cameras_intrinsics_.push_back(
+            CameraIntrinsicParameters::loadFromYaml(param_.calibration_file_path, idx));
+    }
+}
+
 }  // namespace handy::camera

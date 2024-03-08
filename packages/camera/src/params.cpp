@@ -57,7 +57,7 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
 }
 
 CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
-    const std::string& yaml_path, const int camera_id) {
+    const std::string& yaml_path, int camera_id) {
     CameraIntrinsicParameters result{};
     result.camera_id = camera_id;
     const std::string camera_id_str = std::to_string(camera_id);
