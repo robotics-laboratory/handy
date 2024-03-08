@@ -14,7 +14,6 @@ CMAKE_ARGS ?= \
 FILES_TO_LINT := $(shell find . \( -name '*.h' -or -name '*.cpp' -or -name '*.cc' \) \
                     -not -path '*/build/*' -not -path '*/install/*' -not -path '*/log/*')
 
-
 .PHONY: all
 all:
     $(error Please use explicit targets)
@@ -27,11 +26,10 @@ build:
         --symlink-install \
         --cmake-args ${CMAKE_ARGS}
 
-test:
-    make build
+test: build
     colcon --log-base /dev/null test \
-        --ctest-args tests --symlink-install \
-        --executor parallel --parallel-workers $$(nproc)
+            --ctest-args tests --symlink-install \
+            --executor parallel --parallel-workers $$(nproc)
 
 # packages="first_pkg second_pkg third_pkg..."
 build-select:
@@ -42,20 +40,16 @@ build-select:
         --packages-up-to $(packages) \
         --cmake-args ${CMAKE_ARGS}
 
-test-select:
-    source ${ROS_ROOT}/setup.sh
-    make build-select
+test-select:build-select
     colcon --log-base /dev/null test --ctest-args tests --symlink-install \
         --executor parallel --parallel-workers $$(nproc) \
         --packages-select $(packages)
 
 # args="--fix ..."
-lint-all:
-    make build
+lint-all: build
     clang-tidy -p=build $(args) $(FILES_TO_LINT)
 
-lint-one:
-    make build
+lint-one: build
     clang-tidy -p=build $(args) $(FILES_TO_LINT)
 
 .PHONY: clean

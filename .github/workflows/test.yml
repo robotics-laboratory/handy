@@ -71,7 +71,9 @@ jobs:
             -not -path '*/build/*' -not -path '*/install/*' -not -path '*/log/*')
           echo "Files to be linted:"
           echo "$FILES"
-          for FILE in $FILES; do
-            echo $FILE
-            clang-tidy --fix -p=packages/build $FILE
-          done
+          clang-tidy --fix -p=packages/build $FILES
+          git diff
+
+      - name: Check previous steps
+        if: ${{ failure() }}
+        run: exit 1
