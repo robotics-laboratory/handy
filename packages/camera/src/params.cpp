@@ -29,10 +29,12 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     YAML::Node&& camera_id_node = intrinsics[camera_id_str];
 
     camera_id_node["image_size"] = YAML::Node(YAML::NodeType::Sequence);
+    camera_id_node["image_size"].SetStyle(YAML::EmitterStyle::Flow);
     camera_id_node["image_size"].push_back(image_size.width);
     camera_id_node["image_size"].push_back(image_size.height);
 
     camera_id_node["camera_matrix"] = YAML::Node(YAML::NodeType::Sequence);
+    camera_id_node["camera_matrix"].SetStyle(YAML::EmitterStyle::Flow);
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
             camera_id_node["camera_matrix"].push_back(camera_matrix.at<double>(i, j));
@@ -40,6 +42,8 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     }
 
     camera_id_node["distortion_coefs"] = YAML::Node(YAML::NodeType::Sequence);
+    camera_id_node["distortion_coefs"].SetStyle(YAML::EmitterStyle::Flow);
+
     for (int i = 0; i < 5; ++i) {
         camera_id_node["distortion_coefs"].push_back(dist_coefs[i]);
     }
@@ -66,8 +70,9 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
     const auto yaml_camera_matrix =
         intrinsics[camera_id_str]["camera_matrix"].as<std::vector<double>>();
     result.camera_matrix = cv::Mat(yaml_camera_matrix, true);
+    result.camera_matrix = result.camera_matrix.reshape(0, {3, 3});
 
-    const auto coefs = intrinsics[camera_id_str]["distorsion_coefs"].as<std::vector<float>>();
+    const auto coefs = intrinsics[camera_id_str]["distortion_coefs"].as<std::vector<float>>();
     result.dist_coefs = cv::Mat(coefs, true);
 
     result.initUndistortMaps();
