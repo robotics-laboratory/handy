@@ -17,6 +17,8 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -41,7 +43,8 @@ class CalibrationNode : public rclcpp::Node {
     enum CalibrationState {
         kNotCalibrated = 1,
         kCapturing = 2,
-        kCalibrating = 3,
+        kMonoCalibrating = 3,
+        kStereoCalibrating = 3,
         kOkCalibration = 5
     };
 
@@ -51,37 +54,39 @@ class CalibrationNode : public rclcpp::Node {
     void declareLaunchParams();
     void initSignals();
 
-    void handleFrame(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
+    void handleFrame(
+        const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg, size_t camera_idx);
     void publishCalibrationState() const;
 
     void onButtonClick(
         const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
         const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& response);
 
-    void calibrate();
+    void calibrate(size_t camera_idx);
     void handleBadCalibration();
     void handleResetCommand();
+    bool isMonoCalibrated();
 
-    bool checkMaxSimilarity(std::vector<cv::Point2f>& corners) const;
-    int getImageCoverage() const;
+    bool checkMaxSimilarity(std::vector<cv::Point2f>& corners, size_t camera_idx) const;
+    int getImageCoverage(size_t camera_idx) const;
 
     void initCornerMarkers();
-    void appendCornerMarkers(const std::vector<cv::Point2f>& detected_corners);
+    void appendCornerMarkers(const std::vector<cv::Point2f>& detected_corners, size_t camera_idx);
     visualization_msgs::msg::ImageMarker getCornerMarker(cv::Point2f point);
     visualization_msgs::msg::ImageMarker getBoardMarkerFromCorners(
         std::vector<cv::Point2f>& detected_corners, std_msgs::msg::Header& header);
 
     struct Signals {
-        rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr detected_boards =
-            nullptr;
-        rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr detected_corners =
-            nullptr;
+        std::vector<rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr>
+            detected_boards;
+        std::vector<rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr>
+            detected_corners;
 
         rclcpp::Publisher<std_msgs::msg::Int16>::SharedPtr calibration_state = nullptr;
     } signal_{};
 
     struct Slots {
-        rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr image_sub = nullptr;
+        std::vector<rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr> image_sub;
     } slot_{};
 
     struct Services {
@@ -94,25 +99,27 @@ class CalibrationNode : public rclcpp::Node {
         cv::aruco::CharucoBoard charuco_board;
 
         bool publish_preview_markers = true;
-        bool auto_calibrate = true;
 
         std::vector<double> marker_color = {0.0, 1.0, 0.0, 0.12};
         double min_accepted_error = 0.75;
         double iou_threshold = 0.5;
         double required_board_coverage = 0.7;
+        std::vector<int64_t> cameras_to_calibrate;
+        std::map<int, int> id_to_idx;
     } param_;
 
     struct State {
         std::optional<cv::Size> frame_size = std::nullopt;
 
-        std::vector<std::vector<cv::Point2f>> image_points_all;
-        std::vector<std::vector<cv::Point3f>> obj_points_all;
-        std::vector<Polygon> polygons_all;
-        foxglove_msgs::msg::ImageMarkerArray board_markers_array;
-        foxglove_msgs::msg::ImageMarkerArray board_corners_array;
+        std::vector<std::vector<std::vector<cv::Point2f>>> image_points_all;
+        std::vector<std::vector<std::vector<cv::Point3f>>> obj_points_all;
+        std::vector<std::vector<Polygon>> polygons_all;
+        std::vector<foxglove_msgs::msg::ImageMarkerArray> board_markers_array;
+        std::vector<foxglove_msgs::msg::ImageMarkerArray> board_corners_array;
 
-        int last_marker_id = 0;
-        int calibration_state = kNotCalibrated;
+        std::atomic<int> last_marker_id = 0;
+        int global_calibration_state = kNotCalibrated;
+        std::vector<bool> is_mono_calibrated;
     } state_;
 
     struct Timer {

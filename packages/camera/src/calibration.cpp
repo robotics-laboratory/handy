@@ -122,7 +122,9 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     charuco_detector_ = std::make_unique<cv::aruco::CharucoDetector>(
         param_.charuco_board, board_params, detector_params);
 
-    signal_.detected_boards->publish(state_.board_markers_array);
+    for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
+        signal_.detected_boards[i]->publish(state_.board_markers_array[i]);
+    }
 }
 
 void CalibrationNode::declareLaunchParams() {
@@ -133,31 +135,53 @@ void CalibrationNode::declareLaunchParams() {
     param_.required_board_coverage = this->declare_parameter<double>("required_board_coverage", 0.7);
     param_.min_accepted_error = this->declare_parameter<double>("min_accepted_calib_error", 0.75);
     param_.iou_threshold = this->declare_parameter<double>("iou_threshold", 0.5);
-    param_.marker_color = this->declare_parameter<std::vector<double>>("marker_color", {0.0f, 1.0f, 0.0f, 0.12f});
+    param_.marker_color=this->declare_parameter<std::vector<double>>("marker_color", {0.0f, 1.0f, 0.0f, 0.12f});
+
+    param_.cameras_to_calibrate = this->declare_parameter<std::vector<int64_t>>("cameras_to_calibrate", {1, 2});
     // clang-format on
+
+    // no more than 2 camera are supported at the moment
+    if (param_.cameras_to_calibrate.empty() || param_.cameras_to_calibrate.size() <= 2) {
+        RCLCPP_ERROR(
+            this->get_logger(),
+            "Provided %ld cameras instead of 1 or 2",
+            param_.cameras_to_calibrate.size());
+    }
+
+    for (size_t i = 0; i < param_.cameras_to_calibrate.size(); i++) {
+        param_.id_to_idx[param_.cameras_to_calibrate[i]] = i;
+    }
 }
 
 void CalibrationNode::initSignals() {
-    slot_.image_sub = this->create_subscription<sensor_msgs::msg::CompressedImage>(
-        "/camera_1/bgr/image",
-        10,
-        std::bind(&CalibrationNode::handleFrame, this, std::placeholders::_1));
+    for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
+        const std::string calib_name_base =
+            "/calibraton_" + std::to_string(param_.cameras_to_calibrate[i]);
+        auto callback = [this, i](const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg) {
+            handleFrame(msg, i);
+        };
+        slot_.image_sub.push_back(this->create_subscription<sensor_msgs::msg::CompressedImage>(
+            calib_name_base + "/bgr/image", 10, callback));
+
+        signal_.detected_boards.push_back(
+            this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
+                calib_name_base + "/board_markers", 10));
+        signal_.detected_corners.push_back(
+            this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
+                calib_name_base + "/corner_markers", 10));
+    }
     service_.button_service = this->create_service<camera_srvs::srv::CalibrationCommand>(
-        "/calibration_1/button",
+        "/calibration/button",
         std::bind(
             &CalibrationNode::onButtonClick, this, std::placeholders::_1, std::placeholders::_2));
 
-    signal_.detected_boards = this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
-        "/calibration_1/board_markers", 10);
-    signal_.detected_corners = this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
-        "/calibration_1/corner_markers", 10);
-
     signal_.calibration_state =
-        this->create_publisher<std_msgs::msg::Int16>("/calibration_1/state", 10);
+        this->create_publisher<std_msgs::msg::Int16>("/calibration/state", 10);
 }
 
-void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg) {
-    if (state_.calibration_state != kCapturing) {
+void CalibrationNode::handleFrame(
+    const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg, size_t camera_idx) {
+    if (state_.global_calibration_state != kCapturing) {
         return;
     }
 
@@ -166,9 +190,17 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
         state_.frame_size =
             std::make_optional<cv::Size>(image_ptr->image.cols, image_ptr->image.rows);
     }
-    assert(
-        state_.frame_size->width == image_ptr->image.cols &&
-        state_.frame_size->height == image_ptr->image.rows);
+    if (state_.frame_size->width != image_ptr->image.cols ||
+        state_.frame_size->height != image_ptr->image.rows) {
+        RCLCPP_ERROR(
+            this->get_logger(),
+            "Camera ID=%ld provided (%d, %d), expected (%d, %d)",
+            param_.cameras_to_calibrate[camera_idx],
+            image_ptr->image.cols,
+            image_ptr->image.rows,
+            state_.frame_size->width,
+            state_.frame_size->height);
+    }
 
     std::vector<int> current_ids;
     std::vector<cv::Point2f> current_corners;
@@ -178,64 +210,70 @@ void CalibrationNode::handleFrame(const sensor_msgs::msg::CompressedImage::Const
     charuco_detector_->detectBoard(image_ptr->image, current_corners, current_ids);
 
     if (current_corners.size() < 20) {
-        state_.board_corners_array.markers.clear();
-        signal_.detected_corners->publish(state_.board_corners_array);
+        state_.board_corners_array[camera_idx].markers.clear();
+        signal_.detected_corners[camera_idx]->publish(state_.board_corners_array[camera_idx]);
         return;
     }
     param_.charuco_board.matchImagePoints(
         current_corners, current_ids, current_obj_points, current_image_points);
 
-    state_.board_corners_array.markers.clear();
+    state_.board_corners_array[camera_idx].markers.clear();
     if (current_ids.size() < 30) {
-        signal_.detected_corners->publish(state_.board_corners_array);
+        signal_.detected_corners[camera_idx]->publish(state_.board_corners_array[camera_idx]);
         return;
     }
     if (param_.publish_preview_markers) {
-        appendCornerMarkers(current_corners);
-        signal_.detected_corners->publish(state_.board_corners_array);
+        appendCornerMarkers(current_corners, camera_idx);
+        signal_.detected_corners[camera_idx]->publish(state_.board_corners_array[camera_idx]);
     }
-    if (!checkMaxSimilarity(current_corners)) {
+    if (!checkMaxSimilarity(current_corners, camera_idx)) {
         return;
     }
     if (param_.publish_preview_markers) {
-        state_.board_markers_array.markers.push_back(
+        state_.board_markers_array[camera_idx].markers.push_back(
             getBoardMarkerFromCorners(current_corners, image_ptr->header));
-        signal_.detected_boards->publish(state_.board_markers_array);
+        signal_.detected_boards[camera_idx]->publish(state_.board_markers_array[camera_idx]);
     }
 
-    state_.obj_points_all.push_back(current_obj_points);
-    state_.image_points_all.push_back(current_image_points);
-    state_.polygons_all.push_back(convertToBoostPolygon(current_corners));
+    state_.obj_points_all[camera_idx].push_back(current_obj_points);
+    state_.image_points_all[camera_idx].push_back(current_image_points);
+    state_.polygons_all[camera_idx].push_back(convertToBoostPolygon(current_corners));
 }
 
 void CalibrationNode::onButtonClick(
     const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
     const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& /*response*/) {
-    if (state_.calibration_state == kCalibrating) {
+    if (state_.global_calibration_state == kStereoCalibrating ||
+        state_.global_calibration_state == kMonoCalibrating) {
         return;
     }
     if (request->cmd == kStart) {
-        state_.calibration_state = kCapturing;
+        state_.global_calibration_state = kCapturing;
         RCLCPP_INFO_STREAM(this->get_logger(), "State set to capturing");
 
     } else if (request->cmd == kCalibrate) {
-        calibrate();
+        for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
+            calibrate(i);
+        }
     } else if (request->cmd == kReset) {
         handleResetCommand();
     }
 }
 
-bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f>& corners) const {
+bool CalibrationNode::checkMaxSimilarity(
+    std::vector<cv::Point2f>& corners, size_t camera_idx) const {
     Polygon new_poly = convertToBoostPolygon(corners);
     return std::all_of(
-        state_.polygons_all.begin(), state_.polygons_all.end(), [&](const Polygon& prev_poly) {
+        state_.polygons_all[camera_idx].begin(),
+        state_.polygons_all[camera_idx].end(),
+        [&](const Polygon& prev_poly) {
             return getIou(prev_poly, new_poly) <= param_.iou_threshold;
         });
 }
 
-int CalibrationNode::getImageCoverage() const {
+int CalibrationNode::getImageCoverage(size_t camera_idx) const {
     MultiPolygon current_coverage;
-    for (const Polygon& new_poly : state_.polygons_all) {
+    for (const Polygon& new_poly : state_.polygons_all[camera_idx]) {
         MultiPolygon tmp_poly;
         boost::geometry::union_(current_coverage, new_poly, tmp_poly);
         current_coverage = tmp_poly;
@@ -247,7 +285,7 @@ int CalibrationNode::getImageCoverage() const {
 
 void CalibrationNode::publishCalibrationState() const {
     std_msgs::msg::Int16 msg;
-    msg.data = state_.calibration_state;
+    msg.data = state_.global_calibration_state;
     signal_.calibration_state->publish(msg);
 }
 
@@ -258,7 +296,7 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getBoardMarkerFromCorners(
     marker.header.frame_id = header.frame_id;
     marker.header.stamp = header.stamp;
     marker.ns = "calibration";
-    marker.id = ++state_.last_marker_id;
+    marker.id = state_.last_marker_id.fetch_add(1);
     marker.type = visualization_msgs::msg::ImageMarker::POLYGON;
     marker.action = visualization_msgs::msg::ImageMarker::ADD;
 
@@ -281,7 +319,7 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getCornerMarker(cv::Point2
     visualization_msgs::msg::ImageMarker marker;
 
     marker.ns = "calibration";
-    marker.id = ++state_.last_marker_id;
+    marker.id = state_.last_marker_id.fetch_add(1);
     marker.type = visualization_msgs::msg::ImageMarker::CIRCLE;
     marker.action = visualization_msgs::msg::ImageMarker::ADD;
 
@@ -299,33 +337,36 @@ visualization_msgs::msg::ImageMarker CalibrationNode::getCornerMarker(cv::Point2
     return marker;
 }
 
-void CalibrationNode::appendCornerMarkers(const std::vector<cv::Point2f>& detected_corners) {
+void CalibrationNode::appendCornerMarkers(
+    const std::vector<cv::Point2f>& detected_corners, size_t camera_idx) {
     for (size_t i = 0; i < detected_corners.size(); ++i) {
         visualization_msgs::msg::ImageMarker marker = getCornerMarker(detected_corners[i]);
-        state_.board_corners_array.markers.push_back(marker);
+        state_.board_corners_array[camera_idx].markers.push_back(marker);
     }
 }
 
 void CalibrationNode::handleBadCalibration() {
     RCLCPP_INFO_STREAM(this->get_logger(), "Continue taking frames");
 
-    state_.calibration_state = kCapturing;
+    state_.global_calibration_state = kCapturing;
 }
 
 void CalibrationNode::handleResetCommand() {
-    state_.calibration_state = kNotCalibrated;
-    state_.image_points_all.clear();
-    state_.obj_points_all.clear();
-    state_.board_markers_array.markers.clear();
-    state_.polygons_all.clear();
-    signal_.detected_boards->publish(state_.board_markers_array);
+    state_.global_calibration_state = kNotCalibrated;
+    for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
+        state_.image_points_all[i].clear();
+        state_.obj_points_all[i].clear();
+        state_.board_markers_array[i].markers.clear();
+        state_.polygons_all[i].clear();
+        signal_.detected_boards[i]->publish(state_.board_markers_array[i]);  // to clear the screen
+    }
 }
 
-void CalibrationNode::calibrate() {
-    state_.calibration_state = kCalibrating;
+void CalibrationNode::calibrate(size_t camera_idx) {
+    state_.global_calibration_state = kMonoCalibrating;
     publishCalibrationState();
     RCLCPP_INFO_STREAM(this->get_logger(), "Calibration inialized");
-    int coverage_percentage = getImageCoverage();
+    int coverage_percentage = getImageCoverage(camera_idx);
     if (coverage_percentage < param_.required_board_coverage) {
         RCLCPP_INFO(this->get_logger(), "Coverage of %d is not sufficient", coverage_percentage);
         handleBadCalibration();
@@ -336,8 +377,8 @@ void CalibrationNode::calibrate() {
     intrinsic_params.image_size = *state_.frame_size;
     std::vector<double> per_view_errors;
     double rms = cv::calibrateCamera(
-        state_.obj_points_all,
-        state_.image_points_all,
+        state_.obj_points_all[camera_idx],
+        state_.image_points_all[camera_idx],
         *state_.frame_size,
         intrinsic_params.camera_matrix,
         intrinsic_params.dist_coefs,
@@ -349,7 +390,6 @@ void CalibrationNode::calibrate() {
         cv::CALIB_FIX_S1_S2_S3_S4,
         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
-    coverage_percentage = getImageCoverage();
     RCLCPP_INFO(
         this->get_logger(),
         "Calibration done with error of %f and coverage of %d",
@@ -358,7 +398,7 @@ void CalibrationNode::calibrate() {
 
     if (rms < param_.min_accepted_error) {
         intrinsic_params.storeYaml(param_.path_to_save_params);
-        state_.calibration_state = kOkCalibration;
+        state_.global_calibration_state = kOkCalibration;
     } else {
         handleBadCalibration();
     }
