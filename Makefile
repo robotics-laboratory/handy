@@ -26,12 +26,14 @@ build:
         --symlink-install \
         --cmake-args ${CMAKE_ARGS}
 
+.PHONY: test
 test: build
     colcon --log-base /dev/null test \
             --ctest-args tests --symlink-install \
             --executor parallel --parallel-workers $$(nproc) \
             --event-handlers console_cohesion+
 
+.PHONY: build-select
 # packages="first_pkg second_pkg third_pkg..."
 build-select:
     source ${ROS_ROOT}/setup.sh
@@ -41,15 +43,18 @@ build-select:
         --packages-up-to $(packages) \
         --cmake-args ${CMAKE_ARGS}
 
+.PHONY: test-select
 test-select:build-select
     colcon --log-base /dev/null test --ctest-args tests --symlink-install \
         --executor parallel --parallel-workers $$(nproc) \
         --event-handlers console_cohesion+ --packages-select $(packages)
 
+.PHONY: lint-all
 # args="--fix ..."
 lint-all: build
     clang-tidy -p=build $(args) $(FILES_TO_LINT)
 
+.PHONY: lint-one
 lint-one: build
     clang-tidy -p=build $(args) $(FILES_TO_LINT)
 
