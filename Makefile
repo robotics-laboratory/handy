@@ -29,7 +29,8 @@ build:
 test: build
     colcon --log-base /dev/null test \
             --ctest-args tests --symlink-install \
-            --executor parallel --parallel-workers $$(nproc)
+            --executor parallel --parallel-workers $$(nproc) \
+            --event-handlers console_cohesion+
 
 # packages="first_pkg second_pkg third_pkg..."
 build-select:
@@ -43,7 +44,7 @@ build-select:
 test-select:build-select
     colcon --log-base /dev/null test --ctest-args tests --symlink-install \
         --executor parallel --parallel-workers $$(nproc) \
-        --packages-select $(packages)
+        --event-handlers console_cohesion+ --packages-select $(packages)
 
 # args="--fix ..."
 lint-all: build
