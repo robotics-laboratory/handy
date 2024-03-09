@@ -57,7 +57,8 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     output_file.close();
 }
 bool CameraIntrinsicParameters::saveStereoCalibration(
-    const std::string& yaml_path, cv::Mat& R, cv::Mat& T, cv::Size& image_size) {
+    const std::string& yaml_path, cv::Mat& rotation_vectors, cv::Mat& translation_vectors,
+    cv::Size& image_size) {
     YAML::Node config;
     std::ifstream param_file(yaml_path);
     if (param_file) {
@@ -76,7 +77,7 @@ bool CameraIntrinsicParameters::saveStereoCalibration(
     extrinsics["rotation"].SetStyle(YAML::EmitterStyle::Flow);
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            extrinsics["rotation"].push_back(R.at<double>(i, j));
+            extrinsics["rotation"].push_back(rotation_vectors.at<double>(i, j));
         }
     }
 
@@ -84,7 +85,7 @@ bool CameraIntrinsicParameters::saveStereoCalibration(
     extrinsics["translation"].SetStyle(YAML::EmitterStyle::Flow);
 
     for (int i = 0; i < 3; ++i) {
-        extrinsics["translation"].push_back(T.at<double>(i, 0));
+        extrinsics["translation"].push_back(translation_vectors.at<double>(i, 0));
     }
 
     std::ofstream output_file(yaml_path);
@@ -151,15 +152,16 @@ void CameraIntrinsicParameters::initUndistortMaps() {
 }
 
 void CameraIntrinsicParameters::loadStereoCalibration(
-    const std::string& yaml_path, cv::Mat& R, cv::Mat& T, cv::Size& image_size) {
+    const std::string& yaml_path, cv::Mat& rotation_vectors, cv::Mat& translation_vectors,
+    cv::Size& image_size) {
     const YAML::Node extrinsics = YAML::LoadFile(yaml_path)["stereo_calibration"];
 
     const auto yaml_image_size = extrinsics["image_size"].as<std::vector<int>>();
     image_size = cv::Size(yaml_image_size[0], yaml_image_size[1]);
 
     const auto yaml_camera_matrix = extrinsics["rotation"].as<std::vector<double>>();
-    R = cv::Mat(yaml_camera_matrix, true);
-    R = R.reshape(0, {3, 3});
+    rotation_vectors = cv::Mat(yaml_camera_matrix, true);
+    rotation_vectors = rotation_vectors.reshape(0, {3, 3});
 
     const auto coefs = extrinsics["translation"].as<std::vector<double>>();
     for (size_t i = 0; i < coefs.size(); ++i) {
@@ -167,10 +169,10 @@ void CameraIntrinsicParameters::loadStereoCalibration(
     }
     printf("\n");
 
-    T = cv::Mat(coefs, true);
-    T = T.reshape(0, {3, 1});
+    translation_vectors = cv::Mat(coefs, true);
+    translation_vectors = translation_vectors.reshape(0, {3, 1});
     for (size_t i = 0; i < coefs.size(); ++i) {
-        printf("%f ", T.at<double>(i, 0));
+        printf("%f ", translation_vectors.at<double>(i, 0));
     }
     printf("\n");
 }

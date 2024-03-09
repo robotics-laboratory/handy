@@ -85,12 +85,12 @@ TEST(camera, ParamsMultipleReadWrite) {
 TEST(camera, ParamsStereoCalibWrite) {
     // create test params
     const std::string path_to_yaml = "test_params.yaml";
-    cv::Mat R_check = (cv::Mat_<double>(3, 3) << 1., 0., 0., 0., 1., 0., 0., 0., 1.);
-    cv::Mat T_check = (cv::Mat_<double>(3, 1) << 1., 2., 3.);
+    cv::Mat rotation_check = (cv::Mat_<double>(3, 3) << 1., 0., 0., 0., 1., 0., 0., 0., 1.);
+    cv::Mat translation_check = (cv::Mat_<double>(3, 1) << 1., 2., 3.);
     cv::Size image_size_check(1920, 1080);
 
     handy::CameraIntrinsicParameters::saveStereoCalibration(
-        path_to_yaml, R_check, T_check, image_size_check);
+        path_to_yaml, rotation_check, translation_check, image_size_check);
 
     // check for file to exist
     std::ifstream test_file(path_to_yaml);
@@ -98,20 +98,21 @@ TEST(camera, ParamsStereoCalibWrite) {
     test_file.close();
 
     // loading and checking all params for the first ID
-    cv::Mat R;
-    cv::Mat T;
+    cv::Mat rotation;
+    cv::Mat translation;
     cv::Size image_size;
 
-    handy::CameraIntrinsicParameters::loadStereoCalibration(path_to_yaml, R, T, image_size);
+    handy::CameraIntrinsicParameters::loadStereoCalibration(
+        path_to_yaml, rotation, translation, image_size);
 
     EXPECT_EQ(image_size, image_size_check);
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; j++) {
-            EXPECT_EQ(R_check.at<double>(i, j), R.at<double>(i, j));
+            EXPECT_EQ(rotation_check.at<double>(i, j), rotation.at<double>(i, j));
         }
     }
     for (int i = 0; i < 3; ++i) {
-        EXPECT_EQ(T_check.at<double>(i, 0), T.at<double>(i, 0));
+        EXPECT_EQ(translation_check.at<double>(i, 0), translation.at<double>(i, 0));
     }
 }
 
