@@ -19,6 +19,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <condition_variable>
 #include <memory>
 #include <optional>
 #include <string>
@@ -44,8 +45,9 @@ class CalibrationNode : public rclcpp::Node {
         kNotCalibrated = 1,
         kCapturing = 2,
         kMonoCalibrating = 3,
-        kStereoCalibrating = 3,
-        kOkCalibration = 5
+        kStereoCapturing = 4,
+        kStereoCalibrating = 5,
+        kOkCalibration = 6
     };
 
     enum Action { kStart = 1, kCalibrate = 2, kReset = 3 };
@@ -63,7 +65,8 @@ class CalibrationNode : public rclcpp::Node {
         const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& response);
 
     void calibrate(size_t camera_idx);
-    void handleBadCalibration();
+    void stereoCalibrate();
+    void handleBadCalibration(size_t camera_idx);
     void handleResetCommand();
     bool isMonoCalibrated();
 
@@ -104,6 +107,8 @@ class CalibrationNode : public rclcpp::Node {
         double min_accepted_error = 0.75;
         double iou_threshold = 0.5;
         double required_board_coverage = 0.7;
+
+        int64_t fps = 20;
         std::vector<int64_t> cameras_to_calibrate;
         std::map<int, int> id_to_idx;
     } param_;
@@ -117,14 +122,25 @@ class CalibrationNode : public rclcpp::Node {
         std::vector<foxglove_msgs::msg::ImageMarkerArray> board_markers_array;
         std::vector<foxglove_msgs::msg::ImageMarkerArray> board_corners_array;
 
+        // unique ID for marker creation
         std::atomic<int> last_marker_id = 0;
-        int global_calibration_state = kNotCalibrated;
+        // the number of cameras that currently hold detected charuco corners
+        std::atomic<int> currently_detected = 0;
+        std::vector<std::atomic<bool>> waiting;
+        std::atomic<int> global_calibration_state = kNotCalibrated;
         std::vector<bool> is_mono_calibrated;
+        std::condition_variable condvar_to_sync_cameras;
     } state_;
 
     struct Timer {
+        rclcpp::TimerBase::SharedPtr stereo_sync = nullptr;
         rclcpp::TimerBase::SharedPtr calibration_state = nullptr;
     } timer_{};
+
+    struct CallbackGroups {
+        rclcpp::CallbackGroup::SharedPtr stereo_sync_group = nullptr;
+        rclcpp::CallbackGroup::SharedPtr handling_queue_timer = nullptr;
+    } call_group_{};
 
     std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector_ = nullptr;
 };

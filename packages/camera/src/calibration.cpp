@@ -2,6 +2,7 @@
 #include "params.h"
 
 #include <deque>
+#include <mutex>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -107,6 +108,10 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
         }
     }
 
+    // TODO: place "true" if intrinsic can be loaded from provided YAML file
+    state_.is_mono_calibrated.resize(param_.cameras_to_calibrate.size(), false);
+    state_.waiting = std::vector<std::atomic<bool>>(param_.cameras_to_calibrate.size());
+
     timer_.calibration_state = this->create_wall_timer(
         std::chrono::milliseconds(250), [this] { publishCalibrationState(); });
 
@@ -138,6 +143,7 @@ void CalibrationNode::declareLaunchParams() {
     param_.marker_color=this->declare_parameter<std::vector<double>>("marker_color", {0.0f, 1.0f, 0.0f, 0.12f});
 
     param_.cameras_to_calibrate = this->declare_parameter<std::vector<int64_t>>("cameras_to_calibrate", {1, 2});
+    param_.fps = this->declare_parameter<int64_t>("fps", 20);
     // clang-format on
 
     // no more than 2 camera are supported at the moment
@@ -181,8 +187,19 @@ void CalibrationNode::initSignals() {
 
 void CalibrationNode::handleFrame(
     const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg, size_t camera_idx) {
-    if (state_.global_calibration_state != kCapturing) {
+    // exit callback if frames should not be captured or if camera_idx is already calibrated
+    if (state_.global_calibration_state != kCapturing ||
+        state_.global_calibration_state != kStereoCapturing ||
+        (state_.is_mono_calibrated[camera_idx] && state_.global_calibration_state == kCapturing)) {
         return;
+    }
+
+    if (state_.global_calibration_state == kStereoCapturing) {
+        // exchange returns the previous value of atomic
+        // so, if there was true, we return, else we procceed
+        if (state_.waiting[camera_idx].exchange(true)) {
+            return;
+        }
     }
 
     cv_bridge::CvImagePtr image_ptr = cv_bridge::toCvCopy(msg, "bgr8");
@@ -212,6 +229,7 @@ void CalibrationNode::handleFrame(
     if (current_corners.size() < 20) {
         state_.board_corners_array[camera_idx].markers.clear();
         signal_.detected_corners[camera_idx]->publish(state_.board_corners_array[camera_idx]);
+        state_.waiting[camera_idx] = false;
         return;
     }
     param_.charuco_board.matchImagePoints(
@@ -220,6 +238,7 @@ void CalibrationNode::handleFrame(
     state_.board_corners_array[camera_idx].markers.clear();
     if (current_ids.size() < 30) {
         signal_.detected_corners[camera_idx]->publish(state_.board_corners_array[camera_idx]);
+        state_.waiting[camera_idx] = false;
         return;
     }
     if (param_.publish_preview_markers) {
@@ -229,6 +248,26 @@ void CalibrationNode::handleFrame(
     if (!checkMaxSimilarity(current_corners, camera_idx)) {
         return;
     }
+
+    if (state_.global_calibration_state == kStereoCapturing) {
+        const size_t currently_detected = state_.currently_detected.fetch_add(1) + 1;
+        // doubled latency to avoid too many skipped frames
+        const std::chrono::duration<double, std::milli> latency(2 * 1000.0 / param_.fps);
+        std::mutex mutex;
+        std::unique_lock<std::mutex> lock(mutex);
+        if (currently_detected == param_.cameras_to_calibrate.size()) {
+            state_.condvar_to_sync_cameras.notify_all();
+        }
+        const bool latest_predicate_result =
+            state_.condvar_to_sync_cameras.wait_for(lock, latency, [currently_detected, this] {
+                return state_.currently_detected == this->param_.cameras_to_calibrate.size();
+            });
+        if (!latest_predicate_result) {
+            state_.waiting[camera_idx] = false;
+            return;
+        }
+    }
+
     if (param_.publish_preview_markers) {
         state_.board_markers_array[camera_idx].markers.push_back(
             getBoardMarkerFromCorners(current_corners, image_ptr->header));
@@ -238,6 +277,11 @@ void CalibrationNode::handleFrame(
     state_.obj_points_all[camera_idx].push_back(current_obj_points);
     state_.image_points_all[camera_idx].push_back(current_image_points);
     state_.polygons_all[camera_idx].push_back(convertToBoostPolygon(current_corners));
+
+    if (state_.global_calibration_state == kStereoCapturing) {
+        state_.currently_detected -= 1;
+        state_.waiting[camera_idx] = false;
+    }
 }
 
 void CalibrationNode::onButtonClick(
@@ -252,6 +296,10 @@ void CalibrationNode::onButtonClick(
         RCLCPP_INFO_STREAM(this->get_logger(), "State set to capturing");
 
     } else if (request->cmd == kCalibrate) {
+        if (state_.global_calibration_state == kStereoCapturing) {
+            stereoCalibrate();
+            return;
+        }
         for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
             calibrate(i);
         }
@@ -345,8 +393,8 @@ void CalibrationNode::appendCornerMarkers(
     }
 }
 
-void CalibrationNode::handleBadCalibration() {
-    RCLCPP_INFO_STREAM(this->get_logger(), "Continue taking frames");
+void CalibrationNode::handleBadCalibration(size_t camera_idx) {
+    RCLCPP_INFO(this->get_logger(), "Continue taking frames for ID=%ld", camera_idx);
 
     state_.global_calibration_state = kCapturing;
 }
@@ -365,11 +413,11 @@ void CalibrationNode::handleResetCommand() {
 void CalibrationNode::calibrate(size_t camera_idx) {
     state_.global_calibration_state = kMonoCalibrating;
     publishCalibrationState();
-    RCLCPP_INFO_STREAM(this->get_logger(), "Calibration inialized");
+    RCLCPP_INFO(this->get_logger(), "Calibration ID=%ld inialized", camera_idx);
     int coverage_percentage = getImageCoverage(camera_idx);
     if (coverage_percentage < param_.required_board_coverage) {
         RCLCPP_INFO(this->get_logger(), "Coverage of %d is not sufficient", coverage_percentage);
-        handleBadCalibration();
+        handleBadCalibration(camera_idx);
         return;
     }
 
@@ -398,9 +446,10 @@ void CalibrationNode::calibrate(size_t camera_idx) {
 
     if (rms < param_.min_accepted_error) {
         intrinsic_params.storeYaml(param_.path_to_save_params);
-        state_.global_calibration_state = kOkCalibration;
+        handleResetCommand();
+        state_.global_calibration_state = kStereoCapturing;
     } else {
-        handleBadCalibration();
+        handleBadCalibration(camera_idx);
     }
 }
 }  // namespace handy::calibration
