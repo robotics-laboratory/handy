@@ -140,8 +140,7 @@ class CalibrationNode : public rclcpp::Node {
     } timer_{};
 
     struct CallbackGroups {
-        rclcpp::CallbackGroup::SharedPtr stereo_sync_group = nullptr;
-        rclcpp::CallbackGroup::SharedPtr handling_queue_timer = nullptr;
+        rclcpp::CallbackGroup::SharedPtr handle_frame = nullptr;
     } call_group_{};
 
     std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector_ = nullptr;
