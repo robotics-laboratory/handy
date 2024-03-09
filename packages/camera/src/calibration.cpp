@@ -109,9 +109,15 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     }
 
     for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
-        intrinsics_.push_back(CameraIntrinsicParameters::loadFromYaml(
-            param_.path_to_params, param_.cameras_to_calibrate[i]));
-        state_.is_mono_calibrated.push_back(intrinsics_.back().isCalibrated());
+        // intrinsics_.push_back(CameraIntrinsicParameters::loadFromYaml(
+        //     param_.path_to_params, param_.cameras_to_calibrate[i]));
+        // state_.is_mono_calibrated.push_back(intrinsics_.back().isCalibrated());
+        intrinsics_.emplace_back();
+        state_.is_mono_calibrated.push_back(false);
+        state_.board_markers_array.emplace_back();
+        state_.board_corners_array.emplace_back();
+        state_.image_points_all.emplace_back();
+        state_.obj_points_all.emplace_back();
     }
     state_.waiting = std::vector<std::atomic<bool>>(param_.cameras_to_calibrate.size());
 
@@ -133,6 +139,7 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
         signal_.detected_boards[i]->publish(state_.board_markers_array[i]);
     }
+    RCLCPP_INFO_STREAM(this->get_logger(), "Init completed");
 }
 
 void CalibrationNode::declareLaunchParams() {
@@ -163,6 +170,9 @@ void CalibrationNode::declareLaunchParams() {
 }
 
 void CalibrationNode::initSignals() {
+    call_group_.handle_frame = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    rclcpp::SubscriptionOptions options;
+    options.callback_group = call_group_.handle_frame;
     for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
         const std::string calib_name_base =
             "/calibraton_" + std::to_string(param_.cameras_to_calibrate[i]);
@@ -170,7 +180,7 @@ void CalibrationNode::initSignals() {
             handleFrame(msg, i);
         };
         slot_.image_sub.push_back(this->create_subscription<sensor_msgs::msg::CompressedImage>(
-            calib_name_base + "/bgr/image", 10, callback));
+            calib_name_base + "/bgr/image", 10, callback, options));
 
         signal_.detected_boards.push_back(
             this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
