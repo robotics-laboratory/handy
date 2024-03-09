@@ -19,6 +19,12 @@ struct CameraIntrinsicParameters {
     static CameraIntrinsicParameters loadFromParams(
         cv::Size param_image_size, const std::vector<double>& param_camera_matrix,
         const std::vector<double>& param_dist_coefs);
+    static bool saveStereoCalibration(
+        const std::string& yaml_path, cv::Mat& rotation_vectors, cv::Mat& translation_vectors,
+        cv::Size& image_size);
+    static void loadStereoCalibration(
+        const std::string& yaml_path, cv::Mat& rotation_vectors, cv::Mat& translation_vectors,
+        cv::Size& image_size);
 
     int camera_id = 0;
     cv::Size image_size{};

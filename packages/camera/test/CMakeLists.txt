@@ -1,6 +1,6 @@
 find_package(ament_cmake_gtest REQUIRED)
 
-ament_add_gtest(camera_test main.cpp ../src/params.cpp)
+ament_add_gtest(camera_test test.cpp ../src/params.cpp)
 
 ament_target_dependencies(
     camera_test
