@@ -10,6 +10,7 @@ launch:
     param:
     # calibration
     - { name: "calibration_file_path", value: "$(var calibration_file_path)" } # only .yaml file
+    - { name: "fps", value: 20 } # actual fps from camera node
     - { name: "cameras_to_calibrate", value: [1, 2] }
     - { name: "iou_threshold", value: 0.5 }
     - { name: "min_accepted_calib_error", value: 0.7 }
