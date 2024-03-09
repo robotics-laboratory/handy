@@ -48,7 +48,8 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     param_file.close();
 }
 
-CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(const std::string& yaml_path) {
+CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
+    const std::string& yaml_path, int camera_id) {
     CameraIntrinsicParameters result{};
 
     const YAML::Node file = YAML::LoadFile(yaml_path);
@@ -103,6 +104,11 @@ cv::Mat CameraIntrinsicParameters::undistortImage(cv::Mat& src) {
         cached.undistort_maps.second,
         cv::INTER_NEAREST);
     return cached.undistortedImage;
+}
+
+// to check if base intrinsic params were loaded properly
+bool CameraIntrinsicParameters::isCalibrated() {
+    return !image_size.empty() && !camera_matrix.empty();
 }
 
 }  // namespace handy

@@ -108,8 +108,11 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
         }
     }
 
-    // TODO: place "true" if intrinsic can be loaded from provided YAML file
-    state_.is_mono_calibrated.resize(param_.cameras_to_calibrate.size(), false);
+    for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
+        intrinsics_.push_back(CameraIntrinsicParameters::loadFromYaml(
+            param_.path_to_params, param_.cameras_to_calibrate[i]));
+        state_.is_mono_calibrated.push_back(intrinsics_.back().isCalibrated());
+    }
     state_.waiting = std::vector<std::atomic<bool>>(param_.cameras_to_calibrate.size());
 
     timer_.calibration_state = this->create_wall_timer(
@@ -135,7 +138,7 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
 void CalibrationNode::declareLaunchParams() {
     // clang-format off
     param_.publish_preview_markers = this->declare_parameter<bool>("publish_preview_markers", true);
-    param_.path_to_save_params = this->declare_parameter<std::string>("calibration_file_path", "param_path");
+    param_.path_to_params = this->declare_parameter<std::string>("calibration_file_path", "param_path");
 
     param_.required_board_coverage = this->declare_parameter<double>("required_board_coverage", 0.7);
     param_.min_accepted_error = this->declare_parameter<double>("min_accepted_calib_error", 0.75);
@@ -301,9 +304,13 @@ void CalibrationNode::onButtonClick(
             return;
         }
         for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
+            if (state_.is_mono_calibrated[i]) {
+                continue;
+            }
             calibrate(i);
         }
     } else if (request->cmd == kReset) {
+        state_.global_calibration_state = kNotCalibrated;
         handleResetCommand();
     }
 }
@@ -317,6 +324,22 @@ bool CalibrationNode::checkMaxSimilarity(
         [&](const Polygon& prev_poly) {
             return getIou(prev_poly, new_poly) <= param_.iou_threshold;
         });
+}
+
+bool CalibrationNode::checkEqualFrameNum() const {
+    const size_t required_frames_num = state_.image_points_all[0].size();
+    return std::all_of(
+               state_.image_points_all.begin(),
+               state_.image_points_all.end(),
+               [required_frames_num](const std::vector<std::vector<cv::Point2f>>& elem) {
+                   return elem.size() == required_frames_num;
+               }) &&
+           std::all_of(
+               state_.obj_points_all.begin(),
+               state_.obj_points_all.end(),
+               [required_frames_num](const std::vector<std::vector<cv::Point3f>>& elem) {
+                   return elem.size() == required_frames_num;
+               });
 }
 
 int CalibrationNode::getImageCoverage(size_t camera_idx) const {
@@ -399,9 +422,11 @@ void CalibrationNode::handleBadCalibration(size_t camera_idx) {
     state_.global_calibration_state = kCapturing;
 }
 
-void CalibrationNode::handleResetCommand() {
-    state_.global_calibration_state = kNotCalibrated;
+void CalibrationNode::handleResetCommand(int camera_idx) {
     for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
+        if (camera_idx != -1 && camera_idx != i) {
+            continue;
+        }
         state_.image_points_all[i].clear();
         state_.obj_points_all[i].clear();
         state_.board_markers_array[i].markers.clear();
@@ -421,15 +446,14 @@ void CalibrationNode::calibrate(size_t camera_idx) {
         return;
     }
 
-    CameraIntrinsicParameters intrinsic_params{};
-    intrinsic_params.image_size = *state_.frame_size;
+    intrinsics_[camera_idx].image_size = *state_.frame_size;
     std::vector<double> per_view_errors;
     double rms = cv::calibrateCamera(
         state_.obj_points_all[camera_idx],
         state_.image_points_all[camera_idx],
         *state_.frame_size,
-        intrinsic_params.camera_matrix,
-        intrinsic_params.dist_coefs,
+        intrinsics_[camera_idx].camera_matrix,
+        intrinsics_[camera_idx].dist_coefs,
         cv::noArray(),
         cv::noArray(),
         cv::noArray(),
@@ -444,12 +468,70 @@ void CalibrationNode::calibrate(size_t camera_idx) {
         rms,
         coverage_percentage);
 
+    // TODO save the intrinsic by ID accordingly (PR #24)
     if (rms < param_.min_accepted_error) {
-        intrinsic_params.storeYaml(param_.path_to_save_params);
-        handleResetCommand();
-        state_.global_calibration_state = kStereoCapturing;
+        state_.is_mono_calibrated[camera_idx] = true;
+        intrinsics_[camera_idx].storeYaml(param_.path_to_params);
+        handleResetCommand(camera_idx);
+        const bool all_calibrated = std::all_of(
+            state_.is_mono_calibrated.begin(), state_.is_mono_calibrated.end(), [](bool elem) {
+                return elem;
+            });
+        if (all_calibrated) {
+            state_.global_calibration_state = kStereoCapturing;
+        }
     } else {
         handleBadCalibration(camera_idx);
+    }
+}
+
+void CalibrationNode::stereoCalibrate() {
+    state_.global_calibration_state = kStereoCalibrating;
+    publishCalibrationState();
+    RCLCPP_INFO(this->get_logger(), "Stereo calibration inialized");
+
+    if (!checkEqualFrameNum()) {
+        RCLCPP_ERROR(this->get_logger(), "Differnet number of frames captured across cameras");
+        std::exit(EXIT_FAILURE);
+    }
+
+    // TODO: how to check for coverage? is it required?
+
+    std::vector<double> per_view_errors;
+    cv::Mat R, T;
+    double rms = cv::stereoCalibrate(
+        state_.obj_points_all[0],
+        state_.image_points_all[0],
+        state_.image_points_all[1],
+        intrinsics_[0].camera_matrix,
+        intrinsics_[0].dist_coefs,
+        intrinsics_[1].camera_matrix,
+        intrinsics_[1].dist_coefs,
+        *state_.frame_size,
+        R,
+        T,
+        cv::noArray(),
+        cv::noArray(),
+        cv::noArray(),
+        cv::noArray(),
+        per_view_errors,
+        cv::CALIB_FIX_INTRINSIC,
+        cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+
+    RCLCPP_INFO(this->get_logger(), "Calibration done with error of %f ", rms);
+
+    if (rms < param_.min_accepted_error) {
+        if (!CameraIntrinsicParameters::saveStereoCalibration(param_.path_to_params, R, T)) {
+            RCLCPP_ERROR(
+                this->get_logger(),
+                "Failed to save result of stereo calibration to the file: %s",
+                param_.path_to_params.c_str());
+            std::exit(EXIT_FAILURE);
+        }
+        state_.global_calibration_state = kOkCalibration;
+    } else {
+        RCLCPP_INFO(this->get_logger(), "Continue taking frames for stereo calibration");
+        state_.global_calibration_state = kCapturing;
     }
 }
 }  // namespace handy::calibration
