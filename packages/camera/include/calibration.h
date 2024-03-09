@@ -1,5 +1,6 @@
 #pragma once
 
+#include "params.h"
 #include "camera_srvs/srv/calibration_command.hpp"
 
 #include <cv_bridge/cv_bridge.hpp>
@@ -67,10 +68,11 @@ class CalibrationNode : public rclcpp::Node {
     void calibrate(size_t camera_idx);
     void stereoCalibrate();
     void handleBadCalibration(size_t camera_idx);
-    void handleResetCommand();
+    void handleResetCommand(int camera_idx = -1);
     bool isMonoCalibrated();
 
     bool checkMaxSimilarity(std::vector<cv::Point2f>& corners, size_t camera_idx) const;
+    bool checkEqualFrameNum() const;
     int getImageCoverage(size_t camera_idx) const;
 
     void initCornerMarkers();
@@ -97,7 +99,7 @@ class CalibrationNode : public rclcpp::Node {
     } service_{};
 
     struct Params {
-        std::string path_to_save_params = "";
+        std::string path_to_params = "";
         std::vector<cv::Point3f> square_obj_points;
         cv::aruco::CharucoBoard charuco_board;
 
@@ -143,5 +145,6 @@ class CalibrationNode : public rclcpp::Node {
     } call_group_{};
 
     std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector_ = nullptr;
+    std::vector<CameraIntrinsicParameters> intrinsics_;
 };
 }  // namespace handy::calibration
