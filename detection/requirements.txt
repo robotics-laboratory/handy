@@ -4,3 +4,5 @@ torchvision==0.16.0
 lightning==2.2.0
 albumentations==1.3.1
 pycocotools
+timm
+wandb
