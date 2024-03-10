@@ -1,9 +1,12 @@
 import lightning as L
 import torch
 import argparse
+from datetime import datetime
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from torch.optim.lr_scheduler import MultiStepLR
 from pytorch_lightning.loggers import WandbLogger
+from lightning.pytorch.callbacks import ModelCheckpoint
+
 
 from model import get_model
 from datasets import DetectionDataModule
@@ -53,7 +56,7 @@ class LitDetector(L.LightningModule):
         optimizer = torch.optim.SGD(self.parameters(), lr=0.0005, momentum=0.9, nesterov=True)
         scheduler = MultiStepLR(optimizer=optimizer, milestones=[45], gamma=0.1, verbose=True) 
         return [optimizer], [scheduler]
-    
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, help='Path to directory with images')
@@ -70,6 +73,14 @@ if __name__ == '__main__':
     model = get_model(backbone_name = args.backbone, size=args.width)
     dm = DetectionDataModule(args.data_dir, args.annot_file, args.width, args.height, args.batch_size)
     lit_model = LitDetector(model)
-    wandb_logger = WandbLogger(project="Ball Deection")
-    trainer = L.Trainer(logger=wandb_logger, accelerator="auto", fast_dev_run=args.obt, max_epochs=args.epochs)
+    wandb_logger = WandbLogger(project="Ball-Detection")
+
+    checkpoint_callback = ModelCheckpoint(
+        save_top_k=10,
+        monitor="epoch",
+        mode="max",
+        dirpath=f"checkpoint/{datetime.now().strftime('%H-%M-%S')}",
+        filename="detection-" + args.backbone + "-{epoch:02d}",
+    )
+    trainer = L.Trainer(logger=wandb_logger, accelerator="auto", fast_dev_run=args.obt, max_epochs=args.epochs, callbacks=[checkpoint_callback])
     trainer.fit(lit_model, dm)
