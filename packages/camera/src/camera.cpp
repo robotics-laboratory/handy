@@ -84,6 +84,7 @@ CameraNode::CameraNode() : Node("camera_node") {
     for (int i = 0; i < param_.camera_num; ++i) {
         state_.camera_images[i] =
             std::make_unique<LockFreeQueue<StampedImageBufferId>>(QUEUE_CAPACITY);
+        state_.free_raw_buffer[i] = std::make_unique<LockFreeQueue<size_t>>(QUEUE_CAPACITY);
 
         abortIfNot(
             "camera init " + std::to_string(i),
@@ -141,9 +142,6 @@ CameraNode::CameraNode() : Node("camera_node") {
         param_.master_camera_idx == -1) {  // provided master camera id was not found
         RCLCPP_ERROR(this->get_logger(), "master camera id was not found: %d", master_camera_id);
         exit(EXIT_FAILURE);
-    }
-    if (!param_.hardware_trigger) {
-        param_.master_camera_idx = 0;
     }
 
     RCLCPP_INFO_STREAM(this->get_logger(), "all cameras started!");
@@ -212,13 +210,15 @@ CameraNode::CameraNode() : Node("camera_node") {
         [](cv::Size& first, cv::Size& second) { return first.area() < second.area(); });
 
     param_.max_buffer_size = max_frame_size.area() * 3;
-    state_.buffers = CameraPool(max_frame_size.height, max_frame_size.width, QUEUE_CAPACITY);
+    state_.buffers =
+        CameraPool(max_frame_size.height, max_frame_size.width, QUEUE_CAPACITY * MAX_CAMERA_NUM);
+    RCLCPP_INFO(this->get_logger(), "%d pools initialised", QUEUE_CAPACITY * MAX_CAMERA_NUM);
 
     // init queues and push indexes of buffers
-    state_.free_raw_buffer =
-        std::make_unique<LockFreeQueue<size_t>>(QUEUE_CAPACITY * MAX_CAMERA_NUM);
-    for (size_t i = 0; i < QUEUE_CAPACITY * MAX_CAMERA_NUM; ++i) {
-        state_.free_raw_buffer->push(i);
+    for (size_t i = 0; i < param_.camera_num; ++i) {
+        for (size_t j = 0; j < QUEUE_CAPACITY; ++j) {
+            state_.free_raw_buffer[i]->push(i * QUEUE_CAPACITY + j);
+        }
     }
 
     call_group_.trigger_timer =
@@ -228,10 +228,13 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     call_group_.handling_queue_timer =
         this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
-    timer_.camera_handle_queue_timer = this->create_wall_timer(
-        queue_handling_latency,
-        std::bind(&CameraNode::handleQueue, this),
-        call_group_.handling_queue_timer);
+
+    for (int i = 0; i < param_.camera_num; ++i) {
+        timer_.camera_handle_queue_timer.push_back(this->create_wall_timer(
+            queue_handling_latency,
+            [this, i]() { this->handleQueue(i); },
+            call_group_.handling_queue_timer));
+    }
 }
 
 CameraNode::~CameraNode() {
@@ -481,7 +484,7 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
     int frame_size_px = frame_info->iWidth * frame_info->iHeight;
 
     size_t free_buffer_id;
-    while (!state_.free_raw_buffer->pop(free_buffer_id)) {
+    while (!state_.free_raw_buffer[state_.handle_to_camera_idx[handle]]->pop(free_buffer_id)) {
     }
     uint8_t* free_buffer_to_copy = state_.buffers.getRawFrame(free_buffer_id);
     std::memcpy(free_buffer_to_copy, raw_buffer, frame_size_px);
@@ -494,28 +497,26 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
     CameraReleaseImageBuffer(handle, raw_buffer);
 }
 
-void CameraNode::handleQueue() {
-    for (int i = 0; i < param_.camera_num; ++i) {
-        StampedImageBufferId stamped_buffer_id;
-        while (state_.camera_images[i]->pop(stamped_buffer_id)) {
-            if (param_.publish_raw || param_.publish_raw_preview) {
-                publishRawImage(
-                    state_.buffers.getRawFrame(stamped_buffer_id.buffer_id),
-                    stamped_buffer_id.timestamp,
-                    i);
-            }
-            if (param_.publish_bgr || param_.publish_bgr_preview) {
-                publishBGRImage(
-                    state_.buffers.getRawFrame(stamped_buffer_id.buffer_id),
-                    state_.buffers.getBgrFrame(stamped_buffer_id.buffer_id),
-                    stamped_buffer_id.timestamp,
-                    i,
-                    stamped_buffer_id.frame_info);
-            }
-            if (!state_.free_raw_buffer->push(stamped_buffer_id.buffer_id)) {
-                RCLCPP_ERROR(this->get_logger(), "unable to push bgr buffer back after use");
-                exit(EXIT_FAILURE);
-            }
+void CameraNode::handleQueue(int camera_idx) {
+    StampedImageBufferId stamped_buffer_id;
+    while (state_.camera_images[camera_idx]->pop(stamped_buffer_id)) {
+        if (param_.publish_raw || param_.publish_raw_preview) {
+            publishRawImage(
+                state_.buffers.getRawFrame(stamped_buffer_id.buffer_id),
+                stamped_buffer_id.timestamp,
+                camera_idx);
+        }
+        if (param_.publish_bgr || param_.publish_bgr_preview) {
+            publishBGRImage(
+                state_.buffers.getRawFrame(stamped_buffer_id.buffer_id),
+                state_.buffers.getBgrFrame(stamped_buffer_id.buffer_id),
+                stamped_buffer_id.timestamp,
+                camera_idx,
+                stamped_buffer_id.frame_info);
+        }
+        if (!state_.free_raw_buffer[camera_idx]->push(stamped_buffer_id.buffer_id)) {
+            RCLCPP_ERROR(this->get_logger(), "unable to push bgr buffer back after use");
+            exit(EXIT_FAILURE);
         }
     }
 }

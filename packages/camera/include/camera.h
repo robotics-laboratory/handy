@@ -28,8 +28,8 @@ struct CameraPool {
     CameraPool() = default;
     CameraPool(size_t height, size_t width, size_t frame_n)
         : frame_n_(frame_n), raw_frame_size_(height * width), bgr_frame_size_(height * width * 3) {
-        raw_.resize(raw_frame_size_);
-        bgr_.resize(bgr_frame_size_);
+        raw_.resize(raw_frame_size_ * frame_n_);
+        bgr_.resize(bgr_frame_size_ * frame_n_);
     }
 
     uint8_t* getRawFrame(size_t frame_idx) { return raw_.data() + frame_idx * raw_frame_size_; }
@@ -49,7 +49,7 @@ class CameraNode : public rclcpp::Node {
     ~CameraNode();
 
     constexpr static int MAX_CAMERA_NUM = 4;
-    constexpr static int QUEUE_CAPACITY = MAX_CAMERA_NUM * 5;
+    constexpr static int QUEUE_CAPACITY = 5;
 
   private:
     void applyParamsToCamera(int camera_idx);
@@ -57,7 +57,7 @@ class CameraNode : public rclcpp::Node {
 
     void triggerOnTimer();
     void handleFrame(CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info);
-    void handleQueue();
+    void handleQueue(int camera_idx);
 
     void publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
     void publishBGRImage(
@@ -85,7 +85,7 @@ class CameraNode : public rclcpp::Node {
     struct State {
         std::array<std::unique_ptr<LockFreeQueue<StampedImageBufferId>>, MAX_CAMERA_NUM>
             camera_images;
-        std::unique_ptr<LockFreeQueue<size_t>> free_raw_buffer = nullptr;
+        std::array<std::unique_ptr<LockFreeQueue<size_t>>, MAX_CAMERA_NUM> free_raw_buffer;
         std::vector<int> camera_handles = {};
         std::map<int, int> handle_to_camera_idx = {};
         std::vector<CameraIntrinsicParameters> cameras_intrinsics = {};
@@ -111,7 +111,7 @@ class CameraNode : public rclcpp::Node {
 
     struct Timers {
         rclcpp::TimerBase::SharedPtr camera_soft_trigger = nullptr;
-        rclcpp::TimerBase::SharedPtr camera_handle_queue_timer = nullptr;
+        std::vector<rclcpp::TimerBase::SharedPtr> camera_handle_queue_timer;
     } timer_{};
 };
 
