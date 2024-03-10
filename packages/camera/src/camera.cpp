@@ -20,7 +20,7 @@ void CameraNode::abortIfNot(std::string_view msg, int status) {
             len(status_name),
             status_name.data(),
             status);
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -36,24 +36,13 @@ void CameraNode::abortIfNot(std::string_view msg, int camera_idx, int status) {
             len(status_name),
             status_name.data(),
             status);
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 }
 
-namespace {
-int maxBufSize(const std::vector<cv::Size>& frame_sizes) {
-    int max_size = 0;
-    for (size_t i = 0; i < frame_sizes.size(); ++i) {
-        max_size = std::max(max_size, 3 * frame_sizes[i].width * frame_sizes[i].height);
-    }
-    return max_size;
-}
-}  // namespace
-
-CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY) {
+CameraNode::CameraNode() : Node("camera_node") {
     abortIfNot("camera init", CameraSdkInit(0));
     tSdkCameraDevInfo cameras_list[MAX_CAMERA_NUM];
-    // param_.camera_num equals to 10 initially to attach all connected cameras
     abortIfNot("camera listing", CameraEnumerateDevice(cameras_list, &param_.camera_num));
 
     RCLCPP_INFO_STREAM(this->get_logger(), "camera number: " << param_.camera_num);
@@ -67,43 +56,47 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
 
     RCLCPP_INFO(this->get_logger(), "hardware trigger mode: %i", param_.hardware_trigger);
 
-    camera_handles_ = std::vector<int>(param_.camera_num);
-    frame_sizes_ = std::vector<cv::Size>(param_.camera_num);
+    state_.camera_handles = std::vector<int>(param_.camera_num);
+    state_.frame_sizes = std::vector<cv::Size>(param_.camera_num);
 
-    int strobe_polarity = this->declare_parameter<int>("strobe_polarity", 1);
+    const int strobe_polarity = this->declare_parameter<int>("strobe_polarity", 1);
     RCLCPP_INFO_STREAM(
-        this->get_logger(), "strobe polarity mode: " << (strobe_polarity == 1) ? "LOW" : "HIGH");
-    int strobe_pulse_width = this->declare_parameter<int>("strobe_pulse_width", 500);
+        this->get_logger(), "strobe polarity mode: " << (strobe_polarity == 1 ? "LOW" : "HIGH"));
+    const int strobe_pulse_width = this->declare_parameter<int>("strobe_pulse_width", 500);
     RCLCPP_INFO_STREAM(this->get_logger(), "strobe pulse width = " << strobe_pulse_width);
 
     const int master_camera_id = [&] {
         std::string str_master_camera_id =
             this->declare_parameter<std::string>("master_camera_id", "1");
-        RCLCPP_INFO(this->get_logger(), "master camera id = %s", str_master_camera_id.c_str());
 
         try {
             return std::stoi(str_master_camera_id);
         } catch (std::exception&) {
             RCLCPP_ERROR(
                 this->get_logger(), "invalid master camera id '%s'!", str_master_camera_id.c_str());
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
     }();
 
+    RCLCPP_INFO(
+        this->get_logger(), "master camera id = %s", std::to_string(master_camera_id).c_str());
+
     for (int i = 0; i < param_.camera_num; ++i) {
-        state_.camera_images[i] = std::make_unique<LockFreeQueue<StampedImagePtr>>(QUEUE_CAPACITY);
+        state_.camera_images[i] =
+            std::make_unique<LockFreeQueue<StampedImageBufferId>>(QUEUE_CAPACITY);
 
         abortIfNot(
             "camera init " + std::to_string(i),
-            CameraInit(&cameras_list[i], -1, -1, &camera_handles_[i]));
+            CameraInit(&cameras_list[i], -1, -1, &state_.camera_handles[i]));
 
-        int camera_internal_id = getCameraId(camera_handles_[i]);
+        int camera_internal_id = getCameraId(state_.camera_handles[i]);
         RCLCPP_INFO(
             this->get_logger(), "allocated image queue for camera ID = %d", camera_internal_id);
 
-        handle_to_camera_idx[camera_handles_[i]] = i;
+        state_.handle_to_camera_idx[state_.camera_handles[i]] = i;
 
-        abortIfNot("set icp", i, CameraSetIspOutFormat(camera_handles_[i], CAMERA_MEDIA_TYPE_BGR8));
+        abortIfNot(
+            "set icp", i, CameraSetIspOutFormat(state_.camera_handles[i], CAMERA_MEDIA_TYPE_BGR8));
 
         auto func = [](CameraHandle idx,
                        BYTE* raw_buffer,
@@ -112,26 +105,26 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
             reinterpret_cast<CameraNode*>(camera_node_instance)
                 ->handleFrame(idx, raw_buffer, frame_info);
         };
-        CameraSetCallbackFunction(camera_handles_[i], std::move(func), this, NULL);
+        CameraSetCallbackFunction(state_.camera_handles[i], std::move(func), this, NULL);
 
-        CameraSetTriggerMode(camera_handles_[i], SOFT_TRIGGER);
+        CameraSetTriggerMode(state_.camera_handles[i], SOFT_TRIGGER);
 
         if (param_.hardware_trigger && camera_internal_id != master_camera_id) {
             RCLCPP_INFO(this->get_logger(), "treating as slave camera ID = %d", camera_internal_id);
-            CameraSetTriggerMode(camera_handles_[i], EXTERNAL_TRIGGER);
-            CameraSetExtTrigSignalType(camera_handles_[i], EXT_TRIG_HIGH_LEVEL);
-            CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_TRIG_INPUT);
+            CameraSetTriggerMode(state_.camera_handles[i], EXTERNAL_TRIGGER);
+            CameraSetExtTrigSignalType(state_.camera_handles[i], EXT_TRIG_HIGH_LEVEL);
+            CameraSetOutPutIOMode(state_.camera_handles[i], 0, IOMODE_TRIG_INPUT);
         } else {
             RCLCPP_INFO(
                 this->get_logger(), "treating as master camera ID = %d", camera_internal_id);
-            CameraSetOutPutIOMode(camera_handles_[i], 0, IOMODE_STROBE_OUTPUT);
-            CameraSetStrobeMode(camera_handles_[i], STROBE_SYNC_WITH_TRIG_MANUAL);
-            CameraSetStrobePolarity(camera_handles_[i], strobe_polarity);
-            CameraSetStrobeDelayTime(camera_handles_[i], 0);
-            CameraSetStrobePulseWidth(camera_handles_[i], strobe_pulse_width);
+            CameraSetOutPutIOMode(state_.camera_handles[i], 0, IOMODE_STROBE_OUTPUT);
+            CameraSetStrobeMode(state_.camera_handles[i], STROBE_SYNC_WITH_TRIG_MANUAL);
+            CameraSetStrobePolarity(state_.camera_handles[i], strobe_polarity);
+            CameraSetStrobeDelayTime(state_.camera_handles[i], 0);
+            CameraSetStrobePulseWidth(state_.camera_handles[i], strobe_pulse_width);
         }
-        applyParamsToCamera(camera_handles_[i]);
-        abortIfNot("start", CameraPlay(camera_handles_[i]));
+        applyParamsToCamera(state_.camera_handles[i]);
+        abortIfNot("start", CameraPlay(state_.camera_handles[i]));
 
         if (param_.hardware_trigger && camera_internal_id == master_camera_id) {
             param_.master_camera_idx = i;
@@ -147,7 +140,7 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
     if (param_.hardware_trigger &&
         param_.master_camera_idx == -1) {  // provided master camera id was not found
         RCLCPP_ERROR(this->get_logger(), "master camera id was not found: %d", master_camera_id);
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     if (!param_.hardware_trigger) {
         param_.master_camera_idx = 0;
@@ -212,13 +205,20 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
     std::chrono::duration<double> queue_handling_latency(std::max(0.01, (1 / fps) / (fps / 5)));
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
     RCLCPP_INFO(this->get_logger(), "queue_latency=%fs", queue_handling_latency.count());
-    param_.max_buffer_size = MaxBufSize(frame_sizes_);
-    for (int i = 0; i < QUEUE_CAPACITY; ++i) {
-        std::shared_ptr<uint8_t[]> new_bgr_buffer(new uint8_t[param_.max_buffer_size]);
-        if (!free_bgr_buffer_.push(new_bgr_buffer)) {
-            RCLCPP_ERROR(this->get_logger(), "failed to push to queue BGR buffer #%d", i);
-            exit(-1);
-        }
+
+    cv::Size max_frame_size = *std::max_element(
+        state_.frame_sizes.begin(),
+        state_.frame_sizes.begin(),
+        [](cv::Size& first, cv::Size& second) { return first.area() < second.area(); });
+
+    param_.max_buffer_size = max_frame_size.area() * 3;
+    state_.buffers = CameraPool(max_frame_size.height, max_frame_size.width, QUEUE_CAPACITY);
+
+    // init queues and push indexes of buffers
+    state_.free_raw_buffer =
+        std::make_unique<LockFreeQueue<size_t>>(QUEUE_CAPACITY * MAX_CAMERA_NUM);
+    for (size_t i = 0; i < QUEUE_CAPACITY * MAX_CAMERA_NUM; ++i) {
+        state_.free_raw_buffer->push(i);
     }
 
     call_group_.trigger_timer =
@@ -236,19 +236,16 @@ CameraNode::CameraNode() : Node("camera_node"), free_bgr_buffer_(QUEUE_CAPACITY)
 
 CameraNode::~CameraNode() {
     for (int i = 0; i < param_.camera_num; ++i) {
-        abortIfNot("camera " + std::to_string(i) + " stop", CameraStop(camera_handles_[i]));
-        abortIfNot("camera " + std::to_string(i) + " uninit", CameraUnInit(camera_handles_[i]));
+        abortIfNot("camera " + std::to_string(i) + " stop", CameraStop(state_.camera_handles[i]));
+        abortIfNot(
+            "camera " + std::to_string(i) + " uninit", CameraUnInit(state_.camera_handles[i]));
     }
 }
 
 void CameraNode::triggerOnTimer() {
-    CameraSoftTrigger(camera_handles_[param_.master_camera_idx]);
-    if (!param_.hardware_trigger) {
-        for (int i = 0; i < param_.camera_num; ++i) {
-            if (i == param_.master_camera_idx) {
-                continue;
-            }
-            CameraSoftTrigger(camera_handles_[i]);
+    for (int i = 0; i < param_.camera_num; ++i) {
+        if (!param_.hardware_trigger || i == param_.master_camera_idx) {
+            CameraSoftTrigger(state_.camera_handles[i]);
         }
     }
 }
@@ -261,7 +258,7 @@ int CameraNode::getCameraId(int camera_handle) {
 
 void CameraNode::applyParamsToCamera(int handle) {
     // applying exposure params
-    int camera_idx = handle_to_camera_idx[handle];
+    int camera_idx = state_.handle_to_camera_idx[handle];
     std::string prefix = std::to_string(getCameraId(handle)) + ".exposure_params.";
     {
         tSdkCameraCapbility camera_capability;
@@ -273,7 +270,8 @@ void CameraNode::applyParamsToCamera(int handle) {
             camera_idx,
             resolution_data->iWidth,
             resolution_data->iHeight);
-        frame_sizes_[camera_idx] = cv::Size(resolution_data->iWidth, resolution_data->iHeight);
+        state_.frame_sizes[camera_idx] =
+            cv::Size(resolution_data->iWidth, resolution_data->iHeight);
     }
 
     {
@@ -296,7 +294,7 @@ void CameraNode::applyParamsToCamera(int handle) {
                 exposure.count(),
                 camera_idx,
                 param_.latency.count());
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
         abortIfNot("set exposure", camera_idx, CameraSetExposureTime(handle, exposure.count()));
@@ -381,7 +379,7 @@ void CameraNode::applyParamsToCamera(int handle) {
         });
     if (!has_all_params) {
         RCLCPP_ERROR(this->get_logger(), "camera %d failed to read instrinsic params", camera_idx);
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     // loading intrinsic parameters
@@ -395,7 +393,7 @@ void CameraNode::applyParamsToCamera(int handle) {
     const std::vector<double> param_dist_coefs =
         this->declare_parameter<std::vector<double>>(prefix + "distorsion_coefs");
 
-    cameras_intrinsics_.push_back(CameraIntrinsicParameters::loadFromParams(
+    state_.cameras_intrinsics.push_back(CameraIntrinsicParameters::loadFromParams(
         param_image_size, param_camera_matrix, param_dist_coefs));
     RCLCPP_INFO(this->get_logger(), "camera=%i loaded intrinsics", camera_idx);
 }
@@ -430,15 +428,14 @@ cv::Mat rescale(const cv::Mat& image, const cv::Size& size) {
 }  // namespace
 
 void CameraNode::publishBGRImage(
-    uint8_t* buffer, rclcpp::Time timestamp, int idx, tSdkFrameHead& frame_inf) {
+    uint8_t* raw_buffer, uint8_t* bgr_buffer, rclcpp::Time timestamp, int idx,
+    tSdkFrameHead& frame_inf) {
     const auto header = makeHeader(timestamp, idx);
-    std::shared_ptr<uint8_t[]> bgr_buffer;
-    while (!free_bgr_buffer_.pop(bgr_buffer)) {
-    }
 
     abortIfNot(
-        "get bgr", CameraImageProcess(camera_handles_[idx], buffer, bgr_buffer.get(), &frame_inf));
-    cv::Mat image(frame_sizes_[idx], CV_8UC3, bgr_buffer.get());
+        "get bgr",
+        CameraImageProcess(state_.camera_handles[idx], raw_buffer, bgr_buffer, &frame_inf));
+    cv::Mat image(state_.frame_sizes[idx], CV_8UC3, bgr_buffer);
 
     if (param_.publish_bgr) {
         cv_bridge::CvImage cv_image(header, "bgr8", image);
@@ -451,20 +448,16 @@ void CameraNode::publishBGRImage(
     }
 
     if (param_.publish_rectified_preview) {
-        cv::Mat undistorted_image = cameras_intrinsics_[idx].undistortImage(image);
+        cv::Mat undistorted_image = state_.cameras_intrinsics[idx].undistortImage(image);
         cv_bridge::CvImage cv_image(
             header, "bgr8", rescale(undistorted_image, param_.preview_frame_size));
         signals_.rectified_preview_img[idx]->publish(toJpegMsg(cv_image));
-    }
-    if (!free_bgr_buffer_.push(bgr_buffer)) {
-        RCLCPP_ERROR(this->get_logger(), "unable to push bgr buffer back after use");
-        exit(-1);
     }
 }
 
 void CameraNode::publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx) {
     const auto header = makeHeader(timestamp, camera_idx);
-    cv::Mat image(frame_sizes_[camera_idx], CV_8UC1, buffer);
+    cv::Mat image(state_.frame_sizes[camera_idx], CV_8UC1, buffer);
 
     if (param_.publish_raw) {
         cv_bridge::CvImage cv_image(header, "mono8", image);
@@ -479,39 +472,50 @@ void CameraNode::publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp,
 
 void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
     const cv::Size size{frame_info->iWidth, frame_info->iHeight};
-    if (size != frame_sizes_[handle_to_camera_idx[handle]]) {
+    if (size != state_.frame_sizes[state_.handle_to_camera_idx[handle]]) {
         RCLCPP_ERROR_STREAM(
             this->get_logger(),
-            "expected frame size " << frame_sizes_[handle] << ", but got " << size);
-        exit(-1);
+            "expected frame size " << state_.frame_sizes[handle] << ", but got " << size);
+        exit(EXIT_FAILURE);
     }
     int frame_size_px = frame_info->iWidth * frame_info->iHeight;
-    std::shared_ptr<uint8_t[]> buffer_to_copy(new uint8_t[frame_size_px]);
-    std::memcpy(buffer_to_copy.get(), raw_buffer, frame_size_px);
-    StampedImagePtr stamped_image_to_add{
-        buffer_to_copy, std::move(*frame_info), this->get_clock()->now()};
-    if (!state_.camera_images[handle_to_camera_idx[handle]]->push(stamped_image_to_add)) {
-        RCLCPP_ERROR(this->get_logger(), "unable to fit into queue! aborting");
-        timer_.camera_handle_queue_timer.get()->cancel();
-        timer_.camera_soft_trigger.get()->cancel();
-        this->~CameraNode();
-        exit(-1);
+
+    size_t free_buffer_id;
+    while (!state_.free_raw_buffer->pop(free_buffer_id)) {
+    }
+    uint8_t* free_buffer_to_copy = state_.buffers.getRawFrame(free_buffer_id);
+    std::memcpy(free_buffer_to_copy, raw_buffer, frame_size_px);
+    StampedImageBufferId stamped_buffer_to_add{
+        free_buffer_id, std::move(*frame_info), this->get_clock()->now()};
+    if (!state_.camera_images[state_.handle_to_camera_idx[handle]]->push(stamped_buffer_to_add)) {
+        RCLCPP_ERROR(this->get_logger(), "unable to fit into queue! exiting");
+        exit(EXIT_FAILURE);
     }
     CameraReleaseImageBuffer(handle, raw_buffer);
 }
 
 void CameraNode::handleQueue() {
     for (int i = 0; i < param_.camera_num; ++i) {
-        StampedImagePtr stamped_image;
-        if (!state_.camera_images[i]->pop(stamped_image)) {
-            continue;
-        }
-        if (param_.publish_raw || param_.publish_raw_preview) {
-            publishRawImage(stamped_image.buffer.get(), stamped_image.timestamp, i);
-        }
-        if (param_.publish_bgr || param_.publish_bgr_preview) {
-            publishBGRImage(
-                stamped_image.buffer.get(), stamped_image.timestamp, i, stamped_image.frame_info);
+        StampedImageBufferId stamped_buffer_id;
+        while (state_.camera_images[i]->pop(stamped_buffer_id)) {
+            if (param_.publish_raw || param_.publish_raw_preview) {
+                publishRawImage(
+                    state_.buffers.getRawFrame(stamped_buffer_id.buffer_id),
+                    stamped_buffer_id.timestamp,
+                    i);
+            }
+            if (param_.publish_bgr || param_.publish_bgr_preview) {
+                publishBGRImage(
+                    state_.buffers.getRawFrame(stamped_buffer_id.buffer_id),
+                    state_.buffers.getBgrFrame(stamped_buffer_id.buffer_id),
+                    stamped_buffer_id.timestamp,
+                    i,
+                    stamped_buffer_id.frame_info);
+            }
+            if (!state_.free_raw_buffer->push(stamped_buffer_id.buffer_id)) {
+                RCLCPP_ERROR(this->get_logger(), "unable to push bgr buffer back after use");
+                exit(EXIT_FAILURE);
+            }
         }
     }
 }

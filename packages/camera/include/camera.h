@@ -17,10 +17,30 @@
 
 namespace handy::camera {
 
-struct StampedImagePtr {
-    std::shared_ptr<uint8_t[]> buffer = nullptr;
+struct StampedImageBufferId {
+    size_t buffer_id = 0;
     tSdkFrameHead frame_info{};
     rclcpp::Time timestamp{};
+};
+
+struct CameraPool {
+  public:
+    CameraPool() = default;
+    CameraPool(size_t height, size_t width, size_t frame_n)
+        : frame_n_(frame_n), raw_frame_size_(height * width), bgr_frame_size_(height * width * 3) {
+        raw_.resize(raw_frame_size_);
+        bgr_.resize(bgr_frame_size_);
+    }
+
+    uint8_t* getRawFrame(size_t frame_idx) { return raw_.data() + frame_idx * raw_frame_size_; }
+    uint8_t* getBgrFrame(size_t frame_idx) { return bgr_.data() + frame_idx * bgr_frame_size_; }
+
+  private:
+    size_t frame_n_ = 0;
+    size_t raw_frame_size_ = 0;
+    size_t bgr_frame_size_ = 0;
+    std::vector<uint8_t> raw_ = {};
+    std::vector<uint8_t> bgr_ = {};
 };
 
 class CameraNode : public rclcpp::Node {
@@ -28,8 +48,8 @@ class CameraNode : public rclcpp::Node {
     CameraNode();
     ~CameraNode();
 
-    constexpr static int QUEUE_CAPACITY = 8;
-    constexpr static int MAX_CAMERA_NUM = 10;
+    constexpr static int MAX_CAMERA_NUM = 4;
+    constexpr static int QUEUE_CAPACITY = MAX_CAMERA_NUM * 5;
 
   private:
     void applyParamsToCamera(int camera_idx);
@@ -41,7 +61,8 @@ class CameraNode : public rclcpp::Node {
 
     void publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
     void publishBGRImage(
-        uint8_t* buffer, rclcpp::Time timestamp, int camera_idx, tSdkFrameHead& frame_inf);
+        uint8_t* buffer, uint8_t* bgr_buffer, rclcpp::Time timestamp, int camera_idx,
+        tSdkFrameHead& frame_inf);
 
     void abortIfNot(std::string_view msg, int status);
     void abortIfNot(std::string_view msg, int camera_idx, int status);
@@ -50,7 +71,7 @@ class CameraNode : public rclcpp::Node {
         cv::Size preview_frame_size = cv::Size(640, 480);
         std::chrono::duration<double> latency{50.0};
         std::string calibration_file_path = "";
-        int camera_num = MAX_CAMERA_NUM;  // 10
+        int camera_num = MAX_CAMERA_NUM;
         bool publish_bgr = false;
         bool publish_bgr_preview = false;
         bool publish_raw = false;
@@ -62,14 +83,15 @@ class CameraNode : public rclcpp::Node {
     } param_{};
 
     struct State {
-        std::array<std::unique_ptr<LockFreeQueue<StampedImagePtr>>, MAX_CAMERA_NUM> camera_images;
+        std::array<std::unique_ptr<LockFreeQueue<StampedImageBufferId>>, MAX_CAMERA_NUM>
+            camera_images;
+        std::unique_ptr<LockFreeQueue<size_t>> free_raw_buffer = nullptr;
+        std::vector<int> camera_handles = {};
+        std::map<int, int> handle_to_camera_idx = {};
+        std::vector<CameraIntrinsicParameters> cameras_intrinsics = {};
+        std::vector<cv::Size> frame_sizes = {};
+        CameraPool buffers;
     } state_{};
-
-    std::vector<int> camera_handles_ = {};
-    std::map<int, int> handle_to_camera_idx = {};
-    LockFreeQueue<std::shared_ptr<uint8_t[]>> free_bgr_buffer_;
-    std::vector<CameraIntrinsicParameters> cameras_intrinsics_ = {};
-    std::vector<cv::Size> frame_sizes_ = {};
 
     struct Signals {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_img;
