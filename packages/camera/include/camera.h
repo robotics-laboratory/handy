@@ -59,9 +59,9 @@ class CameraNode : public rclcpp::Node {
     void handleFrame(CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info);
     void handleQueue(int camera_idx);
 
-    void publishRawImage(uint8_t* buffer, rclcpp::Time timestamp, int camera_idx);
+    void publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx);
     void publishBGRImage(
-        uint8_t* buffer, uint8_t* bgr_buffer, rclcpp::Time timestamp, int camera_idx,
+        uint8_t* buffer, uint8_t* bgr_buffer, const rclcpp::Time& timestamp, int camera_idx,
         tSdkFrameHead& frame_inf);
 
     void abortIfNot(std::string_view msg, int status);

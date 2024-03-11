@@ -215,7 +215,7 @@ CameraNode::CameraNode() : Node("camera_node") {
     RCLCPP_INFO(this->get_logger(), "%d pools initialised", QUEUE_CAPACITY * MAX_CAMERA_NUM);
 
     // init queues and push indexes of buffers
-    for (size_t i = 0; i < param_.camera_num; ++i) {
+    for (int i = 0; i < param_.camera_num; ++i) {
         for (size_t j = 0; j < QUEUE_CAPACITY; ++j) {
             state_.free_raw_buffer[i]->push(i * QUEUE_CAPACITY + j);
         }
@@ -431,7 +431,7 @@ cv::Mat rescale(const cv::Mat& image, const cv::Size& size) {
 }  // namespace
 
 void CameraNode::publishBGRImage(
-    uint8_t* raw_buffer, uint8_t* bgr_buffer, rclcpp::Time timestamp, int idx,
+    uint8_t* raw_buffer, uint8_t* bgr_buffer, const rclcpp::Time& timestamp, int idx,
     tSdkFrameHead& frame_inf) {
     const auto header = makeHeader(timestamp, idx);
 
