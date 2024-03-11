@@ -5,6 +5,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <exception>
+#include <fstream>
 
 namespace handy {
 
