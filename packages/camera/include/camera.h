@@ -17,8 +17,9 @@
 
 namespace handy::camera {
 
-struct StampedImageBufferId {
-    size_t buffer_id = 0;
+struct StampedImageBuffer {
+    uint8_t* raw_buffer = nullptr;
+    uint8_t* bgr_buffer = nullptr;
     tSdkFrameHead frame_info{};
     rclcpp::Time timestamp{};
 };
@@ -83,9 +84,9 @@ class CameraNode : public rclcpp::Node {
     } param_{};
 
     struct State {
-        std::array<std::unique_ptr<LockFreeQueue<StampedImageBufferId>>, kMaxCameraNum>
-            camera_images;
-        std::array<std::unique_ptr<LockFreeQueue<size_t>>, kMaxCameraNum> free_raw_buffer;
+        std::array<std::unique_ptr<LockFreeQueue<StampedImageBuffer>>, kMaxCameraNum> camera_images;
+        std::array<std::unique_ptr<LockFreeQueue<std::pair<uint8_t*, uint8_t*>>>, kMaxCameraNum>
+            free_buffers;
         std::vector<int> camera_handles = {};
         std::map<int, int> handle_to_camera_idx = {};
         std::vector<CameraIntrinsicParameters> cameras_intrinsics = {};

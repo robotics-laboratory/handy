@@ -83,8 +83,9 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     for (int i = 0; i < param_.camera_num; ++i) {
         state_.camera_images[i] =
-            std::make_unique<LockFreeQueue<StampedImageBufferId>>(kQueueCapacity);
-        state_.free_raw_buffer[i] = std::make_unique<LockFreeQueue<size_t>>(kQueueCapacity);
+            std::make_unique<LockFreeQueue<StampedImageBuffer>>(kQueueCapacity);
+        state_.free_buffers[i] =
+            std::make_unique<LockFreeQueue<std::pair<uint8_t*, uint8_t*>>>(kQueueCapacity);
 
         abortIfNot(
             "camera init " + std::to_string(i),
@@ -221,10 +222,12 @@ CameraNode::CameraNode() : Node("camera_node") {
         CameraPool(max_frame_size.height, max_frame_size.width, kQueueCapacity * kMaxCameraNum);
     RCLCPP_INFO(this->get_logger(), "%d pools initialised", kQueueCapacity * kMaxCameraNum);
 
-    // init queues and push indexes of buffers
+    // init queues and push pointers to buffers
     for (int i = 0; i < param_.camera_num; ++i) {
         for (size_t j = 0; j < kQueueCapacity; ++j) {
-            state_.free_raw_buffer[i]->push(i * kQueueCapacity + j);
+            state_.free_buffers[i]->push(std::make_pair(
+                state_.buffers.getRawFrame(i * kQueueCapacity + j),
+                state_.buffers.getBgrFrame(i * kQueueCapacity + j)));
         }
     }
 
@@ -490,13 +493,15 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
     }
     int frame_size_px = frame_info->iWidth * frame_info->iHeight;
 
-    size_t free_buffer_id;
-    while (!state_.free_raw_buffer[state_.handle_to_camera_idx[handle]]->pop(free_buffer_id)) {
+    std::pair<uint8_t*, uint8_t*> free_buffers;
+    while (!state_.free_buffers[state_.handle_to_camera_idx[handle]]->pop(free_buffers)) {
     }
-    uint8_t* free_buffer_to_copy = state_.buffers.getRawFrame(free_buffer_id);
-    std::memcpy(free_buffer_to_copy, raw_buffer, frame_size_px);
-    StampedImageBufferId stamped_buffer_to_add{
-        free_buffer_id, *frame_info, this->get_clock()->now()};
+    std::memcpy(free_buffers.first, raw_buffer, frame_size_px);
+    StampedImageBuffer stamped_buffer_to_add{
+        free_buffers.first,   // raw buffer
+        free_buffers.second,  // bgr buffer
+        *frame_info,
+        this->get_clock()->now()};
     if (!state_.camera_images[state_.handle_to_camera_idx[handle]]->push(stamped_buffer_to_add)) {
         RCLCPP_ERROR(this->get_logger(), "unable to fit into queue! exiting");
         exit(EXIT_FAILURE);
@@ -505,23 +510,21 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
 }
 
 void CameraNode::handleQueue(int camera_idx) {
-    StampedImageBufferId stamped_buffer_id;
+    StampedImageBuffer stamped_buffer_id;
     while (state_.camera_images[camera_idx]->pop(stamped_buffer_id)) {
         if (param_.publish_raw || param_.publish_raw_preview) {
-            publishRawImage(
-                state_.buffers.getRawFrame(stamped_buffer_id.buffer_id),
-                stamped_buffer_id.timestamp,
-                camera_idx);
+            publishRawImage(stamped_buffer_id.raw_buffer, stamped_buffer_id.timestamp, camera_idx);
         }
         if (param_.publish_bgr || param_.publish_bgr_preview) {
             publishBGRImage(
-                state_.buffers.getRawFrame(stamped_buffer_id.buffer_id),
-                state_.buffers.getBgrFrame(stamped_buffer_id.buffer_id),
+                stamped_buffer_id.raw_buffer,
+                stamped_buffer_id.bgr_buffer,
                 stamped_buffer_id.timestamp,
                 camera_idx,
                 stamped_buffer_id.frame_info);
         }
-        if (!state_.free_raw_buffer[camera_idx]->push(stamped_buffer_id.buffer_id)) {
+        if (!state_.free_buffers[camera_idx]->push(
+                std::make_pair(stamped_buffer_id.raw_buffer, stamped_buffer_id.bgr_buffer))) {
             RCLCPP_ERROR(this->get_logger(), "unable to push bgr buffer back after use");
             exit(EXIT_FAILURE);
         }
