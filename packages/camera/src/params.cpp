@@ -72,9 +72,9 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromParams(
     std::vector<double> param_dist_coefs) {
     CameraIntrinsicParameters result{};
 
-    result.image_size = param_image_size;
-    result.camera_matrix = cv::Mat(param_camera_matrix, true);
-    result.dist_coefs = cv::Mat(param_dist_coefs, true);
+    result.image_size = std::move(param_image_size);
+    result.camera_matrix = cv::Mat(std::move(param_camera_matrix), true);
+    result.dist_coefs = cv::Mat(std::move(param_dist_coefs), true);
     result.initUndistortMaps();
 
     return result;
