@@ -68,8 +68,8 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(const std::str
 }
 
 CameraIntrinsicParameters CameraIntrinsicParameters::loadFromParams(
-    const cv::Size& param_image_size, const std::vector<double>& param_camera_matrix,
-    const std::vector<double>& param_dist_coefs) {
+    cv::Size param_image_size, std::vector<double> param_camera_matrix,
+    std::vector<double> param_dist_coefs) {
     CameraIntrinsicParameters result{};
 
     result.image_size = param_image_size;
