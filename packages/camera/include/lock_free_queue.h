@@ -33,40 +33,37 @@ class LockFreeQueue {
     bool push(const T& value) {
         // while could not proccess
         while (true) {
-            if (tail_.load() - head_.load() == data_.size()) {
+            int snap = tail_.load();
+            if (snap - head_.load() == data_.size()) {
                 // buffer is full and can't be updated
                 // in fact, slot can be freed during verification, but we do not double-check
                 return false;
             }
 
-            int snap = tail_.load();
-            if (data_[snap % data_.size()].generation < snap) {
-                // logic error, aborting
-                return false;
-            }
-            if (!tail_.compare_exchange_weak(snap, snap + 1)) {
+            if (data_[snap % data_.size()].generation < snap ||
+                !tail_.compare_exchange_weak(snap, snap + 1)) {
                 // desired cell in buffer was already used by another thread
                 // let's try again
                 continue;
             }
+
             data_[snap % data_.size()].value = value;
             // next possible push will be at (current_tail + 1) minimum
             // so we add +1
             data_[snap % data_.size()].generation += 1;
             return true;
         }
-        return true;
     }
 
     bool pop(T& data) {
         while (true) {
-            if (tail_.load() - head_.load() == 0) {
+            int snap = head_.load();
+            if (tail_.load() - snap == 0) {
                 // buffer is empty and can't be updated
                 // in fact, slot can be freed during verification, but we do not double-check
                 return false;
             }
 
-            int snap = head_.load();
             if (data_[snap % data_.size()].generation <= snap) {
                 return false;
             }
@@ -81,7 +78,6 @@ class LockFreeQueue {
             data_[snap % data_.size()].generation.store(snap + data_.size());
             return true;
         }
-        return true;
     }
 
   private:
