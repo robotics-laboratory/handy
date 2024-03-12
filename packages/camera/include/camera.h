@@ -6,8 +6,8 @@
 #include <opencv2/core/core.hpp>
 
 #include "CameraApi.h"
-#include "params.h"
 #include "lock_free_queue.h"
+#include "params.h"
 
 #include <chrono>
 #include <cstdint>
@@ -48,15 +48,15 @@ class CameraNode : public rclcpp::Node {
     CameraNode();
     ~CameraNode();
 
-    constexpr static int MAX_CAMERA_NUM = 4;
-    constexpr static int QUEUE_CAPACITY = 5;
+    constexpr static int kMaxCameraNum = 4;
+    constexpr static int kQueueCapacity = 5;
 
   private:
-    void applyParamsToCamera(int camera_idx);
+    void applyParamsToCamera(int handle);
     int getCameraId(int camera_handle);
 
     void triggerOnTimer();
-    void handleFrame(CameraHandle idx, BYTE* raw_buffer, tSdkFrameHead* frame_info);
+    void handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info);
     void handleQueue(int camera_idx);
 
     void publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx);
@@ -71,7 +71,7 @@ class CameraNode : public rclcpp::Node {
         cv::Size preview_frame_size = cv::Size(640, 480);
         std::chrono::duration<double> latency{50.0};
         std::string calibration_file_path = "";
-        int camera_num = MAX_CAMERA_NUM;
+        int camera_num = kMaxCameraNum;
         bool publish_bgr = false;
         bool publish_bgr_preview = false;
         bool publish_raw = false;
@@ -83,9 +83,9 @@ class CameraNode : public rclcpp::Node {
     } param_{};
 
     struct State {
-        std::array<std::unique_ptr<LockFreeQueue<StampedImageBufferId>>, MAX_CAMERA_NUM>
+        std::array<std::unique_ptr<LockFreeQueue<StampedImageBufferId>>, kMaxCameraNum>
             camera_images;
-        std::array<std::unique_ptr<LockFreeQueue<size_t>>, MAX_CAMERA_NUM> free_raw_buffer;
+        std::array<std::unique_ptr<LockFreeQueue<size_t>>, kMaxCameraNum> free_raw_buffer;
         std::vector<int> camera_handles = {};
         std::map<int, int> handle_to_camera_idx = {};
         std::vector<CameraIntrinsicParameters> cameras_intrinsics = {};

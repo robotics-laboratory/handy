@@ -24,6 +24,8 @@ launch:
     name: "camera"
     param:
     - {name: "fps", value: 10.0}
+    # interval between calling queue handlers
+    - {name: "queue_latency", value: 15} # in millisecond
     - {name: "preview/width", value: 1280}
     - {name: "preview/height", value: 1024}
     - {name: "publish_raw_preview", value: "$(var publish_raw_preview)"}

@@ -42,7 +42,7 @@ void CameraNode::abortIfNot(std::string_view msg, int camera_idx, int status) {
 
 CameraNode::CameraNode() : Node("camera_node") {
     abortIfNot("camera init", CameraSdkInit(0));
-    tSdkCameraDevInfo cameras_list[MAX_CAMERA_NUM];
+    tSdkCameraDevInfo cameras_list[kMaxCameraNum];
     abortIfNot("camera listing", CameraEnumerateDevice(cameras_list, &param_.camera_num));
 
     RCLCPP_INFO_STREAM(this->get_logger(), "camera number: " << param_.camera_num);
@@ -83,8 +83,8 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     for (int i = 0; i < param_.camera_num; ++i) {
         state_.camera_images[i] =
-            std::make_unique<LockFreeQueue<StampedImageBufferId>>(QUEUE_CAPACITY);
-        state_.free_raw_buffer[i] = std::make_unique<LockFreeQueue<size_t>>(QUEUE_CAPACITY);
+            std::make_unique<LockFreeQueue<StampedImageBufferId>>(kQueueCapacity);
+        state_.free_raw_buffer[i] = std::make_unique<LockFreeQueue<size_t>>(kQueueCapacity);
 
         abortIfNot(
             "camera init " + std::to_string(i),
@@ -106,35 +106,40 @@ CameraNode::CameraNode() : Node("camera_node") {
             reinterpret_cast<CameraNode*>(camera_node_instance)
                 ->handleFrame(idx, raw_buffer, frame_info);
         };
-        CameraSetCallbackFunction(state_.camera_handles[i], std::move(func), this, NULL);
+        CameraSetCallbackFunction(state_.camera_handles[i], std::move(func), this, nullptr);
 
-        CameraSetTriggerMode(state_.camera_handles[i], SOFT_TRIGGER);
-
-        if (param_.hardware_trigger && camera_internal_id != master_camera_id) {
-            RCLCPP_INFO(this->get_logger(), "treating as slave camera ID = %d", camera_internal_id);
-            CameraSetTriggerMode(state_.camera_handles[i], EXTERNAL_TRIGGER);
-            CameraSetExtTrigSignalType(state_.camera_handles[i], EXT_TRIG_HIGH_LEVEL);
-            CameraSetOutPutIOMode(state_.camera_handles[i], 0, IOMODE_TRIG_INPUT);
-        } else {
+        if (!param_.hardware_trigger) {  // if node is launch in soft trigger mode
+            RCLCPP_INFO(this->get_logger(), "soft trigger for camera ID = %d", camera_internal_id);
+            CameraSetTriggerMode(state_.camera_handles[i], SOFT_TRIGGER);
+        } else if (camera_internal_id == master_camera_id) {  // if hard trigger mode is enabled and
+                                                              // this is a master camera
             RCLCPP_INFO(
                 this->get_logger(), "treating as master camera ID = %d", camera_internal_id);
+            // master camera is triggered by the node
+            CameraSetTriggerMode(state_.camera_handles[i], SOFT_TRIGGER);
+            // to trigger others by hardware
             CameraSetOutPutIOMode(state_.camera_handles[i], 0, IOMODE_STROBE_OUTPUT);
             CameraSetStrobeMode(state_.camera_handles[i], STROBE_SYNC_WITH_TRIG_MANUAL);
             CameraSetStrobePolarity(state_.camera_handles[i], strobe_polarity);
             CameraSetStrobeDelayTime(state_.camera_handles[i], 0);
             CameraSetStrobePulseWidth(state_.camera_handles[i], strobe_pulse_width);
-        }
-        applyParamsToCamera(state_.camera_handles[i]);
-        abortIfNot("start", CameraPlay(state_.camera_handles[i]));
 
-        if (param_.hardware_trigger && camera_internal_id == master_camera_id) {
             param_.master_camera_idx = i;
             RCLCPP_INFO(
                 this->get_logger(),
                 "camera ID = %d  idx = %d is saved as master camera",
                 camera_internal_id,
                 i);
+        } else {  // if hard trigger mode is enabled and this is a slave camera
+            RCLCPP_INFO(this->get_logger(), "treating as slave camera ID = %d", camera_internal_id);
+            // slave camera waits for external hardware trigger to occur
+            CameraSetTriggerMode(state_.camera_handles[i], EXTERNAL_TRIGGER);
+            CameraSetExtTrigSignalType(state_.camera_handles[i], EXT_TRIG_HIGH_LEVEL);
+            CameraSetOutPutIOMode(state_.camera_handles[i], 0, IOMODE_TRIG_INPUT);
         }
+
+        applyParamsToCamera(state_.camera_handles[i]);
+        abortIfNot("start", CameraPlay(state_.camera_handles[i]));
         RCLCPP_INFO(
             this->get_logger(), "inited API and started camera ID = %d", camera_internal_id);
     }
@@ -200,7 +205,9 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     const auto fps = this->declare_parameter<double>("fps", 20.0);
     param_.latency = std::chrono::duration<double>(1 / fps);
-    std::chrono::duration<double> queue_handling_latency(std::max(0.01, (1 / fps) / (fps / 5)));
+    const auto queue_latency =
+        this->declare_parameter<int64_t>("queue_latency", 20) / 1000.;  // in millisecond
+    std::chrono::duration<double> queue_handling_latency(queue_latency);
     RCLCPP_INFO(this->get_logger(), "latency=%fs", param_.latency.count());
     RCLCPP_INFO(this->get_logger(), "queue_latency=%fs", queue_handling_latency.count());
 
@@ -211,13 +218,13 @@ CameraNode::CameraNode() : Node("camera_node") {
 
     param_.max_buffer_size = max_frame_size.area() * 3;
     state_.buffers =
-        CameraPool(max_frame_size.height, max_frame_size.width, QUEUE_CAPACITY * MAX_CAMERA_NUM);
-    RCLCPP_INFO(this->get_logger(), "%d pools initialised", QUEUE_CAPACITY * MAX_CAMERA_NUM);
+        CameraPool(max_frame_size.height, max_frame_size.width, kQueueCapacity * kMaxCameraNum);
+    RCLCPP_INFO(this->get_logger(), "%d pools initialised", kQueueCapacity * kMaxCameraNum);
 
     // init queues and push indexes of buffers
     for (int i = 0; i < param_.camera_num; ++i) {
-        for (size_t j = 0; j < QUEUE_CAPACITY; ++j) {
-            state_.free_raw_buffer[i]->push(i * QUEUE_CAPACITY + j);
+        for (size_t j = 0; j < kQueueCapacity; ++j) {
+            state_.free_raw_buffer[i]->push(i * kQueueCapacity + j);
         }
     }
 
@@ -489,7 +496,7 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
     uint8_t* free_buffer_to_copy = state_.buffers.getRawFrame(free_buffer_id);
     std::memcpy(free_buffer_to_copy, raw_buffer, frame_size_px);
     StampedImageBufferId stamped_buffer_to_add{
-        free_buffer_id, std::move(*frame_info), this->get_clock()->now()};
+        free_buffer_id, *frame_info, this->get_clock()->now()};
     if (!state_.camera_images[state_.handle_to_camera_idx[handle]]->push(stamped_buffer_to_add)) {
         RCLCPP_ERROR(this->get_logger(), "unable to fit into queue! exiting");
         exit(EXIT_FAILURE);

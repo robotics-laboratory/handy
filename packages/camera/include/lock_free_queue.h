@@ -30,12 +30,10 @@ class LockFreeQueue {
     LockFreeQueue(LockFreeQueue&& other) = delete;
     LockFreeQueue(const LockFreeQueue& other) = delete;
 
-    int getSize(int tail, int head) { return tail - head; }
-
     bool push(const T& value) {
         // while could not proccess
-        while (1) {
-            if (getSize(tail_.load(), head_.load()) == data_.size()) {
+        while (true) {
+            if (tail_.load() - head_.load() == data_.size()) {
                 // buffer is full and can't be updated
                 // in fact, slot can be freed during verification, but we do not double-check
                 return false;
@@ -61,8 +59,8 @@ class LockFreeQueue {
     }
 
     bool pop(T& data) {
-        while (1) {
-            if (getSize(tail_.load(), head_.load()) == 0) {
+        while (true) {
+            if (tail_.load() - head_.load() == 0) {
                 // buffer is empty and can't be updated
                 // in fact, slot can be freed during verification, but we do not double-check
                 return false;
