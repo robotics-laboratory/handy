@@ -47,7 +47,7 @@ struct CameraPool {
 class CameraNode : public rclcpp::Node {
   public:
     CameraNode();
-    ~CameraNode();
+    ~CameraNode() override;
 
     constexpr static int kMaxCameraNum = 4;
     constexpr static int kQueueCapacity = 5;
