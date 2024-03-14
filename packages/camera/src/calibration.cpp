@@ -112,13 +112,15 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
         // intrinsics_.push_back(CameraIntrinsicParameters::loadFromYaml(
         //     param_.path_to_params, param_.cameras_to_calibrate[i]));
         // state_.is_mono_calibrated.push_back(intrinsics_.back().isCalibrated());
+        state_.is_mono_calibrated.push_back(true);
         intrinsics_.emplace_back();
-        state_.is_mono_calibrated.push_back(false);
         state_.board_markers_array.emplace_back();
         state_.board_corners_array.emplace_back();
         state_.image_points_all.emplace_back();
         state_.obj_points_all.emplace_back();
+        state_.polygons_all.emplace_back();
     }
+    state_.global_calibration_state = kStereoCapturing;
     state_.waiting = std::vector<std::atomic<bool>>(param_.cameras_to_calibrate.size());
 
     timer_.calibration_state = this->create_wall_timer(
@@ -157,7 +159,7 @@ void CalibrationNode::declareLaunchParams() {
     // clang-format on
 
     // no more than 2 camera are supported at the moment
-    if (param_.cameras_to_calibrate.empty() || param_.cameras_to_calibrate.size() <= 2) {
+    if (param_.cameras_to_calibrate.empty() || param_.cameras_to_calibrate.size() > 2) {
         RCLCPP_ERROR(
             this->get_logger(),
             "Provided %ld cameras instead of 1 or 2",
@@ -175,7 +177,7 @@ void CalibrationNode::initSignals() {
     options.callback_group = call_group_.handle_frame;
     for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
         const std::string calib_name_base =
-            "/calibraton_" + std::to_string(param_.cameras_to_calibrate[i]);
+            "/camera_" + std::to_string(param_.cameras_to_calibrate[i]);
         auto callback = [this, i](const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg) {
             handleFrame(msg, i);
         };
@@ -201,8 +203,8 @@ void CalibrationNode::initSignals() {
 void CalibrationNode::handleFrame(
     const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg, size_t camera_idx) {
     // exit callback if frames should not be captured or if camera_idx is already calibrated
-    if (state_.global_calibration_state != kCapturing ||
-        state_.global_calibration_state != kStereoCapturing ||
+    if (state_.global_calibration_state != kCapturing &&
+            state_.global_calibration_state != kStereoCapturing ||
         (state_.is_mono_calibrated[camera_idx] && state_.global_calibration_state == kCapturing)) {
         return;
     }
@@ -259,25 +261,28 @@ void CalibrationNode::handleFrame(
         signal_.detected_corners[camera_idx]->publish(state_.board_corners_array[camera_idx]);
     }
     if (!checkMaxSimilarity(current_corners, camera_idx)) {
+        state_.waiting[camera_idx] = false;
         return;
     }
 
     if (state_.global_calibration_state == kStereoCapturing) {
         const size_t currently_detected = state_.currently_detected.fetch_add(1) + 1;
+        RCLCPP_INFO(
+            this->get_logger(), "ID=%d detected chessboard: %d", camera_idx, currently_detected);
         // doubled latency to avoid too many skipped frames
         const std::chrono::duration<double, std::milli> latency(2 * 1000.0 / param_.fps);
         std::mutex mutex;
         std::unique_lock<std::mutex> lock(mutex);
         if (currently_detected == param_.cameras_to_calibrate.size()) {
+            RCLCPP_INFO(this->get_logger(), "ID=%d detected all, notifying", camera_idx);
             state_.condvar_to_sync_cameras.notify_all();
-        }
-        const bool latest_predicate_result =
-            state_.condvar_to_sync_cameras.wait_for(lock, latency, [currently_detected, this] {
-                return state_.currently_detected == this->param_.cameras_to_calibrate.size();
-            });
-        if (!latest_predicate_result) {
-            state_.waiting[camera_idx] = false;
-            return;
+        } else {
+            const std::cv_status status = state_.condvar_to_sync_cameras.wait_for(lock, latency);
+            if (status == std::cv_status::timeout) {
+                state_.waiting[camera_idx] = false;
+                state_.currently_detected -= 1;
+                return;
+            }
         }
     }
 
@@ -481,7 +486,7 @@ void CalibrationNode::calibrate(size_t camera_idx) {
     // TODO save the intrinsic by ID accordingly (PR #24)
     if (rms < param_.min_accepted_error) {
         state_.is_mono_calibrated[camera_idx] = true;
-        intrinsics_[camera_idx].storeYaml(param_.path_to_params);
+        // intrinsics_[camera_idx].storeYaml(param_.path_to_params);
         handleResetCommand(camera_idx);
         const bool all_calibrated = std::all_of(
             state_.is_mono_calibrated.begin(), state_.is_mono_calibrated.end(), [](bool elem) {
