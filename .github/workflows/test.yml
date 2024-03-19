@@ -15,8 +15,9 @@ jobs:
     name: Run pre-commit hooks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.10" }
       - uses: pre-commit/action@v3.0.1
 
   extract-image:
@@ -25,13 +26,12 @@ jobs:
     outputs:
       image-url: ${{ steps.extractor.outputs.image_url }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Extract image URL
         id: extractor
         run: |
           IMAGE_URL=$(grep -o 'image:\s*[^ ]*' docker-compose.yaml | cut -d ' ' -f2)
-          echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
-          echo $IMAGE_URL
+          echo "image_url=$IMAGE_URL" | tee -a $GITHUB_OUTPUT
 
   build-and-check:
     name: Build, test, lint
@@ -40,13 +40,8 @@ jobs:
     container:
       image: ${{ needs.extract-image.outputs.image-url}}
 
-    # TODO: Fix in dockerfile
-    defaults:
-      run:
-        shell: bash
-
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Build ROS2 packages
         run: |

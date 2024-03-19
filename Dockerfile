@@ -293,7 +293,7 @@ RUN mkdir -p ${ROS_ROOT} \
         vision_opencv \
         visualization_msgs \
     > ${ROS_ROOT}/ros2.rosinstall \
-    && vcs import ${ROS_TMP} < ${ROS_ROOT}/ros2.rosinstall > /dev/null
+    && vcs import ${ROS_TMP} < ${ROS_ROOT}/ros2.rosinstall
 
 RUN apt-get update -q \
     && rosdep init \
@@ -353,3 +353,7 @@ RUN printf "export CC='${CC}'\n" >> ${HOME}/.bashrc \
     && printf "export RCUTILS_LOGGING_BUFFERED_STREAM=1\n" >> ${HOME}/.bashrc \
     && printf "export RCUTILS_CONSOLE_OUTPUT_FORMAT='[{severity}:{time}] {message}'\n" >> ${HOME}/.bashrc \
     && ln -sf /usr/bin/clang-format-${CLANG_VERSION} /usr/bin/clang-format
+
+WORKDIR /handy
+ENTRYPOINT ["/bin/bash", "-l", "-c"]
+CMD ["trap : TERM INT; sleep infinity & wait"]
