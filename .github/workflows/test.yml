@@ -38,7 +38,9 @@ jobs:
     needs: extract-image
     runs-on: self-hosted
     container:
-      image: ${{ needs.extract-image.outputs.image-url}}
+      image: ${{ needs.extract-image.outputs.image-url }}
+    defaults:
+      run: { shell: bash }
 
     steps:
       - uses: actions/checkout@v4
@@ -51,10 +53,12 @@ jobs:
 
       - name: Test ROS2 packages
         continue-on-error: true
+        # TODO: use make
         run: |
           make test-all
 
       - name: Run Clang-Tidy
+        # TODO: use make
         run: |
           make lint-all
           git diff
