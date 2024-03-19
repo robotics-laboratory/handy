@@ -63,7 +63,8 @@ jobs:
           cd $GITHUB_WORKSPACE/packages
           colcon test --ctest-args tests --merge-install \
             --executor parallel --parallel-workers $(nproc) \
-            --return-code-on-test-failure
+            --return-code-on-test-failure \
+            --event-handlers console_cohesion+
 
       - name: Run Clang-Tidy
         run: |
