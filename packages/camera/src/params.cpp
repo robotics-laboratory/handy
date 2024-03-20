@@ -68,13 +68,13 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(const std::str
 }
 
 CameraIntrinsicParameters CameraIntrinsicParameters::loadFromParams(
-    cv::Size param_image_size, std::vector<double> param_camera_matrix,
-    std::vector<double> param_dist_coefs) {
+    cv::Size param_image_size, const std::vector<double>& param_camera_matrix,
+    const std::vector<double>& param_dist_coefs) {
     CameraIntrinsicParameters result{};
 
-    result.image_size = std::move(param_image_size);
-    result.camera_matrix = cv::Mat(std::move(param_camera_matrix), true);
-    result.dist_coefs = cv::Mat(std::move(param_dist_coefs), true);
+    result.image_size = param_image_size;
+    result.camera_matrix = cv::Mat(param_camera_matrix, true);
+    result.dist_coefs = cv::Mat(param_dist_coefs, true);
     result.initUndistortMaps();
 
     return result;

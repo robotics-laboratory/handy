@@ -17,8 +17,8 @@ struct CameraIntrinsicParameters {
     void storeYaml(const std::string& yaml_path) const;
     static CameraIntrinsicParameters loadFromYaml(const std::string& yaml_path);
     static CameraIntrinsicParameters loadFromParams(
-        cv::Size param_image_size, std::vector<double> param_camera_matrix,
-        std::vector<double> param_dist_coefs);
+        cv::Size param_image_size, const std::vector<double>& param_camera_matrix,
+        const std::vector<double>& param_dist_coefs);
 
     cv::Size image_size{};
     cv::Mat camera_matrix{};
