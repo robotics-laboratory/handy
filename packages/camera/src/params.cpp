@@ -10,7 +10,7 @@
 namespace handy {
 
 CameraIntrinsicParameters::CameraIntrinsicParameters(
-    cv::Size size, cv::Mat camera_matr, const cv::Vec<float, 5>& distort_coefs)
+    cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs)
     : image_size(size), camera_matrix(std::move(camera_matr)), dist_coefs(distort_coefs) {}
 
 void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
@@ -23,11 +23,11 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     output_yaml << YAML::BeginMap;  // global yaml map
 
     output_yaml << YAML::Key << "image_size";
-    output_yaml << YAML::Value << YAML::BeginSeq << image_size.width << image_size.height
-                << YAML::EndSeq;
+    output_yaml << YAML::Value << YAML::Flow << YAML::BeginSeq << image_size.width
+                << image_size.height << YAML::EndSeq;
 
     output_yaml << YAML::Key << "camera_matrix";
-    output_yaml << YAML::Value << YAML::BeginSeq;
+    output_yaml << YAML::Value << YAML::Flow << YAML::BeginSeq;
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
             output_yaml << camera_matrix.at<double>(i, j);
@@ -36,7 +36,7 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     output_yaml << YAML::EndSeq;
 
     output_yaml << YAML::Key << "distorsion_coefs";
-    output_yaml << YAML::Value << YAML::BeginSeq;
+    output_yaml << YAML::Value << YAML::Flow << YAML::BeginSeq;
     for (int i = 0; i < 5; ++i) {
         output_yaml << dist_coefs[i];
     }
@@ -59,9 +59,22 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(const std::str
     const auto yaml_camera_matrix = file["camera_matrix"].as<std::vector<double>>();
     result.camera_matrix = cv::Mat(yaml_camera_matrix, true);
 
-    const auto coefs = file["distorsion_coefs"].as<std::vector<float>>();
+    const auto coefs = file["distorsion_coefs"].as<std::vector<double>>();
     result.dist_coefs = cv::Mat(coefs, true);
 
+    result.initUndistortMaps();
+
+    return result;
+}
+
+CameraIntrinsicParameters CameraIntrinsicParameters::loadFromParams(
+    cv::Size param_image_size, const std::vector<double>& param_camera_matrix,
+    const std::vector<double>& param_dist_coefs) {
+    CameraIntrinsicParameters result{};
+
+    result.image_size = param_image_size;
+    result.camera_matrix = cv::Mat(param_camera_matrix, true);
+    result.dist_coefs = cv::Mat(param_dist_coefs, true);
     result.initUndistortMaps();
 
     return result;
