@@ -5,11 +5,10 @@
 
 SHELL = /bin/bash
 CMAKE_BUILD_TYPE ?= Release
-CMAKE_TOOLS_ADDRESS_SANITIZER ?= OFF
+CMAKE_TOOLS_ADDRESS_SANITIZER ?= '' # -fsanitize=address 
 CMAKE_ARGS ?= \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-    -DCMAKE_TOOLS_ADDRESS_SANITIZER=${CMAKE_TOOLS_ADDRESS_SANITIZER}
 
 FILES_TO_LINT := $(shell find . \( -name '*.h' -or -name '*.cpp' -or -name '*.cc' \) \
                     -not -path '*/build/*' -not -path '*/install/*' -not -path '*/log/*')
@@ -18,45 +17,50 @@ FILES_TO_LINT := $(shell find . \( -name '*.h' -or -name '*.cpp' -or -name '*.cc
 all:
     $(error Please use explicit targets)
 
-.PHONY: build
-build:
+.PHONY: build-all
+build-all:
     source ${ROS_ROOT}/setup.sh
     colcon --log-base /dev/null build \
         --base-paths packages \
         --symlink-install \
-        --cmake-args ${CMAKE_ARGS}
+        --cmake-args ${CMAKE_ARGS}\
+        -DCMAKE_CXX_FLAGS='${CXXFLAGS} ${CMAKE_TOOLS_ADDRESS_SANITIZER}'
 
-.PHONY: test
-test: build
+.PHONY: test-all
+test-all:
     colcon --log-base /dev/null test \
             --ctest-args tests --symlink-install \
             --executor parallel --parallel-workers $$(nproc) \
             --event-handlers console_cohesion+
 
-.PHONY: build-select
+.PHONY: build
 # packages="first_pkg second_pkg third_pkg..."
-build-select:
+build:
     source ${ROS_ROOT}/setup.sh
     colcon --log-base /dev/null build \
         --base-paths packages \
         --symlink-install \
-        --packages-up-to $(packages) \
-        --cmake-args ${CMAKE_ARGS}
+        --cmake-args ${CMAKE_ARGS} \
+        -DCMAKE_CXX_FLAGS='${CXXFLAGS} ${CMAKE_TOOLS_ADDRESS_SANITIZER}' \
+        --packages-up-to $(packages)
 
-.PHONY: test-select
-test-select:build-select
+.PHONY: test
+# packages="first_pkg second_pkg third_pkg..."
+test:
     colcon --log-base /dev/null test --ctest-args tests --symlink-install \
         --executor parallel --parallel-workers $$(nproc) \
         --event-handlers console_cohesion+ --packages-select $(packages)
 
 .PHONY: lint-all
 # args="--fix ..."
-lint-all: build
+lint-all:
     clang-tidy -p=build $(args) $(FILES_TO_LINT)
 
-.PHONY: lint-one
-lint-one: build
-    clang-tidy -p=build $(args) $(FILES_TO_LINT)
+.PHONY: lint
+# args="--fix ..."
+# files="first_file second_file third_file..."
+lint:
+    clang-tidy -p=build $(args) $(files)
 
 .PHONY: clean
 clean:

@@ -50,29 +50,18 @@ jobs:
 
       - name: Build ROS2 packages
         run: |
-          source $ROS_ROOT/setup.bash
-          cd $GITHUB_WORKSPACE/packages
-          colcon build --merge-install --cmake-args \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DCMAKE_TOOLS_ADDRESS_SANITIZER=ON
+          cd $GITHUB_WORKSPACE
+          make build-all CMAKE_TOOLS_ADDRESS_SANITIZER="-fsanitize=address"
           source install/setup.bash
 
       - name: Test ROS2 packages
         continue-on-error: true
         run: |
-          cd $GITHUB_WORKSPACE/packages
-          colcon test --ctest-args tests --merge-install \
-            --executor parallel --parallel-workers $(nproc) \
-            --return-code-on-test-failure \
-            --event-handlers console_cohesion+
+          make test-all
 
       - name: Run Clang-Tidy
         run: |
-          FILES=$(find . \( -name '*.h' -or -name '*.cpp' -or -name '*.cc' \) \
-            -not -path '*/build/*' -not -path '*/install/*' -not -path '*/log/*')
-          echo "Files to be linted:"
-          echo "$FILES"
-          clang-tidy --fix -p=packages/build $FILES
+          make lint-all
           git diff
 
       - name: Check previous steps
