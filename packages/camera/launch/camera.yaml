@@ -53,15 +53,6 @@ launch:
             - { name: "saturation", value: 100 }           # range: 0-200
             - { name: "sharpness", value: 0 }              # range: 0-100
             - { name: "auto_exposure", value: False }
-        - name: "intrinsic_params"
-          param:
-            - name: "image_size"
-              param:
-                - { name: "width", value: 1920 }
-                - { name: "height", value: 1200 }
-            - { name: "camera_matrix", value: [2909.92107945441, 0., 582.1724561319506, 0.,
-                                              3134.621273608562, 532.0677320807733, 0., 0., 1.] }
-            - { name: "distorsion_coefs", value: [-0.7151398, 10.59934, 1.975451e-05, 0.07159046, 1.047479] }
     - name: "2"
       param:
         - name: "exposure_params"
@@ -74,9 +65,3 @@ launch:
             - { name: "saturation", value: 100 }           # range: 0-200
             - { name: "sharpness", value: 0 }              # range: 0-100
             - { name: "auto_exposure", value: False }
-        - name: "intrinsic_params"
-          param:
-            - { name: "image_size", value: [1920, 1200] }
-            - { name: "camera_matrix", value: [2909.92107945441, 0., 582.1724561319506, 0.,
-                                              3134.621273608562, 532.0677320807733, 0., 0., 1.] }
-            - { name: "distorsion_coefs", value: [-0.7151398, 10.59934, 1.975451e-05, 0.07159046, 1.047479] }
