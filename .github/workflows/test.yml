@@ -27,10 +27,20 @@ jobs:
       image-url: ${{ steps.extractor.outputs.image_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install yq
+          apt-get install -y jq
+
       - name: Extract image URL
         id: extractor
         run: |
-          IMAGE_URL=$(grep -o 'image:\s*[^ ]*' docker-compose.yaml | cut -d ' ' -f2)
+          cd $GITHUB_WORKSPACE
+          IMAGE_URL=$(cat docker-compose.yaml | yq ".services.${{ github.event.repository.name }}.image")
           echo "image_url=$IMAGE_URL" | tee -a $GITHUB_OUTPUT
 
   build-and-check:
