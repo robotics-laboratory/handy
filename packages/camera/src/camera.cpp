@@ -140,6 +140,7 @@ CameraNode::CameraNode() : Node("camera_node") {
         }
 
         applyParamsToCamera(state_.camera_handles[i]);
+        initCalibParams(state_.camera_handles[i]);
         abortIfNot("start", CameraPlay(state_.camera_handles[i]));
         RCLCPP_INFO(
             this->get_logger(), "inited API and started camera ID = %d", camera_internal_id);
@@ -394,21 +395,6 @@ void CameraNode::applyParamsToCamera(int handle) {
         RCLCPP_ERROR(this->get_logger(), "camera %d failed to read instrinsic params", camera_idx);
         exit(EXIT_FAILURE);
     }
-
-    // loading intrinsic parameters
-    const int64_t param_image_width = this->declare_parameter<int64_t>(prefix + "image_size.width");
-    const int64_t param_image_height =
-        this->declare_parameter<int64_t>(prefix + "image_size.height");
-    const cv::Size param_image_size(param_image_width, param_image_height);
-
-    const std::vector<double> param_camera_matrix =
-        this->declare_parameter<std::vector<double>>(prefix + "camera_matrix");
-    const std::vector<double> param_dist_coefs =
-        this->declare_parameter<std::vector<double>>(prefix + "distorsion_coefs");
-
-    state_.cameras_intrinsics.push_back(CameraIntrinsicParameters::loadFromParams(
-        param_image_size, param_camera_matrix, param_dist_coefs));
-    RCLCPP_INFO(this->get_logger(), "camera=%i loaded intrinsics", camera_idx);
 }
 
 namespace {
@@ -531,13 +517,11 @@ void CameraNode::handleQueue(int camera_idx) {
     }
 }
 
-void CameraNode::initCalibParams() {
-    for (int idx = 0; idx < param_.camera_num; ++idx) {
-        RCLCPP_INFO_STREAM(this->get_logger(), "loading camera " << idx << " parameters");
-        std::string calibration_name = "camera_" + std::to_string(idx);
-        cameras_intrinsics_.push_back(
-            CameraIntrinsicParameters::loadFromYaml(param_.calibration_file_path, idx));
-    }
+void CameraNode::initCalibParams(int camera_handle) {
+    const int camera_id = getCameraId(camera_handle);
+    RCLCPP_INFO(this->get_logger(), "loading camera ID=%d parameters", camera_id);
+    state_.cameras_intrinsics.push_back(
+        CameraIntrinsicParameters::loadFromYaml(param_.calibration_file_path, camera_id));
 }
 
 }  // namespace handy::camera

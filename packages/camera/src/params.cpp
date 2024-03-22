@@ -116,25 +116,6 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
     const auto coefs = intrinsics[camera_id_str]["distortion_coefs"].as<std::vector<float>>();
     result.dist_coefs = cv::Mat(coefs, true);
 
-    result.initUndistortMaps();
-
-    return result;
-}
-
-CameraIntrinsicParameters CameraIntrinsicParameters::loadFromParams(
-    cv::Size param_image_size, const std::vector<double>& param_camera_matrix,
-    const std::vector<double>& param_dist_coefs) {
-    CameraIntrinsicParameters result{};
-
-    result.image_size = param_image_size;
-    result.camera_matrix = cv::Mat(param_camera_matrix, true);
-    result.dist_coefs = cv::Mat(param_dist_coefs, true);
-    result.initUndistortMaps();
-
-    return result;
-}
-
-void CameraIntrinsicParameters::initUndistortMaps() {
     // note that new camera matrix equals initial camera matrix
     // because neither scaling nor cropping is used when undistoring
     cv::initUndistortRectifyMap(
