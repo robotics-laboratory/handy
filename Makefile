@@ -5,7 +5,7 @@
 
 SHELL = /bin/bash
 CMAKE_BUILD_TYPE ?= Release
-CMAKE_TOOLS_ADDRESS_SANITIZER ?= '' # -fsanitize=address 
+CMAKE_TOOLS_ADDRESS_SANITIZER ?= '' # -fsanitize=address
 CMAKE_ARGS ?= \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
@@ -53,15 +53,15 @@ test:
         --event-handlers console_cohesion+ --packages-select $(packages)
 
 .PHONY: lint-all
-# args="--fix ..."
+# args="-fix ..."
 lint-all:
-    clang-tidy -p=build $(args) $(FILES_TO_LINT)
+    run-clang-tidy -p=build $(args) $(FILES_TO_LINT)
 
 .PHONY: lint
-# args="--fix ..."
+# args="-fix ..."
 # files="first_file second_file third_file..."
 lint:
-    clang-tidy -p=build $(args) $(files)
+    run-clang-tidy -p=build $(args) $(files)
 
 .PHONY: clean
 clean:

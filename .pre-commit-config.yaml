@@ -20,7 +20,7 @@ repos:
       - id: yamllint
         exclude: ^.clang-tidy$
         # TODO: Discuss yamllint settings (e.g. line-length)
-        args: [--strict, -d, "{extends: relaxed, rules: {line-length: {max: 120}}}"]
+        args: [--strict, -d, ".yamllint-config.yaml"]
 
   # CMake linter and formatter
   - repo: https://github.com/cheshirekow/cmake-format-precommit

@@ -1,0 +1,19 @@
+rules:
+  line-length: 
+    max: 120
+    allow-non-breakable-words: true
+    
+  indentation: 
+    spaces: 2
+    indent-sequences: true
+  
+  commas: 
+    max-spaces-before: 0
+    min-spaces-after: 1
+
+  comments: 
+    require-starting-space: true
+
+  quoted-strings:
+    quote-type: double
+    required: false
