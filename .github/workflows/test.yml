@@ -53,12 +53,9 @@ jobs:
 
       - name: Test ROS2 packages
         continue-on-error: true
-        # TODO: use make
-        run: |
-          make test-all
+        run: make test-all
 
       - name: Run Clang-Tidy
-        # TODO: use make
         run: |
           make lint-all
           git diff
