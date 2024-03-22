@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install yq
-          apt-get install -y jq
+          sudo apt-get install -y jq
 
       - name: Extract image URL
         id: extractor
