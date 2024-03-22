@@ -6,10 +6,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "srv/CalibrationCommand.srv"
-  DEPENDENCIES builtin_interfaces
-)
+rosidl_generate_interfaces(${PROJECT_NAME} "srv/CalibrationCommand.srv"
+                           DEPENDENCIES builtin_interfaces)
 
 ament_export_dependencies(rosidl_default_runtime)
 

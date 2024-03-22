@@ -1,7 +1,8 @@
+import argparse
+import os
+
 import cv2
 import numpy as np
-import os
-import argparse
 import yaml
 
 BGR_UNDISTORT_PATH = "bgr_image_undistort"
@@ -25,9 +26,10 @@ class Intrinsics:
 
     def undistort_image(self, image):
         cur_image_size = image.shape[:2]
-        assert (
-            self.image_size == cur_image_size
-        ), f"Images of different sizes were provided: {self.image_size} != {cur_image_size}"
+        assert self.image_size == cur_image_size, (
+            "Images of different sizes were provided: "
+            + f"{self.image_size} != {cur_image_size}"
+        )
 
         return cv2.remap(image, self.mapx, self.mapy, cv2.INTER_NEAREST)
 

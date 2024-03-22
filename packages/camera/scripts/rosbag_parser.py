@@ -1,10 +1,11 @@
-import rosbag2_py
-from rosidl_runtime_py.utilities import get_message
-from rclpy.serialization import deserialize_message
-import cv2
-import os
 import argparse
+import os
+
+import cv2
+import rosbag2_py
 from cv_bridge import CvBridge
+from rclpy.serialization import deserialize_message
+from rosidl_runtime_py.utilities import get_message
 
 FRAME_SIZE = (1024, 1280)
 
