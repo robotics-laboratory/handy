@@ -15,13 +15,13 @@ find_package(yaml_cpp_vendor REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(Boost REQUIRED)
 find_package(camera_srvs REQUIRED)
+find_package(lock_free_queue REQUIRED)
 
 
 add_library(mvsdk SHARED IMPORTED)
 set_target_properties(mvsdk PROPERTIES IMPORTED_LOCATION "/lib/libMVSDK.so")
 
-# add_library(queue_lib SHARED IMPORTED)
-# set_target_properties(queue_lib PROPERTIES IMPORTED_LOCATION "/handy/install/lock_free_queue/lib/libqueue_lib.so")
+add_library(queue_lib INTERFACE)
 
 add_executable(camera src/camera_main.cpp  src/camera.cpp src/params.cpp src/camera_status.cpp)
 add_executable(calibration src/calibration_main.cpp  src/calibration.cpp src/params.cpp)
@@ -40,7 +40,8 @@ ament_target_dependencies(
     cv_bridge
     OpenCV
     sensor_msgs
-    yaml_cpp_vendor)
+    yaml_cpp_vendor
+    lock_free_queue)
 
 ament_target_dependencies(
   calibration
@@ -57,8 +58,7 @@ ament_target_dependencies(
     Boost
     camera_srvs)
 
-target_link_libraries(camera mvsdk)
-# target_link_libraries(camera queue_lib)
+target_link_libraries(camera mvsdk queue_lib)
 
 install(TARGETS camera calibration
    DESTINATION lib/${PROJECT_NAME})

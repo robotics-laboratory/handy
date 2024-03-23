@@ -6,7 +6,7 @@
 #include <opencv2/core/core.hpp>
 
 #include "CameraApi.h"
-#include "lock_free_queue_impl.h"
+#include "lock_free_queue.h"
 #include "params.h"
 
 #include <chrono>
