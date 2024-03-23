@@ -20,8 +20,8 @@ find_package(camera_srvs REQUIRED)
 add_library(mvsdk SHARED IMPORTED)
 set_target_properties(mvsdk PROPERTIES IMPORTED_LOCATION "/lib/libMVSDK.so")
 
-add_library(queue_lib SHARED IMPORTED)
-set_target_properties(queue_lib PROPERTIES IMPORTED_LOCATION "/handy/install/lock_free_queue/lib/libqueue_lib.so")
+# add_library(queue_lib SHARED IMPORTED)
+# set_target_properties(queue_lib PROPERTIES IMPORTED_LOCATION "/handy/install/lock_free_queue/lib/libqueue_lib.so")
 
 add_library(queue_lib SHARED IMPORTED)
 set_target_properties(queue_lib PROPERTIES IMPORTED_LOCATION "/handy/install/lock_free_queue/lib/libqueue_lib.so")
@@ -58,7 +58,7 @@ ament_target_dependencies(
   camera_srvs)
 
 target_link_libraries(camera mvsdk)
-target_link_libraries(camera queue_lib)
+# target_link_libraries(camera queue_lib)
 
 install(TARGETS camera calibration DESTINATION lib/${PROJECT_NAME})
 
