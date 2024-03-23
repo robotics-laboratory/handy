@@ -203,8 +203,8 @@ void CalibrationNode::initSignals() {
 void CalibrationNode::handleFrame(
     const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg, size_t camera_idx) {
     // exit callback if frames should not be captured or if camera_idx is already calibrated
-    if (state_.global_calibration_state != kCapturing &&
-            state_.global_calibration_state != kStereoCapturing ||
+    if ((state_.global_calibration_state != kCapturing &&
+         state_.global_calibration_state != kStereoCapturing) ||
         (state_.is_mono_calibrated[camera_idx] && state_.global_calibration_state == kCapturing)) {
         return;
     }
