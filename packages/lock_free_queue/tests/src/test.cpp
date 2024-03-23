@@ -6,6 +6,7 @@
 #include <thread>
 #include <vector>
 #include <atomic>
+#include <iostream>
 
 using namespace handy;
 
@@ -111,4 +112,9 @@ TEST(Correctness, NoQueueLock) {
     ASSERT_TRUE(queue.push(0));
     ASSERT_TRUE(queue.pop(k));
     ASSERT_EQ(k, 0);
+}
+
+int main(int argc, char** argv) {
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
