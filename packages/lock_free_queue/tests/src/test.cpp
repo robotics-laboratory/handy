@@ -2,16 +2,11 @@
 
 #include <gtest/gtest.h>
 
-#include <chrono>
 #include <thread>
 #include <vector>
-#include <atomic>
-#include <iostream>
-
-using namespace handy;
 
 TEST(Correctness, push) {
-    LockFreeQueue<int> queue(2);
+    handy::LockFreeQueue<int> queue(2);
     ASSERT_TRUE(queue.push(2));
     ASSERT_TRUE(queue.push(2));
     ASSERT_FALSE(queue.push(2));
@@ -19,38 +14,39 @@ TEST(Correctness, push) {
 }
 
 TEST(Correctness, pop) {
-    int val;
-    LockFreeQueue<int> queue(2);
-    ASSERT_FALSE(queue.pop(val));
-    ASSERT_FALSE(queue.pop(val));
+    int value;
+    handy::LockFreeQueue<int> queue(2);
+    ASSERT_FALSE(queue.pop(value));
+    ASSERT_FALSE(queue.pop(value));
 }
 
 TEST(Correctness, pushpop) {
-    int val = 0;
-    LockFreeQueue<int> queue(2);
+    int value = 0;
+    handy::LockFreeQueue<int> queue(2);
     ASSERT_TRUE(queue.push(1));
-    ASSERT_TRUE(queue.pop(val));
-    ASSERT_EQ(val, 1);
-    ASSERT_FALSE(queue.pop(val));
+    ASSERT_TRUE(queue.pop(value));
+    ASSERT_EQ(value, 1);
+    ASSERT_FALSE(queue.pop(value));
 
     ASSERT_TRUE(queue.push(2));
     ASSERT_TRUE(queue.push(3));
     ASSERT_FALSE(queue.push(4));
 
-    ASSERT_TRUE(queue.pop(val));
-    ASSERT_EQ(val, 2);
-    ASSERT_TRUE(queue.pop(val));
-    ASSERT_EQ(val, 3);
+    ASSERT_TRUE(queue.pop(value));
+    ASSERT_EQ(value, 2);
+    ASSERT_TRUE(queue.pop(value));
+    ASSERT_EQ(value, 3);
 
-    ASSERT_FALSE(queue.pop(val));
+    ASSERT_FALSE(queue.pop(value));
 }
 
-TEST(Correctness, NoSpuriousFails) {
+TEST(Performance, NoSpuriousFails) {
     const int n = 1024 * 1024;
-    const int n_threads = 4;
-    LockFreeQueue<int> queue(n * n_threads);
+    const int n_threads = 8;
+    handy::LockFreeQueue<int> queue(n * n_threads);
 
     std::vector<std::thread> writers;
+    // check that all threads managed to push elements without fake fails
     for (int i = 0; i < n_threads; i++) {
         writers.emplace_back([&] {
             for (int j = 0; j < n; ++j) {
@@ -64,6 +60,8 @@ TEST(Correctness, NoSpuriousFails) {
     }
 
     std::vector<std::thread> readers;
+    // check that all threads managed to pop elements without fake fails
+    // and no elements were lost
     for (int i = 0; i < n_threads; i++) {
         readers.emplace_back([&] {
             for (int j = 0; j < n; ++j) {
@@ -78,27 +76,29 @@ TEST(Correctness, NoSpuriousFails) {
     }
 }
 
-TEST(Correctness, NoQueueLock) {
+TEST(Performance, NoQueueLock) {
     const int n = 1024 * 1024;
     const int n_threads = 8;
-    LockFreeQueue<int> queue(64);
+    handy::LockFreeQueue<int> queue(64);
 
     std::vector<std::thread> threads;
-    std::atomic<int> ids = {0};
+    int id = 0;
     for (int i = 0; i < n_threads; i++) {
-        threads.emplace_back([&] {
-            int id = ids++;
-            if (id % 2) {
-                for (int j = 0; j < n; ++j) {
+        const int current_id = id++;
+        if (current_id % 2 == 0) {
+            threads.emplace_back([&] {
+                for (int cnt = 0; cnt < n; ++cnt) {
                     queue.push(0);
                 }
-            } else {
-                for (int j = 0; j < n; ++j) {
-                    int k;
-                    queue.pop(k);
+            });
+        } else {
+            threads.emplace_back([&] {
+                for (int cnt = 0; cnt < n; ++cnt) {
+                    int _;
+                    queue.pop(_);
                 }
-            }
-        });
+            });
+        }
     }
 
     for (auto& t : threads) {
@@ -106,12 +106,16 @@ TEST(Correctness, NoQueueLock) {
     }
 
     int k;
+    // empty queue
     while (queue.pop(k)) {
         queue.pop(k);
     }
+    // check that it still works
     ASSERT_TRUE(queue.push(0));
     ASSERT_TRUE(queue.pop(k));
     ASSERT_EQ(k, 0);
+    // must be empty
+    ASSERT_FALSE(queue.pop(k));
 }
 
 int main(int argc, char** argv) {
