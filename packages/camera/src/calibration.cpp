@@ -22,6 +22,27 @@ geometry_msgs::msg::Point toMsgPoint(const handy::calibration::Point& boost_poin
     return point;
 }
 
+camera_srvs_msgs::msg::DetectionResult toDetectionResultMsg(
+    const builtin_interfaces::msg::Time& timestamp, const std::vector<cv::Point2f>& corners,
+    const std::vector<int>& ids, size_t camera_idx) {
+    camera_srvs_msgs::msg::DetectionResult msg;
+    msg.timestamp = std::move(timestamp);
+    msg.ids = std::move(ids);
+    msg.camera_idx = static_cast<int>(camera_idx);
+    for (const auto& corner : corners) {
+        msg.corners.emplace_back(corner.x, corner.y);
+    }
+    return msg;
+}
+
+std::vector<cv::Point2f> toCvPoints(const std::vector<geometry_msgs::msg::Point>& corners) {
+    std::vector<cv::Point2f> result;
+    for (const auto& corner : corners) {
+        result.emplace_back(corner.x, corner.y);
+    }
+    return result;
+}
+
 }  // namespace
 namespace handy::calibration {
 /**
@@ -191,7 +212,14 @@ void CalibrationNode::initSignals() {
             this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
                 calib_name_base + "/corner_markers", 10));
     }
-    service_.button_service = this->create_service<camera_srvs::srv::CalibrationCommand>(
+    signal_.detection_result = this->create_publisher<camera_srvs_msgs::msg::DetectionResult>(
+        "/calibration/detections", 10);
+    slot_.detection_result = this->create_subscription<camera_srvs_msgs::msg::DetectionResult>(
+        "/calibration/detections",
+        10,
+        std::bind(CalibrationNode::handleDetection, std::placeholders::_1));
+
+    service_.button_service = this->create_service<camera_srvs_msgs::srv::CalibrationCommand>(
         "/calibration/button",
         std::bind(
             &CalibrationNode::onButtonClick, this, std::placeholders::_1, std::placeholders::_2));
@@ -247,6 +275,14 @@ void CalibrationNode::handleFrame(
         state_.waiting[camera_idx] = false;
         return;
     }
+
+    if (state_.global_calibration_state == kStereoCapturing) {
+        // TODO save shared_ptr<pair>??
+        signal_.detection_result->publish(toDetectionResultMsg(
+            image_ptr->header.stamp, current_corners, current_ids, camera_idx));
+        return;
+    }
+
     param_.charuco_board.matchImagePoints(
         current_corners, current_ids, current_obj_points, current_image_points);
 
@@ -302,9 +338,20 @@ void CalibrationNode::handleFrame(
     }
 }
 
+void CalibrationNode::handleDetection(const camera_srvs_msgs::msg::DetectionResult& msg) {
+    state_.last_detection_check_mutex.lock();
+    // also save IDS
+    state_.last_detetections[msg.camera_idx][msg.timestamp.nanosec] = toCvPoints(msg.corners);
+    int i = 0;
+    // TODO findClosestIters 
+    const std::vector<std::map<uint32_t, std::vector<cv::Point2f>, std::greater<size_t>>::iterator> = findClosestIters(state_.last_detetections);
+    // intersect by ids
+
+}
+
 void CalibrationNode::onButtonClick(
-    const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
-    const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& /*response*/) {
+    const camera_srvs_msgs::srv::CalibrationCommand::Request::SharedPtr& request,
+    const camera_srvs_msgs::srv::CalibrationCommand::Response::SharedPtr& /*response*/) {
     if (state_.global_calibration_state == kStereoCalibrating ||
         state_.global_calibration_state == kMonoCalibrating) {
         return;
