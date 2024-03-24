@@ -14,7 +14,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(Boost REQUIRED)
-find_package(camera_srvs REQUIRED)
+find_package(camera_srvs_msgs REQUIRED)
 
 add_library(mvsdk SHARED IMPORTED)
 set_target_properties(mvsdk PROPERTIES IMPORTED_LOCATION "/lib/libMVSDK.so")

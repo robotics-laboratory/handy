@@ -1,7 +1,8 @@
 #pragma once
 
 #include "params.h"
-#include "camera_srvs/srv/calibration_command.hpp"
+#include "camera_srvs_msgs/srv/calibration_command.hpp"
+#include "camera_srvs_msgs/msg/detection_result.hpp"
 
 #include <cv_bridge/cv_bridge.hpp>
 #include <foxglove_msgs/msg/image_marker_array.hpp>
@@ -62,8 +63,8 @@ class CalibrationNode : public rclcpp::Node {
     void publishCalibrationState() const;
 
     void onButtonClick(
-        const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
-        const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& response);
+        const camera_srvs_msgs::srv::CalibrationCommand::Request::SharedPtr& request,
+        const camera_srvs_msgs::srv::CalibrationCommand::Response::SharedPtr& response);
 
     void calibrate(size_t camera_idx);
     void stereoCalibrate();
@@ -95,7 +96,7 @@ class CalibrationNode : public rclcpp::Node {
     } slot_{};
 
     struct Services {
-        rclcpp::Service<camera_srvs::srv::CalibrationCommand>::SharedPtr button_service = nullptr;
+        rclcpp::Service<camera_srvs_msgs::srv::CalibrationCommand>::SharedPtr button_service = nullptr;
     } service_{};
 
     struct Params {

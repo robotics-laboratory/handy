@@ -191,7 +191,7 @@ void CalibrationNode::initSignals() {
             this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
                 calib_name_base + "/corner_markers", 10));
     }
-    service_.button_service = this->create_service<camera_srvs::srv::CalibrationCommand>(
+    service_.button_service = this->create_service<camera_srvs_msgs::srv::CalibrationCommand>(
         "/calibration/button",
         std::bind(
             &CalibrationNode::onButtonClick, this, std::placeholders::_1, std::placeholders::_2));
@@ -303,8 +303,8 @@ void CalibrationNode::handleFrame(
 }
 
 void CalibrationNode::onButtonClick(
-    const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
-    const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& /*response*/) {
+    const camera_srvs_msgs::srv::CalibrationCommand::Request::SharedPtr& request,
+    const camera_srvs_msgs::srv::CalibrationCommand::Response::SharedPtr& /*response*/) {
     if (state_.global_calibration_state == kStereoCalibrating ||
         state_.global_calibration_state == kMonoCalibrating) {
         return;
