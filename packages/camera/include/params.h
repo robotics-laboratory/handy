@@ -17,9 +17,12 @@ struct CameraIntrinsicParameters {
 
     void storeYaml(const std::string& yaml_path) const;
     static CameraIntrinsicParameters loadFromYaml(const std::string& yaml_path, int camera_id = 1);
+
+    // TODO replace before merge
+    // see PR #24
     CameraIntrinsicParameters loadFromParams(
         cv::Size param_image_size, const std::vector<double>& param_camera_matrix,
-        const std::vector<double>& param_dist_coefs);
+        const std::vector<double>& param_dist_coefs){};
     static bool saveStereoCalibration(const std::string& yaml_path, cv::Mat& R, cv::Mat& T){};
 
     cv::Size image_size{};
