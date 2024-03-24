@@ -22,6 +22,7 @@
 #include <atomic>
 #include <cstdint>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -60,6 +61,7 @@ class CalibrationNode : public rclcpp::Node {
 
     void handleFrame(
         const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg, size_t camera_idx);
+    void handleDetection(const camera_srvs_msgs::msg::DetectionResult& msg);
     void publishCalibrationState() const;
 
     void onButtonClick(
@@ -88,15 +90,20 @@ class CalibrationNode : public rclcpp::Node {
         std::vector<rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr>
             detected_corners;
 
+        rclcpp::Publisher<camera_srvs_msgs::msg::DetectionResult>::SharedPtr detection_result =
+            nullptr;
         rclcpp::Publisher<std_msgs::msg::Int16>::SharedPtr calibration_state = nullptr;
     } signal_{};
 
     struct Slots {
         std::vector<rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr> image_sub;
+        rclcpp::Subscription<camera_srvs_msgs::msg::DetectionResult>::SharedPtr detection_result =
+            nullptr;
     } slot_{};
 
     struct Services {
-        rclcpp::Service<camera_srvs_msgs::srv::CalibrationCommand>::SharedPtr button_service = nullptr;
+        rclcpp::Service<camera_srvs_msgs::srv::CalibrationCommand>::SharedPtr button_service =
+            nullptr;
     } service_{};
 
     struct Params {
@@ -124,6 +131,10 @@ class CalibrationNode : public rclcpp::Node {
         std::vector<std::vector<Polygon>> polygons_all;
         std::vector<foxglove_msgs::msg::ImageMarkerArray> board_markers_array;
         std::vector<foxglove_msgs::msg::ImageMarkerArray> board_corners_array;
+
+        // sorting in descending order
+        std::vector<std::map<uint32_t, std::vector<cv::Point2f>, std::greater<size_t>>> last_detetections;
+        std::mutex last_detection_check_mutex;
 
         // unique ID for marker creation
         std::atomic<int> last_marker_id = 0;
