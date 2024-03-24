@@ -50,7 +50,7 @@ ament_target_dependencies(
     geometry_msgs
     std_msgs
     Boost
-    camera_srvs)
+    camera_srvs_msgs)
 
 target_link_libraries(camera mvsdk)
 
