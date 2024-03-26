@@ -22,27 +22,6 @@ geometry_msgs::msg::Point toMsgPoint(const handy::calibration::Point& boost_poin
     return point;
 }
 
-camera_srvs_msgs::msg::DetectionResult toDetectionResultMsg(
-    const builtin_interfaces::msg::Time& timestamp, const std::vector<cv::Point2f>& corners,
-    const std::vector<int>& ids, size_t camera_idx) {
-    camera_srvs_msgs::msg::DetectionResult msg;
-    msg.timestamp = std::move(timestamp);
-    msg.ids = std::move(ids);
-    msg.camera_idx = static_cast<int>(camera_idx);
-    for (const auto& corner : corners) {
-        msg.corners.emplace_back(corner.x, corner.y);
-    }
-    return msg;
-}
-
-std::vector<cv::Point2f> toCvPoints(const std::vector<geometry_msgs::msg::Point>& corners) {
-    std::vector<cv::Point2f> result;
-    for (const auto& corner : corners) {
-        result.emplace_back(corner.x, corner.y);
-    }
-    return result;
-}
-
 }  // namespace
 namespace handy::calibration {
 /**
@@ -122,33 +101,32 @@ CalibrationNode::CalibrationNode() : Node("calibration_node") {
     initSignals();
     RCLCPP_INFO_STREAM(this->get_logger(), "Signals initialised");
 
-    cv::Size pattern_size{7, 10};
-    for (int i = 0; i < pattern_size.height; ++i) {
-        for (int j = 0; j < pattern_size.width; ++j) {
+    for (int i = 0; i < kPatternSize.height; ++i) {
+        for (int j = 0; j < kPatternSize.width; ++j) {
             param_.square_obj_points.emplace_back(i, j, 0);
         }
     }
 
     for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
+        // TODO add loading params from YAML, PR #24
         // intrinsics_.push_back(CameraIntrinsicParameters::loadFromYaml(
         //     param_.path_to_params, param_.cameras_to_calibrate[i]));
         // state_.is_mono_calibrated.push_back(intrinsics_.back().isCalibrated());
-        state_.is_mono_calibrated.push_back(true);
+        state_.is_mono_calibrated.push_back(false);
         intrinsics_.emplace_back();
         state_.board_markers_array.emplace_back();
         state_.board_corners_array.emplace_back();
-        state_.image_points_all.emplace_back();
-        state_.obj_points_all.emplace_back();
+        state_.detected_ids_all.emplace_back();
+        state_.detectected_corners_all.emplace_back();
         state_.polygons_all.emplace_back();
     }
-    state_.global_calibration_state = kStereoCapturing;
-    state_.waiting = std::vector<std::atomic<bool>>(param_.cameras_to_calibrate.size());
+    state_.global_calibration_state = kNotCalibrated;
 
     timer_.calibration_state = this->create_wall_timer(
         std::chrono::milliseconds(250), [this] { publishCalibrationState(); });
 
     cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-    param_.charuco_board = cv::aruco::CharucoBoard(pattern_size, 0.04f, 0.02f, dictionary);
+    param_.charuco_board = cv::aruco::CharucoBoard(kPatternSize, 0.04f, 0.02f, dictionary);
     param_.charuco_board.setLegacyPattern(true);
 
     cv::aruco::DetectorParameters detector_params;
@@ -212,12 +190,6 @@ void CalibrationNode::initSignals() {
             this->create_publisher<foxglove_msgs::msg::ImageMarkerArray>(
                 calib_name_base + "/corner_markers", 10));
     }
-    signal_.detection_result = this->create_publisher<camera_srvs_msgs::msg::DetectionResult>(
-        "/calibration/detections", 10);
-    slot_.detection_result = this->create_subscription<camera_srvs_msgs::msg::DetectionResult>(
-        "/calibration/detections",
-        10,
-        std::bind(CalibrationNode::handleDetection, std::placeholders::_1));
 
     service_.button_service = this->create_service<camera_srvs_msgs::srv::CalibrationCommand>(
         "/calibration/button",
@@ -235,14 +207,6 @@ void CalibrationNode::handleFrame(
          state_.global_calibration_state != kStereoCapturing) ||
         (state_.is_mono_calibrated[camera_idx] && state_.global_calibration_state == kCapturing)) {
         return;
-    }
-
-    if (state_.global_calibration_state == kStereoCapturing) {
-        // exchange returns the previous value of atomic
-        // so, if there was true, we return, else we procceed
-        if (state_.waiting[camera_idx].exchange(true)) {
-            return;
-        }
     }
 
     cv_bridge::CvImagePtr image_ptr = cv_bridge::toCvCopy(msg, "bgr8");
@@ -272,14 +236,6 @@ void CalibrationNode::handleFrame(
     if (current_corners.size() < 20) {
         state_.board_corners_array[camera_idx].markers.clear();
         signal_.detected_corners[camera_idx]->publish(state_.board_corners_array[camera_idx]);
-        state_.waiting[camera_idx] = false;
-        return;
-    }
-
-    if (state_.global_calibration_state == kStereoCapturing) {
-        // TODO save shared_ptr<pair>??
-        signal_.detection_result->publish(toDetectionResultMsg(
-            image_ptr->header.stamp, current_corners, current_ids, camera_idx));
         return;
     }
 
@@ -289,37 +245,19 @@ void CalibrationNode::handleFrame(
     state_.board_corners_array[camera_idx].markers.clear();
     if (current_ids.size() < 30) {
         signal_.detected_corners[camera_idx]->publish(state_.board_corners_array[camera_idx]);
-        state_.waiting[camera_idx] = false;
         return;
     }
     if (param_.publish_preview_markers) {
         appendCornerMarkers(current_corners, camera_idx);
         signal_.detected_corners[camera_idx]->publish(state_.board_corners_array[camera_idx]);
     }
-    if (!checkMaxSimilarity(current_corners, camera_idx)) {
-        state_.waiting[camera_idx] = false;
-        return;
-    }
 
-    if (state_.global_calibration_state == kStereoCapturing) {
-        const size_t currently_detected = state_.currently_detected.fetch_add(1) + 1;
-        RCLCPP_INFO(
-            this->get_logger(), "ID=%d detected chessboard: %d", camera_idx, currently_detected);
-        // doubled latency to avoid too many skipped frames
-        const std::chrono::duration<double, std::milli> latency(2 * 1000.0 / param_.fps);
-        std::mutex mutex;
-        std::unique_lock<std::mutex> lock(mutex);
-        if (currently_detected == param_.cameras_to_calibrate.size()) {
-            RCLCPP_INFO(this->get_logger(), "ID=%d detected all, notifying", camera_idx);
-            state_.condvar_to_sync_cameras.notify_all();
-        } else {
-            const std::cv_status status = state_.condvar_to_sync_cameras.wait_for(lock, latency);
-            if (status == std::cv_status::timeout) {
-                state_.waiting[camera_idx] = false;
-                state_.currently_detected -= 1;
-                return;
-            }
-        }
+    // if capturing frames for stereo calibration is in progress
+    // then no need to check for similarity
+    if (state_.global_calibration_state != kStereoCapturing &&
+        !checkMaxSimilarity(current_corners, camera_idx)) {
+        RCLCPP_INFO(this->get_logger(), "return at similarity check");
+        return;
     }
 
     if (param_.publish_preview_markers) {
@@ -328,25 +266,17 @@ void CalibrationNode::handleFrame(
         signal_.detected_boards[camera_idx]->publish(state_.board_markers_array[camera_idx]);
     }
 
-    state_.obj_points_all[camera_idx].push_back(current_obj_points);
-    state_.image_points_all[camera_idx].push_back(current_image_points);
+    std::unique_ptr<int[]> new_ids(new int[current_ids.size()]);
+    std::copy(current_ids.begin(), current_ids.end(), new_ids.get());
+    state_.detected_ids_all[camera_idx][image_ptr->header.stamp.nanosec] =
+        std::make_pair(current_ids.size(), std::move(new_ids));
+
+    std::unique_ptr<cv::Point2f[]> new_corners(new cv::Point2f[current_corners.size()]);
+    std::copy(current_corners.begin(), current_corners.end(), new_corners.get());
+    state_.detectected_corners_all[camera_idx][image_ptr->header.stamp.nanosec] =
+        std::make_pair(current_corners.size(), std::move(new_corners));
+
     state_.polygons_all[camera_idx].push_back(convertToBoostPolygon(current_corners));
-
-    if (state_.global_calibration_state == kStereoCapturing) {
-        state_.currently_detected -= 1;
-        state_.waiting[camera_idx] = false;
-    }
-}
-
-void CalibrationNode::handleDetection(const camera_srvs_msgs::msg::DetectionResult& msg) {
-    state_.last_detection_check_mutex.lock();
-    // also save IDS
-    state_.last_detetections[msg.camera_idx][msg.timestamp.nanosec] = toCvPoints(msg.corners);
-    int i = 0;
-    // TODO findClosestIters 
-    const std::vector<std::map<uint32_t, std::vector<cv::Point2f>, std::greater<size_t>>::iterator> = findClosestIters(state_.last_detetections);
-    // intersect by ids
-
 }
 
 void CalibrationNode::onButtonClick(
@@ -386,22 +316,6 @@ bool CalibrationNode::checkMaxSimilarity(
         [&](const Polygon& prev_poly) {
             return getIou(prev_poly, new_poly) <= param_.iou_threshold;
         });
-}
-
-bool CalibrationNode::checkEqualFrameNum() const {
-    const size_t required_frames_num = state_.image_points_all[0].size();
-    return std::all_of(
-               state_.image_points_all.begin(),
-               state_.image_points_all.end(),
-               [required_frames_num](const std::vector<std::vector<cv::Point2f>>& elem) {
-                   return elem.size() == required_frames_num;
-               }) &&
-           std::all_of(
-               state_.obj_points_all.begin(),
-               state_.obj_points_all.end(),
-               [required_frames_num](const std::vector<std::vector<cv::Point3f>>& elem) {
-                   return elem.size() == required_frames_num;
-               });
 }
 
 int CalibrationNode::getImageCoverage(size_t camera_idx) const {
@@ -489,8 +403,8 @@ void CalibrationNode::handleResetCommand(int camera_idx) {
         if (camera_idx != -1 && camera_idx != i) {
             continue;
         }
-        state_.image_points_all[i].clear();
-        state_.obj_points_all[i].clear();
+        state_.detected_ids_all[i].clear();
+        state_.detectected_corners_all[i].clear();
         state_.board_markers_array[i].markers.clear();
         state_.polygons_all[i].clear();
         signal_.detected_boards[i]->publish(state_.board_markers_array[i]);  // to clear the screen
@@ -501,6 +415,30 @@ void CalibrationNode::calibrate(size_t camera_idx) {
     state_.global_calibration_state = kMonoCalibrating;
     publishCalibrationState();
     RCLCPP_INFO(this->get_logger(), "Calibration ID=%ld inialized", camera_idx);
+
+    std::vector<std::vector<cv::Point2f>> image_points{};
+    std::vector<std::vector<cv::Point3f>> obj_points{};
+
+    // fill image and object points
+    for (auto id_iter = state_.detectected_corners_all[camera_idx].begin();
+         id_iter != state_.detectected_corners_all[camera_idx].end();
+         ++id_iter) {
+        const uint32_t timestamp = id_iter->first;
+        auto& [size, data_ptr] = id_iter->second;
+
+        // CV_32FC2 -- 4 bytes, 2 channels -- x and y coordinates
+        cv::Mat current_corners(cv::Size{1, size}, CV_32FC2, data_ptr.get());
+        cv::Mat current_ids(
+            cv::Size{1, size},
+            CV_32SC1,
+            state_.detected_ids_all[camera_idx][timestamp].second.get());
+
+        image_points.emplace_back();
+        obj_points.emplace_back();
+        param_.charuco_board.matchImagePoints(
+            current_corners, current_ids, obj_points.back(), image_points.back());
+    }
+
     int coverage_percentage = getImageCoverage(camera_idx);
     if (coverage_percentage < param_.required_board_coverage) {
         RCLCPP_INFO(this->get_logger(), "Coverage of %d is not sufficient", coverage_percentage);
@@ -510,9 +448,10 @@ void CalibrationNode::calibrate(size_t camera_idx) {
 
     intrinsics_[camera_idx].image_size = *state_.frame_size;
     std::vector<double> per_view_errors;
+
     double rms = cv::calibrateCamera(
-        state_.obj_points_all[camera_idx],
-        state_.image_points_all[camera_idx],
+        obj_points,
+        image_points,
         *state_.frame_size,
         intrinsics_[camera_idx].camera_matrix,
         intrinsics_[camera_idx].dist_coefs,
@@ -532,7 +471,7 @@ void CalibrationNode::calibrate(size_t camera_idx) {
 
     // TODO save the intrinsic by ID accordingly (PR #24)
     if (rms < param_.min_accepted_error) {
-        state_.is_mono_calibrated[camera_idx] = true;
+        state_.is_mono_calibrated[camera_idx] = false;
         // intrinsics_[camera_idx].storeYaml(param_.path_to_params);
         handleResetCommand(camera_idx);
         const bool all_calibrated = std::all_of(
@@ -547,53 +486,53 @@ void CalibrationNode::calibrate(size_t camera_idx) {
     }
 }
 
-void CalibrationNode::stereoCalibrate() {
-    state_.global_calibration_state = kStereoCalibrating;
-    publishCalibrationState();
-    RCLCPP_INFO(this->get_logger(), "Stereo calibration inialized");
+// void CalibrationNode::stereoCalibrate() {
+//     state_.global_calibration_state = kStereoCalibrating;
+//     publishCalibrationState();
+//     RCLCPP_INFO(this->get_logger(), "Stereo calibration inialized");
 
-    if (!checkEqualFrameNum()) {
-        RCLCPP_ERROR(this->get_logger(), "Differnet number of frames captured across cameras");
-        std::exit(EXIT_FAILURE);
-    }
+//     if (!checkEqualFrameNum()) {
+//         RCLCPP_ERROR(this->get_logger(), "Differnet number of frames captured across cameras");
+//         std::exit(EXIT_FAILURE);
+//     }
 
-    // TODO: how to check for coverage? is it required?
+//     // TODO: how to check for coverage? is it required?
 
-    std::vector<double> per_view_errors;
-    cv::Mat R, T;
-    double rms = cv::stereoCalibrate(
-        state_.obj_points_all[0],
-        state_.image_points_all[0],
-        state_.image_points_all[1],
-        intrinsics_[0].camera_matrix,
-        intrinsics_[0].dist_coefs,
-        intrinsics_[1].camera_matrix,
-        intrinsics_[1].dist_coefs,
-        *state_.frame_size,
-        R,
-        T,
-        cv::noArray(),
-        cv::noArray(),
-        cv::noArray(),
-        cv::noArray(),
-        per_view_errors,
-        cv::CALIB_FIX_INTRINSIC,
-        cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+//     std::vector<double> per_view_errors;
+//     cv::Mat R, T;
+//     double rms = cv::stereoCalibrate(
+//         state_.obj_points_all[0],
+//         state_.image_points_all[0],
+//         state_.image_points_all[1],
+//         intrinsics_[0].camera_matrix,
+//         intrinsics_[0].dist_coefs,
+//         intrinsics_[1].camera_matrix,
+//         intrinsics_[1].dist_coefs,
+//         *state_.frame_size,
+//         R,
+//         T,
+//         cv::noArray(),
+//         cv::noArray(),
+//         cv::noArray(),
+//         cv::noArray(),
+//         per_view_errors,
+//         cv::CALIB_FIX_INTRINSIC,
+//         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
-    RCLCPP_INFO(this->get_logger(), "Calibration done with error of %f ", rms);
+//     RCLCPP_INFO(this->get_logger(), "Calibration done with error of %f ", rms);
 
-    if (rms < param_.min_accepted_error) {
-        if (!CameraIntrinsicParameters::saveStereoCalibration(param_.path_to_params, R, T)) {
-            RCLCPP_ERROR(
-                this->get_logger(),
-                "Failed to save result of stereo calibration to the file: %s",
-                param_.path_to_params.c_str());
-            std::exit(EXIT_FAILURE);
-        }
-        state_.global_calibration_state = kOkCalibration;
-    } else {
-        RCLCPP_INFO(this->get_logger(), "Continue taking frames for stereo calibration");
-        state_.global_calibration_state = kCapturing;
-    }
-}
+//     if (rms < param_.min_accepted_error) {
+//         if (!CameraIntrinsicParameters::saveStereoCalibration(param_.path_to_params, R, T)) {
+//             RCLCPP_ERROR(
+//                 this->get_logger(),
+//                 "Failed to save result of stereo calibration to the file: %s",
+//                 param_.path_to_params.c_str());
+//             std::exit(EXIT_FAILURE);
+//         }
+//         state_.global_calibration_state = kOkCalibration;
+//     } else {
+//         RCLCPP_INFO(this->get_logger(), "Continue taking frames for stereo calibration");
+//         state_.global_calibration_state = kCapturing;
+//     }
+// }
 }  // namespace handy::calibration
