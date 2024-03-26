@@ -2,7 +2,6 @@
 
 #include "params.h"
 #include "camera_srvs_msgs/srv/calibration_command.hpp"
-#include "camera_srvs_msgs/msg/detection_result.hpp"
 
 #include <cv_bridge/cv_bridge.hpp>
 #include <foxglove_msgs/msg/image_marker_array.hpp>
@@ -55,13 +54,14 @@ class CalibrationNode : public rclcpp::Node {
 
     enum Action { kStart = 1, kCalibrate = 2, kReset = 3 };
 
+    const cv::Size kPatternSize{7, 10};
+
   private:
     void declareLaunchParams();
     void initSignals();
 
     void handleFrame(
         const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg, size_t camera_idx);
-    void handleDetection(const camera_srvs_msgs::msg::DetectionResult& msg);
     void publishCalibrationState() const;
 
     void onButtonClick(
@@ -69,7 +69,7 @@ class CalibrationNode : public rclcpp::Node {
         const camera_srvs_msgs::srv::CalibrationCommand::Response::SharedPtr& response);
 
     void calibrate(size_t camera_idx);
-    void stereoCalibrate();
+    void stereoCalibrate(){};
     void handleBadCalibration(size_t camera_idx);
     void handleResetCommand(int camera_idx = -1);
     bool isMonoCalibrated();
@@ -90,15 +90,11 @@ class CalibrationNode : public rclcpp::Node {
         std::vector<rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr>
             detected_corners;
 
-        rclcpp::Publisher<camera_srvs_msgs::msg::DetectionResult>::SharedPtr detection_result =
-            nullptr;
         rclcpp::Publisher<std_msgs::msg::Int16>::SharedPtr calibration_state = nullptr;
     } signal_{};
 
     struct Slots {
         std::vector<rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr> image_sub;
-        rclcpp::Subscription<camera_srvs_msgs::msg::DetectionResult>::SharedPtr detection_result =
-            nullptr;
     } slot_{};
 
     struct Services {
@@ -126,24 +122,22 @@ class CalibrationNode : public rclcpp::Node {
     struct State {
         std::optional<cv::Size> frame_size = std::nullopt;
 
-        std::vector<std::vector<std::vector<cv::Point2f>>> image_points_all;
-        std::vector<std::vector<std::vector<cv::Point3f>>> obj_points_all;
+        std::vector<std::map<uint32_t, std::pair<size_t, std::unique_ptr<int[]>>>> detected_ids_all;
+        std::vector<std::map<uint32_t, std::pair<size_t, std::unique_ptr<cv::Point2f[]>>>>
+            detectected_corners_all;
         std::vector<std::vector<Polygon>> polygons_all;
         std::vector<foxglove_msgs::msg::ImageMarkerArray> board_markers_array;
         std::vector<foxglove_msgs::msg::ImageMarkerArray> board_corners_array;
 
         // sorting in descending order
-        std::vector<std::map<uint32_t, std::vector<cv::Point2f>, std::greater<size_t>>> last_detetections;
+        std::vector<std::map<uint32_t, std::vector<cv::Point2f>, std::greater<size_t>>>
+            last_detetections;
         std::mutex last_detection_check_mutex;
 
         // unique ID for marker creation
         std::atomic<int> last_marker_id = 0;
-        // the number of cameras that currently hold detected charuco corners
-        std::atomic<int> currently_detected = 0;
-        std::vector<std::atomic<bool>> waiting;
         std::atomic<int> global_calibration_state = kNotCalibrated;
         std::vector<bool> is_mono_calibrated;
-        std::condition_variable condvar_to_sync_cameras;
     } state_;
 
     struct Timer {
