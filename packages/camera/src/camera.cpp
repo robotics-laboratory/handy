@@ -406,8 +406,8 @@ void CameraNode::applyParamsToCamera(int handle) {
     const std::vector<double> param_dist_coefs =
         this->declare_parameter<std::vector<double>>(prefix + "distorsion_coefs");
 
-    state_.cameras_intrinsics.push_back(CameraIntrinsicParameters::loadFromParams(
-        param_image_size, param_camera_matrix, param_dist_coefs));
+    // state_.cameras_intrinsics.push_back(CameraIntrinsicParameters::loadFromParams(
+    //     param_image_size, param_camera_matrix, param_dist_coefs));
     RCLCPP_INFO(this->get_logger(), "camera=%i loaded intrinsics", camera_idx);
 }
 

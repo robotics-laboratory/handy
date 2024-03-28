@@ -1,5 +1,6 @@
 #pragma once
 
+#include "params.h"
 #include "camera_srvs/srv/calibration_command.hpp"
 
 #include <cv_bridge/cv_bridge.hpp>
@@ -17,6 +18,10 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
+#include <atomic>
+#include <cstdint>
+#include <condition_variable>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -41,47 +46,63 @@ class CalibrationNode : public rclcpp::Node {
     enum CalibrationState {
         kNotCalibrated = 1,
         kCapturing = 2,
-        kCalibrating = 3,
-        kOkCalibration = 5
+        kMonoCalibrating = 3,
+        kStereoCapturing = 4,
+        kStereoCalibrating = 5,
+        kOkCalibration = 6
     };
 
     enum Action { kStart = 1, kCalibrate = 2, kReset = 3 };
+
+    const cv::Size kPatternSize{7, 10};
 
   private:
     void declareLaunchParams();
     void initSignals();
 
-    void handleFrame(const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg);
+    void handleFrame(
+        const sensor_msgs::msg::CompressedImage::ConstSharedPtr& msg, size_t camera_idx);
     void publishCalibrationState() const;
 
     void onButtonClick(
         const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
         const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& response);
 
-    void calibrate();
-    void handleBadCalibration();
-    void handleResetCommand();
+    void calibrate(size_t camera_idx);
+    void stereoCalibrate();
+    void fillImageObjectPoints(
+        std::vector<std::vector<cv::Point2f>>& image_points,
+        std::vector<std::vector<cv::Point3f>>& obj_points, const int& camera_idx);
+    void fillCommonImageObjectPoints(
+        std::vector<cv::Point2f>& image_points_1, std::vector<cv::Point3f>& obj_points_1,
+        std::vector<cv::Point2f>& image_points_2, std::vector<cv::Point3f>& obj_points_2,
+        std::vector<cv::Point2f>& common_image_points_1,
+        std::vector<cv::Point2f>& common_image_points_2,
+        std::vector<cv::Point3f>& common_obj_points);
+    void handleBadCalibration(size_t camera_idx);
+    void handleResetCommand(int camera_idx = -1);
+    bool isMonoCalibrated();
 
-    bool checkMaxSimilarity(std::vector<cv::Point2f>& corners) const;
-    int getImageCoverage() const;
+    bool checkMaxSimilarity(std::vector<cv::Point2f>& corners, size_t camera_idx) const;
+    int getImageCoverage(size_t camera_idx) const;
 
     void initCornerMarkers();
-    void appendCornerMarkers(const std::vector<cv::Point2f>& detected_corners);
+    void appendCornerMarkers(const std::vector<cv::Point2f>& detected_corners, size_t camera_idx);
     visualization_msgs::msg::ImageMarker getCornerMarker(cv::Point2f point);
     visualization_msgs::msg::ImageMarker getBoardMarkerFromCorners(
         std::vector<cv::Point2f>& detected_corners, std_msgs::msg::Header& header);
 
     struct Signals {
-        rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr detected_boards =
-            nullptr;
-        rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr detected_corners =
-            nullptr;
+        std::vector<rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr>
+            detected_boards;
+        std::vector<rclcpp::Publisher<foxglove_msgs::msg::ImageMarkerArray>::SharedPtr>
+            detected_corners;
 
         rclcpp::Publisher<std_msgs::msg::Int16>::SharedPtr calibration_state = nullptr;
     } signal_{};
 
     struct Slots {
-        rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr image_sub = nullptr;
+        std::vector<rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr> image_sub;
     } slot_{};
 
     struct Services {
@@ -89,36 +110,53 @@ class CalibrationNode : public rclcpp::Node {
     } service_{};
 
     struct Params {
-        std::string path_to_save_params = "";
+        std::string path_to_params = "";
         std::vector<cv::Point3f> square_obj_points;
         cv::aruco::CharucoBoard charuco_board;
 
         bool publish_preview_markers = true;
-        bool auto_calibrate = true;
 
         std::vector<double> marker_color = {0.0, 1.0, 0.0, 0.12};
         double min_accepted_error = 0.75;
         double iou_threshold = 0.5;
         double required_board_coverage = 0.7;
+
+        int64_t fps = 20;
+        std::vector<int64_t> cameras_to_calibrate;
+        std::map<int, int> id_to_idx;
     } param_;
 
     struct State {
         std::optional<cv::Size> frame_size = std::nullopt;
 
-        std::vector<std::vector<cv::Point2f>> image_points_all;
-        std::vector<std::vector<cv::Point3f>> obj_points_all;
-        std::vector<Polygon> polygons_all;
-        foxglove_msgs::msg::ImageMarkerArray board_markers_array;
-        foxglove_msgs::msg::ImageMarkerArray board_corners_array;
+        std::vector<std::map<uint32_t, std::pair<size_t, std::unique_ptr<int[]>>>> detected_ids_all;
+        std::vector<std::map<uint32_t, std::pair<size_t, std::unique_ptr<cv::Point2f[]>>>>
+            detectected_corners_all;
+        std::vector<std::vector<Polygon>> polygons_all;
+        std::vector<foxglove_msgs::msg::ImageMarkerArray> board_markers_array;
+        std::vector<foxglove_msgs::msg::ImageMarkerArray> board_corners_array;
 
-        int last_marker_id = 0;
-        int calibration_state = kNotCalibrated;
+        // sorting in descending order
+        std::vector<std::map<uint32_t, std::vector<cv::Point2f>, std::greater<size_t>>>
+            last_detetections;
+        std::mutex last_detection_check_mutex;
+
+        // unique ID for marker creation
+        std::atomic<int> last_marker_id = 0;
+        std::atomic<int> global_calibration_state = kNotCalibrated;
+        std::vector<bool> is_mono_calibrated;
     } state_;
 
     struct Timer {
+        rclcpp::TimerBase::SharedPtr stereo_sync = nullptr;
         rclcpp::TimerBase::SharedPtr calibration_state = nullptr;
     } timer_{};
 
+    struct CallbackGroups {
+        rclcpp::CallbackGroup::SharedPtr handle_frame = nullptr;
+    } call_group_{};
+
     std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector_ = nullptr;
+    std::vector<CameraIntrinsicParameters> intrinsics_;
 };
 }  // namespace handy::calibration
