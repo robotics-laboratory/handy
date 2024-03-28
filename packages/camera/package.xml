@@ -20,7 +20,7 @@
   <depend>geometry_msgs</depend>
   <depend>yaml_cpp_vendor</depend>
   <depend>Boost</depend>
-  <depend>camera_srvs_msgs</depend>
+  <depend>camera_srvs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

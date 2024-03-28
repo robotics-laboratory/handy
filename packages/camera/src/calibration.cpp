@@ -191,7 +191,7 @@ void CalibrationNode::initSignals() {
                 calib_name_base + "/corner_markers", 10));
     }
 
-    service_.button_service = this->create_service<camera_srvs_msgs::srv::CalibrationCommand>(
+    service_.button_service = this->create_service<camera_srvs::srv::CalibrationCommand>(
         "/calibration/button",
         std::bind(
             &CalibrationNode::onButtonClick, this, std::placeholders::_1, std::placeholders::_2));
@@ -280,8 +280,8 @@ void CalibrationNode::handleFrame(
 }
 
 void CalibrationNode::onButtonClick(
-    const camera_srvs_msgs::srv::CalibrationCommand::Request::SharedPtr& request,
-    const camera_srvs_msgs::srv::CalibrationCommand::Response::SharedPtr& /*response*/) {
+    const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
+    const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& /*response*/) {
     if (state_.global_calibration_state == kStereoCalibrating ||
         state_.global_calibration_state == kMonoCalibrating) {
         return;
@@ -411,15 +411,9 @@ void CalibrationNode::handleResetCommand(int camera_idx) {
     }
 }
 
-void CalibrationNode::calibrate(size_t camera_idx) {
-    state_.global_calibration_state = kMonoCalibrating;
-    publishCalibrationState();
-    RCLCPP_INFO(this->get_logger(), "Calibration ID=%ld inialized", camera_idx);
-
-    std::vector<std::vector<cv::Point2f>> image_points{};
-    std::vector<std::vector<cv::Point3f>> obj_points{};
-
-    // fill image and object points
+void CalibrationNode::fillImageObjectPoints(
+    std::vector<std::vector<cv::Point2f>>& image_points,
+    std::vector<std::vector<cv::Point3f>>& obj_points, const int& camera_idx) {
     for (auto id_iter = state_.detectected_corners_all[camera_idx].begin();
          id_iter != state_.detectected_corners_all[camera_idx].end();
          ++id_iter) {
@@ -438,6 +432,36 @@ void CalibrationNode::calibrate(size_t camera_idx) {
         param_.charuco_board.matchImagePoints(
             current_corners, current_ids, obj_points.back(), image_points.back());
     }
+}
+
+// for 2 cameras only
+void CalibrationNode::fillCommonImageObjectPoints(
+    std::vector<cv::Point2f>& image_points_1, std::vector<cv::Point3f>& obj_points_1,
+    std::vector<cv::Point2f>& image_points_2, std::vector<cv::Point3f>& obj_points_2,
+    std::vector<cv::Point2f>& common_image_points_1,
+    std::vector<cv::Point2f>& common_image_points_2, std::vector<cv::Point3f>& common_obj_points) {
+    for (int i = 0; i < obj_points_1.size(); ++i) {
+        const cv::Point3f& obj_point = obj_points_1[i];
+        auto found_iter = std::find(obj_points_2.begin(), obj_points_2.end(), obj_point);
+        if (found_iter != obj_points_2.end()) {
+            const int idx = std::distance(obj_points_2.begin(), found_iter);
+            common_obj_points.push_back(obj_point);
+            common_image_points_1.push_back(image_points_1[i]);
+            common_image_points_2.push_back(image_points_2[idx]);
+        }
+    }
+}
+
+void CalibrationNode::calibrate(size_t camera_idx) {
+    state_.global_calibration_state = kMonoCalibrating;
+    publishCalibrationState();
+    RCLCPP_INFO(this->get_logger(), "Calibration ID=%ld inialized", camera_idx);
+
+    std::vector<std::vector<cv::Point2f>> image_points{};
+    std::vector<std::vector<cv::Point3f>> obj_points{};
+
+    // fill image and object points
+    fillImageObjectPoints(image_points, obj_points, camera_idx);
 
     int coverage_percentage = getImageCoverage(camera_idx);
     if (coverage_percentage < param_.required_board_coverage) {
@@ -486,53 +510,117 @@ void CalibrationNode::calibrate(size_t camera_idx) {
     }
 }
 
-// void CalibrationNode::stereoCalibrate() {
-//     state_.global_calibration_state = kStereoCalibrating;
-//     publishCalibrationState();
-//     RCLCPP_INFO(this->get_logger(), "Stereo calibration inialized");
+void CalibrationNode::stereoCalibrate() {
+    state_.global_calibration_state = kStereoCalibrating;
+    publishCalibrationState();
+    RCLCPP_INFO(this->get_logger(), "Stereo calibration inialized");
 
-//     if (!checkEqualFrameNum()) {
-//         RCLCPP_ERROR(this->get_logger(), "Differnet number of frames captured across cameras");
-//         std::exit(EXIT_FAILURE);
-//     }
+    std::vector<std::vector<std::vector<cv::Point2f>>> image_points_all{};
+    std::vector<std::vector<std::vector<cv::Point3f>>> obj_points_all{};
 
-//     // TODO: how to check for coverage? is it required?
+    int chosen_detections_cnt = 0;
 
-//     std::vector<double> per_view_errors;
-//     cv::Mat R, T;
-//     double rms = cv::stereoCalibrate(
-//         state_.obj_points_all[0],
-//         state_.image_points_all[0],
-//         state_.image_points_all[1],
-//         intrinsics_[0].camera_matrix,
-//         intrinsics_[0].dist_coefs,
-//         intrinsics_[1].camera_matrix,
-//         intrinsics_[1].dist_coefs,
-//         *state_.frame_size,
-//         R,
-//         T,
-//         cv::noArray(),
-//         cv::noArray(),
-//         cv::noArray(),
-//         cv::noArray(),
-//         per_view_errors,
-//         cv::CALIB_FIX_INTRINSIC,
-//         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+    while (std::any_of(
+        state_.detectected_corners_all.begin(),
+        state_.detectected_corners_all.end(),
+        [&](const auto& elem) { return !elem.empty() && chosen_detections_cnt < elem.size(); })) {
+        int idx_of_min_timestamp = 0;
+        uint32_t min_timestamp = std::numeric_limits<uint32_t>::max();
+        uint32_t max_timestamp = 0;
+        for (int i = 0; i < state_.detectected_corners_all.size(); ++i) {
+            auto current_map_elem = state_.detectected_corners_all[i].begin();
+            std::advance(current_map_elem, chosen_detections_cnt);
+            uint32_t current_timestamp = current_map_elem->second.first;
 
-//     RCLCPP_INFO(this->get_logger(), "Calibration done with error of %f ", rms);
+            max_timestamp = std::max(max_timestamp, current_timestamp);
+            if (current_timestamp < min_timestamp) {
+                min_timestamp = current_timestamp;
+                idx_of_min_timestamp = i;
+            }
+        }
+        if (max_timestamp - min_timestamp < 10e9 / param_.fps) {  // found simultanious snap
+            ++chosen_detections_cnt;
+        } else {
+            auto corners_iter_to_delete =
+                state_.detectected_corners_all[idx_of_min_timestamp].begin();
+            std::advance(corners_iter_to_delete, chosen_detections_cnt);
+            state_.detectected_corners_all[idx_of_min_timestamp].erase(corners_iter_to_delete);
 
-//     if (rms < param_.min_accepted_error) {
-//         if (!CameraIntrinsicParameters::saveStereoCalibration(param_.path_to_params, R, T)) {
-//             RCLCPP_ERROR(
-//                 this->get_logger(),
-//                 "Failed to save result of stereo calibration to the file: %s",
-//                 param_.path_to_params.c_str());
-//             std::exit(EXIT_FAILURE);
-//         }
-//         state_.global_calibration_state = kOkCalibration;
-//     } else {
-//         RCLCPP_INFO(this->get_logger(), "Continue taking frames for stereo calibration");
-//         state_.global_calibration_state = kCapturing;
-//     }
-// }
+            auto ids_iter_to_delete = state_.detected_ids_all[idx_of_min_timestamp].begin();
+            std::advance(ids_iter_to_delete, chosen_detections_cnt);
+            state_.detected_ids_all[idx_of_min_timestamp].erase(ids_iter_to_delete);
+        }
+    }
+
+    for (int camera_idx = 0; camera_idx < param_.cameras_to_calibrate.size(); ++camera_idx) {
+        auto last_valid_corner_iter = state_.detectected_corners_all[camera_idx].begin();
+        std::advance(last_valid_corner_iter, chosen_detections_cnt);
+        state_.detectected_corners_all[camera_idx].erase(
+            last_valid_corner_iter, state_.detectected_corners_all[camera_idx].end());
+
+        auto last_valid_id_iter = state_.detected_ids_all[camera_idx].begin();
+        std::advance(last_valid_id_iter, chosen_detections_cnt);
+        state_.detected_ids_all[camera_idx].erase(
+            last_valid_id_iter, state_.detected_ids_all[camera_idx].end());
+    }
+
+    for (int camera_idx = 0; camera_idx < param_.cameras_to_calibrate.size(); ++camera_idx) {
+        // fill image and object points
+        fillImageObjectPoints(image_points_all[camera_idx], obj_points_all[camera_idx], camera_idx);
+    }
+
+    // for now we assume that we have 2 cameras
+    std::vector<std::vector<std::vector<cv::Point2f>>> image_points_common(image_points_all.size());
+    std::vector<std::vector<cv::Point3f>> obj_points_common(obj_points_all.size());
+    for (int detection_idx = 0; detection_idx < image_points_all.size(); ++detection_idx) {
+        obj_points_common.emplace_back();
+        image_points_common[0].emplace_back();
+        image_points_common[1].emplace_back();
+        fillCommonImageObjectPoints(
+            image_points_all[0][detection_idx],
+            obj_points_all[0][detection_idx],
+            image_points_all[0][detection_idx],
+            obj_points_all[0][detection_idx],
+            image_points_common[0].back(),
+            image_points_common[0].back(),
+            obj_points_common.back());
+    }
+
+    std::vector<double> per_view_errors;
+    cv::Mat R, T;
+    double rms = cv::stereoCalibrate(
+        obj_points_common,
+        image_points_common[0],
+        image_points_common[1],
+        intrinsics_[0].camera_matrix,
+        intrinsics_[0].dist_coefs,
+        intrinsics_[1].camera_matrix,
+        intrinsics_[1].dist_coefs,
+        *state_.frame_size,
+        R,
+        T,
+        cv::noArray(),
+        cv::noArray(),
+        cv::noArray(),
+        cv::noArray(),
+        per_view_errors,
+        cv::CALIB_FIX_INTRINSIC,
+        cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+
+    RCLCPP_INFO(this->get_logger(), "Calibration done with error of %f ", rms);
+
+    if (rms < param_.min_accepted_error) {
+        if (!CameraIntrinsicParameters::saveStereoCalibration(param_.path_to_params, R, T)) {
+            RCLCPP_ERROR(
+                this->get_logger(),
+                "Failed to save result of stereo calibration to the file: %s",
+                param_.path_to_params.c_str());
+            std::exit(EXIT_FAILURE);
+        }
+        state_.global_calibration_state = kOkCalibration;
+    } else {
+        RCLCPP_INFO(this->get_logger(), "Continue taking frames for stereo calibration");
+        state_.global_calibration_state = kCapturing;
+    }
+}
 }  // namespace handy::calibration
