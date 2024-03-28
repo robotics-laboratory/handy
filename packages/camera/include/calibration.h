@@ -1,7 +1,7 @@
 #pragma once
 
 #include "params.h"
-#include "camera_srvs_msgs/srv/calibration_command.hpp"
+#include "camera_srvs/srv/calibration_command.hpp"
 
 #include <cv_bridge/cv_bridge.hpp>
 #include <foxglove_msgs/msg/image_marker_array.hpp>
@@ -65,17 +65,25 @@ class CalibrationNode : public rclcpp::Node {
     void publishCalibrationState() const;
 
     void onButtonClick(
-        const camera_srvs_msgs::srv::CalibrationCommand::Request::SharedPtr& request,
-        const camera_srvs_msgs::srv::CalibrationCommand::Response::SharedPtr& response);
+        const camera_srvs::srv::CalibrationCommand::Request::SharedPtr& request,
+        const camera_srvs::srv::CalibrationCommand::Response::SharedPtr& response);
 
     void calibrate(size_t camera_idx);
-    void stereoCalibrate(){};
+    void stereoCalibrate();
+    void fillImageObjectPoints(
+        std::vector<std::vector<cv::Point2f>>& image_points,
+        std::vector<std::vector<cv::Point3f>>& obj_points, const int& camera_idx);
+    void fillCommonImageObjectPoints(
+        std::vector<cv::Point2f>& image_points_1, std::vector<cv::Point3f>& obj_points_1,
+        std::vector<cv::Point2f>& image_points_2, std::vector<cv::Point3f>& obj_points_2,
+        std::vector<cv::Point2f>& common_image_points_1,
+        std::vector<cv::Point2f>& common_image_points_2,
+        std::vector<cv::Point3f>& common_obj_points);
     void handleBadCalibration(size_t camera_idx);
     void handleResetCommand(int camera_idx = -1);
     bool isMonoCalibrated();
 
     bool checkMaxSimilarity(std::vector<cv::Point2f>& corners, size_t camera_idx) const;
-    bool checkEqualFrameNum() const;
     int getImageCoverage(size_t camera_idx) const;
 
     void initCornerMarkers();
@@ -98,8 +106,7 @@ class CalibrationNode : public rclcpp::Node {
     } slot_{};
 
     struct Services {
-        rclcpp::Service<camera_srvs_msgs::srv::CalibrationCommand>::SharedPtr button_service =
-            nullptr;
+        rclcpp::Service<camera_srvs::srv::CalibrationCommand>::SharedPtr button_service = nullptr;
     } service_{};
 
     struct Params {
@@ -122,8 +129,9 @@ class CalibrationNode : public rclcpp::Node {
     struct State {
         std::optional<cv::Size> frame_size = std::nullopt;
 
-        std::vector<std::map<uint32_t, std::pair<size_t, std::unique_ptr<int[]>>>> detected_ids_all;
-        std::vector<std::map<uint32_t, std::pair<size_t, std::unique_ptr<cv::Point2f[]>>>>
+        // map< timestamp of pairs<num_of_elements, smart_ptr_to_data> >
+        std::vector<std::map<size_t, std::pair<size_t, std::unique_ptr<int[]>>>> detected_ids_all;
+        std::vector<std::map<size_t, std::pair<size_t, std::unique_ptr<cv::Point2f[]>>>>
             detectected_corners_all;
         std::vector<std::vector<Polygon>> polygons_all;
         std::vector<foxglove_msgs::msg::ImageMarkerArray> board_markers_array;
@@ -132,7 +140,6 @@ class CalibrationNode : public rclcpp::Node {
         // sorting in descending order
         std::vector<std::map<uint32_t, std::vector<cv::Point2f>, std::greater<size_t>>>
             last_detetections;
-        std::mutex last_detection_check_mutex;
 
         // unique ID for marker creation
         std::atomic<int> last_marker_id = 0;
