@@ -34,7 +34,7 @@ if __name__ == "__main__":
     all_files = os.listdir(args.data_dir)
     image_files = [file for file in all_files if file.endswith(('.png', '.jpg', '.jpeg'))]
 
-    selected_images = random.sample(image_files, 5)
+    selected_images = sorted(image_files)
 
     os.makedirs(args.result_dir, exist_ok=True)
 
@@ -42,7 +42,6 @@ if __name__ == "__main__":
 
         image = cv2.imread(os.path.join(args.data_dir, selected_images[i]))
         orig_image = image.copy()
-        orig_image = cv2.cvtColor(orig_image[:, :, 0], cv2.COLOR_BayerRGGB2BGR)
         image = cv2.resize(image, (width, height))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
         image /= 255.0
@@ -85,4 +84,4 @@ if __name__ == "__main__":
                             2, 
                             lineType=cv2.LINE_AA)
 
-            cv2.imwrite(os.path.join(args.result_dir, f"result_{i}.png"), orig_image)
+            cv2.imwrite(os.path.join(args.result_dir, selected_images[i]), orig_image)
