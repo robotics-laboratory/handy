@@ -331,6 +331,11 @@ RUN mkdir -p camera-sdk && cd camera-sdk \
     && ./install.sh \
     && rm -rf /tmp/*
 
+### INSTALL HANDY PYTHON DEPENDENCIES
+RUN git clone https://github.com/robotics-laboratory/handy.git \
+    && pip3 install -r handy/requirements.txt \
+    && rm -rf handy
+
 ### INSTALL DEV TOOLS
 
 RUN apt-get update -q && \

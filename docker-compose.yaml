@@ -2,7 +2,7 @@ version: "3.9"
 services:
   handy:
     container_name: "${CONTAINER_NAME:-handy-${USER}}"
-    image: registry.robotics-lab.ru/handy:0.7.0
+    image: registry.robotics-lab.ru/handy:0.8.0
     privileged: true
     stdin_open: true
     runtime: ${DOCKER_RUNTIME:-runc}
@@ -13,7 +13,7 @@ services:
       context: .
       tags:
           - "registry.robotics-lab.ru/handy:latest"
-          - "registry.robotics-lab.ru/handy:0.7.0"
+          - "registry.robotics-lab.ru/handy:0.8.0"
       x-bake:
         platforms: [linux/arm64, linux/amd64]
         cache-to: "type=registry,ref=registry.robotics-lab.ru/handy:cache,mode=max"
