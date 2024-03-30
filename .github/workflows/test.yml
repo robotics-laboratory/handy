@@ -28,8 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
+        with: { python-version: "3.10" }
 
       - name: Install dependencies
         run: |
@@ -39,7 +38,6 @@ jobs:
       - name: Extract image URL
         id: extractor
         run: |
-          cd $GITHUB_WORKSPACE
           IMAGE_URL=$(cat docker-compose.yaml | yq ".services.${{ github.event.repository.name }}.image")
           echo "image_url=$IMAGE_URL" | tee -a $GITHUB_OUTPUT
 
@@ -57,8 +55,7 @@ jobs:
 
       - name: Build ROS2 packages
         run: |
-          cd $GITHUB_WORKSPACE
-          make build-all CMAKE_TOOLS_ADDRESS_SANITIZER="-fsanitize=address"
+          make build-all CMAKE_TOOLS_ADDRESS_SANITIZER="ON"
           source install/setup.bash
 
       - name: Test ROS2 packages
@@ -66,9 +63,7 @@ jobs:
         run: make test-all
 
       - name: Run Clang-Tidy
-        run: |
-          make lint-all
-          git diff
+        run: make lint-all
 
       - name: Check previous steps
         if: ${{ failure() }}

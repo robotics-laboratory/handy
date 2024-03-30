@@ -4,7 +4,7 @@ rules:
 
   quoted-strings:
     quote-type: double
-    required: only-when-needed
+    required: false
 
   braces:
     min-spaces-inside: 1

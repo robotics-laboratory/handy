@@ -5,14 +5,17 @@
 
 SHELL = /bin/bash
 CMAKE_BUILD_TYPE ?= Release
-CMAKE_TOOLS_ADDRESS_SANITIZER ?= '' # -fsanitize=address
+CMAKE_TOOLS_ADDRESS_SANITIZER ?= OFF
+CXXFLAGS := \
+    ${CXXFLAGS} \
+    $(shell if [ "$${CMAKE_TOOLS_ADDRESS_SANITIZER^^}" = "ON" ]; then echo "-fsanitize=address"; fi)
 CMAKE_ARGS ?= \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
+    -DCMAKE_CXX_FLAGS="${CXXFLAGS}"
 
-# FIXME
-FILES_TO_LINT := $(shell find . \( -name '*.h' -or -name '*.cpp' -or -name '*.cc' \) \
-                    -not -path '*/build/*' -not -path '*/install/*' -not -path '*/log/*')
+FILES_TO_LINT := $(shell find . \( -name "*.h" -or -name "*.cpp" -or -name "*.cc" \) \
+                    -not -path "*/build/*" -not -path "*/install/*" -not -path "*/log/*")
 
 .PHONY: all
 all:
@@ -24,8 +27,7 @@ build-all:
     colcon --log-base /dev/null build \
         --base-paths packages \
         --symlink-install \
-        --cmake-args ${CMAKE_ARGS}\
-        -DCMAKE_CXX_FLAGS='${CXXFLAGS} ${CMAKE_TOOLS_ADDRESS_SANITIZER}'
+        --cmake-args ${CMAKE_ARGS}
 
 .PHONY: test-all
 test-all:
@@ -42,7 +44,6 @@ build:
         --base-paths packages \
         --symlink-install \
         --cmake-args ${CMAKE_ARGS} \
-        -DCMAKE_CXX_FLAGS='${CXXFLAGS} ${CMAKE_TOOLS_ADDRESS_SANITIZER}' \
         --packages-up-to $(packages)
 
 .PHONY: test
