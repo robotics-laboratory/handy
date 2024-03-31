@@ -13,9 +13,6 @@ services:
     build:
       dockerfile: Dockerfile
       context: .
-      tags:
-        - "registry.robotics-lab.ru/handy:latest"
-        - "registry.robotics-lab.ru/handy:0.7.2"
       x-bake:
         platforms:
           - linux/arm64
