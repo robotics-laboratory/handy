@@ -24,7 +24,6 @@ all:
 .PHONY: build-all
 build-all:
     source ${ROS_ROOT}/setup.sh
-    source install/setup.sh
     colcon --log-base /dev/null build \
         --base-paths packages \
         --symlink-install \
@@ -43,7 +42,6 @@ test-all:
 # packages="first_pkg second_pkg third_pkg..."
 build:
     source ${ROS_ROOT}/setup.sh
-    source install/setup.sh
     colcon --log-base /dev/null build \
         --base-paths packages \
         --symlink-install \
