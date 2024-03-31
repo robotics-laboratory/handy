@@ -1,21 +1,19 @@
 services:
   handy:
-    image: "registry.robotics-lab.ru/handy:0.7.2"
+    image: registry.robotics-lab.ru/handy:0.8.0
     container_name: "${CONTAINER_NAME:-handy-${USER}}"
     networks: [default]
     privileged: true
-    ports:
-      - "${FOXGLOVE_PORT:-8765}:8765"
-    volumes:
-      - "${PWD}:/handy"
-      - "/dev:/dev"
-
+    stdin_open: true
+    runtime: ${DOCKER_RUNTIME:-runc}
+    entrypoint: "/bin/bash -c 'trap : TERM INT; sleep infinity & wait'"
+    working_dir: "/handy"
     build:
       dockerfile: Dockerfile
       context: .
       x-bake:
         platforms:
-          - linux/arm64
+          # - linux/arm64
           - linux/amd64
         cache-from:
           - type=registry,ref=registry.robotics-lab.ru/handy:cache-arm64
@@ -23,7 +21,12 @@ services:
         cache-to:
           # [!!!] Warning: https://github.com/docker/buildx/discussions/1382
           # - type=registry,mode=max,ref=registry.robotics-lab.ru/handy:cache-arm64
-          # - type=registry,mode=max,ref=registry.robotics-lab.ru/handy:cache-amd64
+          - type=registry,mode=max,ref=registry.robotics-lab.ru/handy:cache-amd64
+    ports:
+      - "${FOXGLOVE_PORT:-8765}:8765"
+    volumes:
+      - "${PWD}:/handy"
+      - "/dev:/dev"
 
 networks:
   default:
