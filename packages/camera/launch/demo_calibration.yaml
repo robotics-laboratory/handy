@@ -4,12 +4,12 @@ launch:
 - include:
    file: $(find-pkg-share camera)/launch/camera.yaml
    arg:
-   - {name: "publish_raw_preview", value: "False"}
-   - {name: "publish_bgr_preview", value: "True"}
-   - {name: "publish_raw", value: "False"}
-   - {name: "publish_bgr", value: "True"}
+   - { name: "publish_raw_preview", value: "False" }
+   - { name: "publish_bgr_preview", value: "True" }
+   - { name: "publish_raw", value: "False" }
+   - { name: "publish_bgr", value: "True" }
 
 - include:
    file: $(find-pkg-share camera)/launch/calibration.yaml
    arg:
-   - {name: "calibration_file_path", value: "/handy/packages/camera/param_save/camera_params.yaml"}
+   - { name: "calibration_file_path", value: "/handy/packages/camera/param_save/camera_params.yaml" }

@@ -1,6 +1,6 @@
 services:
   handy:
-    image: "registry.robotics-lab.ru/handy:0.7.1"
+    image: "registry.robotics-lab.ru/handy:0.7.2"
     container_name: "${CONTAINER_NAME:-handy-${USER}}"
     networks: [default]
     privileged: true
@@ -13,6 +13,9 @@ services:
     build:
       dockerfile: Dockerfile
       context: .
+      tags:
+        - "registry.robotics-lab.ru/handy:latest"
+        - "registry.robotics-lab.ru/handy:0.7.2"
       x-bake:
         platforms:
           - linux/arm64

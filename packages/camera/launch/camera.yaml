@@ -23,16 +23,16 @@ launch:
     exec: "camera"
     name: "camera"
     param:
-    - {name: "fps", value: 10.0}
+    - { name: "fps", value: 10.0 }
     # interval between calling queue handlers
-    - {name: "queue_latency", value: 15} # in millisecond
-    - {name: "preview/width", value: 1280}
-    - {name: "preview/height", value: 1024}
-    - {name: "publish_raw_preview", value: "$(var publish_raw_preview)"}
-    - {name: "publish_bgr_preview", value: "$(var publish_bgr_preview)"}
-    - {name: "publish_bgr", value: "$(var publish_bgr)"}
-    - {name: "publish_raw", value: "$(var publish_raw)"}
-    - {name: "publish_rectified_preview", value: "$(var publish_rectified_preview)"}
+    - { name: "queue_latency", value: 15 } # in millisecond
+    - { name: "preview/width", value: 1280 }
+    - { name: "preview/height", value: 1024 }
+    - { name: "publish_raw_preview", value: "$(var publish_raw_preview)" }
+    - { name: "publish_bgr_preview", value: "$(var publish_bgr_preview)" }
+    - { name: "publish_bgr", value: "$(var publish_bgr)" }
+    - { name: "publish_raw", value: "$(var publish_raw)" }
+    - { name: "publish_rectified_preview", value: "$(var publish_rectified_preview)" }
 
     # external trigger mode and parameters
     - { name: "hardware_triger", value: False }  # if True only master is sent trigger signal
@@ -59,8 +59,9 @@ launch:
               param:
                 - { name: "width", value: 1920 }
                 - { name: "height", value: 1200 }
-            - { name: "camera_matrix", value: [2909.92107945441, 0., 582.1724561319506, 0., 3134.621273608562, 532.0677320807733, 0., 0., 1.] }
-            - { name: "distorsion_coefs", value: [-0.7151398, 10.59934, 1.975451e-05, 0.07159046, 1.047479]}
+            - { name: "camera_matrix", value: [2909.92107945441, 0., 582.1724561319506, 0.,
+                                              3134.621273608562, 532.0677320807733, 0., 0., 1.] }
+            - { name: "distorsion_coefs", value: [-0.7151398, 10.59934, 1.975451e-05, 0.07159046, 1.047479] }
     - name: "2"
       param:
         - name: "exposure_params"
@@ -76,5 +77,6 @@ launch:
         - name: "intrinsic_params"
           param:
             - { name: "image_size", value: [1920, 1200] }
-            - { name: "camera_matrix", value: [2909.92107945441, 0., 582.1724561319506, 0., 3134.621273608562, 532.0677320807733, 0., 0., 1.] }
-            - { name: "distorsion_coefs", value: [-0.7151398, 10.59934, 1.975451e-05, 0.07159046, 1.047479]}
+            - { name: "camera_matrix", value: [2909.92107945441, 0., 582.1724561319506, 0.,
+                                              3134.621273608562, 532.0677320807733, 0., 0., 1.] }
+            - { name: "distorsion_coefs", value: [-0.7151398, 10.59934, 1.975451e-05, 0.07159046, 1.047479] }
