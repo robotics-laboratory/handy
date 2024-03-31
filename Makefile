@@ -24,6 +24,7 @@ all:
 .PHONY: build-all
 build-all:
     source ${ROS_ROOT}/setup.sh
+    source install/setup.sh
     colcon --log-base /dev/null build \
         --base-paths packages \
         --symlink-install \
@@ -31,6 +32,8 @@ build-all:
 
 .PHONY: test-all
 test-all:
+    source ${ROS_ROOT}/setup.sh
+    source install/setup.sh
     colcon --log-base /dev/null test \
         --ctest-args tests --symlink-install \
         --executor parallel --parallel-workers $$(nproc) \
@@ -40,6 +43,7 @@ test-all:
 # packages="first_pkg second_pkg third_pkg..."
 build:
     source ${ROS_ROOT}/setup.sh
+    source install/setup.sh
     colcon --log-base /dev/null build \
         --base-paths packages \
         --symlink-install \
@@ -49,6 +53,8 @@ build:
 .PHONY: test
 # packages="first_pkg second_pkg third_pkg..."
 test:
+    source ${ROS_ROOT}/setup.sh
+    source install/setup.sh
     colcon --log-base /dev/null test --ctest-args tests --symlink-install \
         --executor parallel --parallel-workers $$(nproc) \
         --event-handlers console_cohesion+ --packages-select $(packages)
