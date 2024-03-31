@@ -17,7 +17,6 @@ find_package(Boost REQUIRED)
 find_package(camera_srvs REQUIRED)
 find_package(lock_free_queue REQUIRED)
 
-
 add_library(mvsdk SHARED IMPORTED)
 set_target_properties(mvsdk PROPERTIES IMPORTED_LOCATION "/lib/libMVSDK.so")
 
@@ -28,22 +27,24 @@ add_executable(camera src/camera_main.cpp src/camera.cpp src/params.cpp
 add_executable(calibration src/calibration_main.cpp src/calibration.cpp
                            src/params.cpp)
 
-target_include_directories(camera PUBLIC
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../lock_free_queue/include>"
-  "/usr/include")
-target_include_directories(calibration PUBLIC
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-  "/usr/include")
+target_include_directories(
+  camera
+  PUBLIC
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../lock_free_queue/include>"
+    "/usr/include")
+target_include_directories(
+  calibration PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                     "/usr/include")
 
 ament_target_dependencies(
-    camera
-    rclcpp
-    cv_bridge
-    OpenCV
-    sensor_msgs
-    yaml_cpp_vendor
-    lock_free_queue)
+  camera
+  rclcpp
+  cv_bridge
+  OpenCV
+  sensor_msgs
+  yaml_cpp_vendor
+  lock_free_queue)
 
 ament_target_dependencies(
   calibration
