@@ -3,6 +3,7 @@ import numpy as np
 import json
 import os
 import sklearn
+import argparse
 import torch
 import lightning as L
 import albumentations as A
@@ -183,8 +184,15 @@ class DetectionDataModule(L.LightningDataModule):
     
 
 if __name__ == '__main__':
-    dataset = DetectionDataset('datasets/annotated_12_02_23/ball', 'datasets/annotated_12_02_23/bounding_boxes.json', 
-                               300, 300, train=True)
+    parser = argparse.ArgumentParser(description='Detection Dataset Parameters')
+    parser.add_argument('--image_dir', type=str, default='datasets/annotated_12_02_23/ball', help='Path to the directory containing the images')
+    parser.add_argument('--annot_file', type=str, default='datasets/annotated_12_02_23/bounding_boxes.json', help='Path to the file containing the bounding box annotations')
+    parser.add_argument('--width', type=int, default=300, help='The width to which the images will be resized')
+    parser.add_argument('--height', type=int, default=300, help='The height to which the images will be resized')
+
+    args = parser.parse_args()
+
+    dataset = DetectionDataset(args.image_dir, args.annot_file, args.width, args.height, train=True)
     
     print(f"Number of samples in the train dataset: {len(dataset)}")
 
