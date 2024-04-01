@@ -31,6 +31,8 @@ build-all:
 
 .PHONY: test-all
 test-all:
+    source ${ROS_ROOT}/setup.sh
+    source install/setup.sh
     colcon --log-base /dev/null test \
         --ctest-args tests --symlink-install \
         --executor parallel --parallel-workers $$(nproc) \
@@ -49,6 +51,8 @@ build:
 .PHONY: test
 # packages="first_pkg second_pkg third_pkg..."
 test:
+    source ${ROS_ROOT}/setup.sh
+    source install/setup.sh
     colcon --log-base /dev/null test --ctest-args tests --symlink-install \
         --executor parallel --parallel-workers $$(nproc) \
         --event-handlers console_cohesion+ --packages-select $(packages)
