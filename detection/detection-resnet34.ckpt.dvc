@@ -1,0 +1,5 @@
+outs:
+- md5: 4043bede0715f82cc7a201658db9e7f0
+  size: 174229470
+  hash: md5
+  path: detection-resnet34.ckpt
