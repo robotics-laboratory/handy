@@ -6,7 +6,6 @@ import cv2
 import numpy as np
 
 from model import get_model
-from albumentations.pytorch import ToTensorV2
 
 CLASSES = ["background", "ball"]
 COLORS = [[0, 0, 0], [255, 0, 0]]
@@ -57,8 +56,8 @@ if __name__ == "__main__":
         outputs = [{k: v for k, v in t.items()} for t in outputs]
 
         if len(outputs[0]['boxes']) != 0:
-            boxes = outputs[0]['boxes'].data.numpy()
-            scores = outputs[0]['scores'].data.numpy()
+            boxes = outputs[0]['boxes'].data.cpu().numpy()
+            scores = outputs[0]['scores'].data.cpu().numpy()
 
             boxes = boxes[scores >= args.threshold].astype(np.int32)
             draw_boxes = boxes.copy()
