@@ -401,7 +401,7 @@ void CalibrationNode::handleBadCalibration(size_t camera_idx) {
 
 void CalibrationNode::handleResetCommand(int camera_idx) {
     for (size_t i = 0; i < param_.cameras_to_calibrate.size(); ++i) {
-        if (camera_idx != -1 && camera_idx != i) {
+        if (camera_idx != -1 && static_cast<size_t>(camera_idx) != i) {
             continue;
         }
         state_.detected_ids_all[i].clear();
@@ -414,7 +414,7 @@ void CalibrationNode::handleResetCommand(int camera_idx) {
 
 void CalibrationNode::fillImageObjectPoints(
     std::vector<std::vector<cv::Point2f>>& image_points,
-    std::vector<std::vector<cv::Point3f>>& obj_points, const int& camera_idx) {
+    std::vector<std::vector<cv::Point3f>>& obj_points, int camera_idx) {
     for (auto id_iter = state_.detectected_corners_all[camera_idx].begin();
          id_iter != state_.detectected_corners_all[camera_idx].end();
          ++id_iter) {
@@ -422,9 +422,9 @@ void CalibrationNode::fillImageObjectPoints(
         auto& [size, data_ptr] = id_iter->second;
 
         // CV_32FC2 -- 4 bytes, 2 channels -- x and y coordinates
-        cv::Mat current_corners(cv::Size{1, size}, CV_32FC2, data_ptr.get());
+        cv::Mat current_corners(cv::Size{1, static_cast<int>(size)}, CV_32FC2, data_ptr.get());
         cv::Mat current_ids(
-            cv::Size{1, size},
+            cv::Size{1, static_cast<int>(size)},
             CV_32SC1,
             state_.detected_ids_all[camera_idx][timestamp].second.get());
 
@@ -441,7 +441,7 @@ void CalibrationNode::fillCommonImageObjectPoints(
     std::vector<cv::Point2f>& image_points_2, std::vector<cv::Point3f>& obj_points_2,
     std::vector<cv::Point2f>& common_image_points_1,
     std::vector<cv::Point2f>& common_image_points_2, std::vector<cv::Point3f>& common_obj_points) {
-    for (int i = 0; i < obj_points_1.size(); ++i) {
+    for (size_t i = 0; i < obj_points_1.size(); ++i) {
         const cv::Point3f& obj_point = obj_points_1[i];
         auto found_iter = std::find(obj_points_2.begin(), obj_points_2.end(), obj_point);
         if (found_iter != obj_points_2.end()) {
@@ -521,16 +521,16 @@ void CalibrationNode::stereoCalibrate() {
     std::vector<std::vector<std::vector<cv::Point3f>>> obj_points_all(
         param_.cameras_to_calibrate.size());
 
-    int chosen_detections_cnt = 0;
+    size_t chosen_detections_cnt = 0;
 
     while (std::all_of(
         state_.detectected_corners_all.begin(),
         state_.detectected_corners_all.end(),
         [&](const auto& elem) { return !elem.empty() && chosen_detections_cnt < elem.size(); })) {
-        int idx_of_min_timestamp = 0;
+        size_t idx_of_min_timestamp = 0;
         size_t min_timestamp = std::numeric_limits<size_t>::max();
         size_t max_timestamp = 0;
-        for (int i = 0; i < state_.detectected_corners_all.size(); ++i) {
+        for (size_t i = 0; i < state_.detectected_corners_all.size(); ++i) {
             auto current_map_elem = state_.detectected_corners_all[i].begin();
             std::advance(current_map_elem, chosen_detections_cnt);
             size_t current_timestamp = current_map_elem->first;
@@ -557,7 +557,7 @@ void CalibrationNode::stereoCalibrate() {
         }
     }
 
-    for (int camera_idx = 0; camera_idx < param_.cameras_to_calibrate.size(); ++camera_idx) {
+    for (size_t camera_idx = 0; camera_idx < param_.cameras_to_calibrate.size(); ++camera_idx) {
         auto last_valid_corner_iter = state_.detectected_corners_all[camera_idx].begin();
         std::advance(last_valid_corner_iter, chosen_detections_cnt);
         state_.detectected_corners_all[camera_idx].erase(
@@ -569,16 +569,17 @@ void CalibrationNode::stereoCalibrate() {
             last_valid_id_iter, state_.detected_ids_all[camera_idx].end());
     }
 
-    for (int camera_idx = 0; camera_idx < param_.cameras_to_calibrate.size(); ++camera_idx) {
+    for (size_t camera_idx = 0; camera_idx < param_.cameras_to_calibrate.size(); ++camera_idx) {
         // fill image and object points
-        fillImageObjectPoints(image_points_all[camera_idx], obj_points_all[camera_idx], camera_idx);
+        fillImageObjectPoints(
+            image_points_all[camera_idx], obj_points_all[camera_idx], static_cast<int>(camera_idx));
     }
 
     // for now we assume that we have 2 cameras
     std::vector<std::vector<std::vector<cv::Point2f>>> image_points_common(
         param_.cameras_to_calibrate.size());
     std::vector<std::vector<cv::Point3f>> obj_points_common;
-    for (int detection_idx = 0; detection_idx < image_points_all[0].size(); ++detection_idx) {
+    for (size_t detection_idx = 0; detection_idx < image_points_all[0].size(); ++detection_idx) {
         if (obj_points_common.empty() || obj_points_common.back().empty()) {
             obj_points_common.emplace_back();
             image_points_common[0].emplace_back();
@@ -596,7 +597,8 @@ void CalibrationNode::stereoCalibrate() {
     }
 
     std::vector<double> per_view_errors;
-    cv::Mat R, T;
+    cv::Mat rotation;
+    cv::Mat translation;
     double rms = cv::stereoCalibrate(
         obj_points_common,
         image_points_common[0],
@@ -606,8 +608,8 @@ void CalibrationNode::stereoCalibrate() {
         intrinsics_[1].camera_matrix,
         intrinsics_[1].dist_coefs,
         *state_.frame_size,
-        R,
-        T,
+        rotation,
+        translation,
         cv::noArray(),
         cv::noArray(),
         per_view_errors,
@@ -617,7 +619,8 @@ void CalibrationNode::stereoCalibrate() {
     RCLCPP_INFO(this->get_logger(), "Calibration done with error of %f ", rms);
 
     if (rms < param_.min_accepted_error) {
-        if (!CameraIntrinsicParameters::saveStereoCalibration(param_.path_to_params, R, T)) {
+        if (!CameraIntrinsicParameters::saveStereoCalibration(
+                param_.path_to_params, rotation, translation)) {
             RCLCPP_ERROR(
                 this->get_logger(),
                 "Failed to save result of stereo calibration to the file: %s",

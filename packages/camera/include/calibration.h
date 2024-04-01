@@ -72,8 +72,8 @@ class CalibrationNode : public rclcpp::Node {
     void stereoCalibrate();
     void fillImageObjectPoints(
         std::vector<std::vector<cv::Point2f>>& image_points,
-        std::vector<std::vector<cv::Point3f>>& obj_points, const int& camera_idx);
-    void fillCommonImageObjectPoints(
+        std::vector<std::vector<cv::Point3f>>& obj_points, int camera_idx);
+    static void fillCommonImageObjectPoints(
         std::vector<cv::Point2f>& image_points_1, std::vector<cv::Point3f>& obj_points_1,
         std::vector<cv::Point2f>& image_points_2, std::vector<cv::Point3f>& obj_points_2,
         std::vector<cv::Point2f>& common_image_points_1,
