@@ -34,7 +34,7 @@ class LockFreeQueue {
         // while could not proccess
         while (true) {
             int snap = tail_.load();
-            if (snap - head_.load() == data_.size()) {
+            if (snap - head_.load() == static_cast<int>(data_.size())) {
                 // buffer is full and can't be updated
                 // in fact, slot can be freed during verification, but we do not double-check
                 return false;

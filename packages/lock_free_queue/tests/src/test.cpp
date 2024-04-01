@@ -48,7 +48,7 @@ TEST(Performance, NoSpuriousFails) {
     std::vector<std::thread> writers;
     // check that all threads managed to push elements without fake fails
     for (int i = 0; i < n_threads; i++) {
-        writers.emplace_back([&] {
+        writers.emplace_back([&] {  // NOLINT
             for (int j = 0; j < n; ++j) {
                 ASSERT_TRUE(queue.push(0));
             }
@@ -63,7 +63,7 @@ TEST(Performance, NoSpuriousFails) {
     // check that all threads managed to pop elements without fake fails
     // and no elements were lost
     for (int i = 0; i < n_threads; i++) {
-        readers.emplace_back([&] {
+        readers.emplace_back([&] {  // NOLINT
             for (int j = 0; j < n; ++j) {
                 int k;
                 ASSERT_TRUE(queue.pop(k));
@@ -86,13 +86,13 @@ TEST(Performance, NoQueueLock) {
     for (int i = 0; i < n_threads; i++) {
         const int current_id = id++;
         if (current_id % 2 == 0) {
-            threads.emplace_back([&] {
+            threads.emplace_back([&] {  // NOLINT
                 for (int cnt = 0; cnt < n; ++cnt) {
                     queue.push(0);
                 }
             });
         } else {
-            threads.emplace_back([&] {
+            threads.emplace_back([&] {  // NOLINT
                 for (int cnt = 0; cnt < n; ++cnt) {
                     int _;
                     queue.pop(_);
