@@ -1,5 +1,6 @@
 import argparse 
 import torch
+import cv2
 import numpy as np
 
 from model import get_model
@@ -10,6 +11,7 @@ if __name__ == "__main__":
     parser.add_argument('--backbone', type=str)
     parser.add_argument('--size', type=int)
     parser.add_argument('--checkpoint', type=str)
+    parser.add_argument('--img_path', type=str)
 
     args = parser.parse_args()
     model = get_model(backbone_name=args.backbone, size=args.size)
@@ -20,7 +22,14 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.eval().to(device)
 
-    dummy_input = torch.randn(1, 3, args.size, args.size, dtype=torch.float).to(device)
+    image = cv2.imread(args.img_path)
+    image = cv2.resize(image, (args.size, args.size))
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
+    image /= 255.0
+    image_input = np.transpose(image, (2, 0, 1)).astype(np.float32)
+    image_input = torch.tensor(image_input, dtype=torch.float)
+    image_input = torch.unsqueeze(image_input, 0)
+    dummy_input = image_input.to(device)
 
     # INIT LOGGERS
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
