@@ -35,7 +35,7 @@ launch:
     - { name: "publish_rectified_preview", value: "$(var publish_rectified_preview)" }
 
     # external trigger mode and parameters
-    - { name: "hardware_triger", value: False }  # if True only master is sent trigger signal
+    - { name: "hardware_trigger", value: False }  # if True only master is sent trigger signal
     - { name: "strobe_pulse_width", value: 500 } # in microseconds
     - { name: "strobe_polarity", value: 1 }      # 0 is valid at low level, 1 is valid at high level
     - { name: "master_camera_id", value: "1" }
