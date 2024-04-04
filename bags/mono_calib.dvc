@@ -1,0 +1,6 @@
+outs:
+- md5: adf1022bed11ca59c547b34cfcddae48.dir
+  size: 3092660599
+  nfiles: 2
+  hash: md5
+  path: mono_calib

@@ -1,0 +1,6 @@
+outs:
+- md5: e8df8726b6b54d242fdc664f8931ef1c.dir
+  size: 2417397051
+  nfiles: 2
+  hash: md5
+  path: stereopair_calib

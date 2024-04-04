@@ -1,0 +1,6 @@
+outs:
+- md5: 38b87853f748f1efea7375d1fa49fb09.dir
+  size: 1030496881
+  nfiles: 2
+  hash: md5
+  path: stereo_calib
