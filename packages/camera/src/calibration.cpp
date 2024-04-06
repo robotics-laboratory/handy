@@ -155,6 +155,7 @@ void CalibrationNode::declareLaunchParams() {
 
     param_.cameras_to_calibrate = this->declare_parameter<std::vector<int64_t>>("cameras_to_calibrate", {1, 2});
     param_.fps = this->declare_parameter<int64_t>("fps", 20);
+    RCLCPP_INFO(this->get_logger(), "fps: %ld", param_.fps);
     // clang-format on
 
     // no more than 2 camera are supported at the moment
@@ -315,6 +316,10 @@ bool CalibrationNode::checkMaxSimilarity(
         state_.polygons_all[camera_idx].begin(),
         state_.polygons_all[camera_idx].end(),
         [&](const Polygon& prev_poly) {
+            if (state_.global_calibration_state ==
+                kStereoCapturing) {  // we should take more images to sync stereopairs
+                return getIou(prev_poly, new_poly) <= param_.iou_threshold + 0.2;
+            }
             return getIou(prev_poly, new_poly) <= param_.iou_threshold;
         });
 }
@@ -435,24 +440,6 @@ void CalibrationNode::fillImageObjectPoints(
     }
 }
 
-// for 2 cameras only
-void CalibrationNode::fillCommonImageObjectPoints(
-    std::vector<cv::Point2f>& image_points_1, std::vector<cv::Point3f>& obj_points_1,
-    std::vector<cv::Point2f>& image_points_2, std::vector<cv::Point3f>& obj_points_2,
-    std::vector<cv::Point2f>& common_image_points_1,
-    std::vector<cv::Point2f>& common_image_points_2, std::vector<cv::Point3f>& common_obj_points) {
-    for (size_t i = 0; i < obj_points_1.size(); ++i) {
-        const cv::Point3f& obj_point = obj_points_1[i];
-        auto found_iter = std::find(obj_points_2.begin(), obj_points_2.end(), obj_point);
-        if (found_iter != obj_points_2.end()) {
-            const int idx = std::distance(obj_points_2.begin(), found_iter);
-            common_obj_points.push_back(obj_point);
-            common_image_points_1.push_back(image_points_1[i]);
-            common_image_points_2.push_back(image_points_2[idx]);
-        }
-    }
-}
-
 void CalibrationNode::calibrate(size_t camera_idx) {
     state_.global_calibration_state = kMonoCalibrating;
     publishCalibrationState();
@@ -541,9 +528,8 @@ void CalibrationNode::stereoCalibrate() {
                 idx_of_min_timestamp = i;
             }
         }
-
         if (max_timestamp - min_timestamp <
-            static_cast<size_t>(10e3 / param_.fps)) {  // found simultaneous snapshot
+            static_cast<size_t>(1000 / param_.fps)) {  // found simultaneous snapshot
             ++chosen_detections_cnt;
         } else {
             auto corners_iter_to_delete =
@@ -580,25 +566,44 @@ void CalibrationNode::stereoCalibrate() {
         param_.cameras_to_calibrate.size());
     std::vector<std::vector<cv::Point3f>> obj_points_common;
     for (size_t detection_idx = 0; detection_idx < image_points_all[0].size(); ++detection_idx) {
-        if (obj_points_common.empty() || obj_points_common.back().empty()) {
+        if (obj_points_common.empty() || !obj_points_common.back().empty()) {
             obj_points_common.emplace_back();
-            image_points_common[0].emplace_back();
-            image_points_common[1].emplace_back();
+            for (size_t camera_idx = 0; camera_idx < param_.cameras_to_calibrate.size();
+                 ++camera_idx) {
+                image_points_common[camera_idx].emplace_back();
+            }
         }
 
-        fillCommonImageObjectPoints(
-            image_points_all[0][detection_idx],
-            obj_points_all[0][detection_idx],
-            image_points_all[1][detection_idx],
-            obj_points_all[1][detection_idx],
-            image_points_common[0].back(),
-            image_points_common[1].back(),
-            obj_points_common.back());
+        for (size_t i = 0; i < obj_points_all[0][detection_idx].size(); ++i) {
+            std::vector<size_t> found_indexes;
+            if (std::all_of(
+                    obj_points_all.begin(),
+                    obj_points_all.end(),
+                    [&](const auto& camera_obj_points) {
+                        auto found = std::find(
+                            camera_obj_points[detection_idx].begin(),
+                            camera_obj_points[detection_idx].end(),
+                            obj_points_all[0][detection_idx][i]);
+                        if (found != camera_obj_points[detection_idx].end()) {
+                            found_indexes.push_back(
+                                std::distance(camera_obj_points[detection_idx].begin(), found));
+                            return true;
+                        }
+                        return false;
+                    })) {
+                obj_points_common.back().push_back(obj_points_all[0][detection_idx][i]);
+                for (size_t camera_idx = 0; camera_idx < found_indexes.size(); ++camera_idx) {
+                    const cv::Point2f& common_point_to_add =
+                        image_points_all[camera_idx][detection_idx][found_indexes[camera_idx]];
+                    image_points_common[camera_idx].back().push_back(common_point_to_add);
+                }
+            }
+        }
     }
 
-    std::vector<double> per_view_errors;
     cv::Mat rotation;
     cv::Mat translation;
+
     double rms = cv::stereoCalibrate(
         obj_points_common,
         image_points_common[0],
@@ -612,7 +617,6 @@ void CalibrationNode::stereoCalibrate() {
         translation,
         cv::noArray(),
         cv::noArray(),
-        per_view_errors,
         cv::CALIB_FIX_INTRINSIC,
         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
@@ -630,7 +634,7 @@ void CalibrationNode::stereoCalibrate() {
         state_.global_calibration_state = kOkCalibration;
     } else {
         RCLCPP_INFO(this->get_logger(), "Continue taking frames for stereo calibration");
-        state_.global_calibration_state = kCapturing;
+        state_.global_calibration_state = kStereoCapturing;
     }
 }
 }  // namespace handy::calibration
