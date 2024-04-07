@@ -175,6 +175,9 @@ CameraNode::CameraNode() : Node("camera_node") {
         const std::string root = "/camera_" + std::to_string(i);
         constexpr int queue_size = 1;
 
+        signals_.timestamp.push_back(this->create_publisher<builtin_interfaces::msg::Time>(
+            root + "/timestamps", queue_size));
+
         if (param_.publish_raw) {
             signals_.raw_img.push_back(this->create_publisher<sensor_msgs::msg::CompressedImage>(
                 root + "/raw/image", queue_size));
@@ -512,6 +515,9 @@ void CameraNode::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHea
 void CameraNode::handleQueue(int camera_idx) {
     StampedImageBuffer stamped_buffer_id;
     while (state_.camera_images[camera_idx]->pop(stamped_buffer_id)) {
+        signals_.timestamp[camera_idx]->publish(
+            builtin_interfaces::msg::Time(this->get_clock()->now()));
+
         if (param_.publish_raw || param_.publish_raw_preview) {
             publishRawImage(stamped_buffer_id.raw_buffer, stamped_buffer_id.timestamp, camera_idx);
         }

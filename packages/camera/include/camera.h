@@ -97,6 +97,7 @@ class CameraNode : public rclcpp::Node {
     struct Signals {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_img;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_img;
+        std::vector<rclcpp::Publisher<builtin_interfaces::msg::Time>::SharedPtr> timestamp;
 
         // clang-format off
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> rectified_preview_img;
