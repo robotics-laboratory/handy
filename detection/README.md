@@ -75,5 +75,5 @@ python detection/inference.py --data_dir {path_to_images} --result_dir {path_to_
 To measure the speed of the model, run the following command:
 
 ```bash
-python detection/speed.py --backbone {backbone_model} --checkpoint {path_to_checkpoint} --size {image_size} --img_path {path_to_image}
+python detection/speed_test.py --backbone {backbone_model} --checkpoint {path_to_checkpoint} --size {image_size} --img_path {path_to_image}
 ```
