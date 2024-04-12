@@ -8,6 +8,7 @@
 #include "CameraApi.h"
 #include "lock_free_queue.h"
 #include "params.h"
+// #include "time.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -97,6 +98,8 @@ class CameraNode : public rclcpp::Node {
     struct Signals {
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_img;
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_img;
+
+        std::vector<rclcpp::Publisher<builtin_interfaces::msg::Time>::SharedPtr> img_timestamp;
 
         // clang-format off
         std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> rectified_preview_img;
