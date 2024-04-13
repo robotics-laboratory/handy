@@ -26,8 +26,8 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
         param_file.close();
     }
 
-    YAML::Node&& intrinsics = config["intrinsics"];
-    YAML::Node&& camera_id_node = intrinsics[camera_id_str];
+    YAML::Node&& params = config["parameters"];
+    YAML::Node&& camera_id_node = params[camera_id_str];
 
     camera_id_node["image_size"] = YAML::Node(YAML::NodeType::Sequence);
     camera_id_node["image_size"].SetStyle(YAML::EmitterStyle::Flow);
@@ -56,9 +56,14 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     output_file << config;
     output_file.close();
 }
+
 bool CameraIntrinsicParameters::saveStereoCalibration(
-    const std::string& yaml_path, cv::Mat& rotation_vectors, cv::Mat& translation_vectors,
-    cv::Size& image_size) {
+    const std::string& yaml_path, cv::Mat& rotation_vector, cv::Mat& translation_vector,
+    int camera_id) {
+    if (rotation_vector.cols * rotation_vector.rows != 3 ||
+        translation_vector.cols * translation_vector.rows != 3) {
+        return false;
+    }
     YAML::Node config;
     std::ifstream param_file(yaml_path);
     if (param_file) {
@@ -66,26 +71,19 @@ bool CameraIntrinsicParameters::saveStereoCalibration(
         param_file.close();
     }
 
-    YAML::Node&& extrinsics = config["stereo_calibration"];
+    YAML::Node&& params = config["parameters"];
+    YAML::Node&& camera_id_node = params[std::to_string(camera_id)];
 
-    extrinsics["image_size"] = YAML::Node(YAML::NodeType::Sequence);
-    extrinsics["image_size"].SetStyle(YAML::EmitterStyle::Flow);
-    extrinsics["image_size"].push_back(image_size.width);
-    extrinsics["image_size"].push_back(image_size.height);
-
-    extrinsics["rotation"] = YAML::Node(YAML::NodeType::Sequence);
-    extrinsics["rotation"].SetStyle(YAML::EmitterStyle::Flow);
+    camera_id_node["rotation"] = YAML::Node(YAML::NodeType::Sequence);
+    camera_id_node["rotation"].SetStyle(YAML::EmitterStyle::Flow);
     for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            extrinsics["rotation"].push_back(rotation_vectors.at<double>(i, j));
-        }
+        camera_id_node["rotation"].push_back(rotation_vector.at<double>(i));
     }
 
-    extrinsics["translation"] = YAML::Node(YAML::NodeType::Sequence);
-    extrinsics["translation"].SetStyle(YAML::EmitterStyle::Flow);
-
+    camera_id_node["translation"] = YAML::Node(YAML::NodeType::Sequence);
+    camera_id_node["translation"].SetStyle(YAML::EmitterStyle::Flow);
     for (int i = 0; i < 3; ++i) {
-        extrinsics["translation"].push_back(translation_vectors.at<double>(i, 0));
+        camera_id_node["translation"].push_back(translation_vector.at<double>(i));
     }
 
     std::ofstream output_file(yaml_path);
@@ -103,7 +101,7 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
     result.camera_id = camera_id;
     const std::string camera_id_str = std::to_string(camera_id);
 
-    const YAML::Node intrinsics = YAML::LoadFile(yaml_path)["intrinsics"];
+    const YAML::Node intrinsics = YAML::LoadFile(yaml_path)["parameters"];
 
     const auto yaml_image_size = intrinsics[camera_id_str]["image_size"].as<std::vector<int>>();
     result.image_size = cv::Size(yaml_image_size[0], yaml_image_size[1]);
@@ -134,28 +132,18 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
 
 void CameraIntrinsicParameters::loadStereoCalibration(
     const std::string& yaml_path, cv::Mat& rotation_vectors, cv::Mat& translation_vectors,
-    cv::Size& image_size) {
-    const YAML::Node extrinsics = YAML::LoadFile(yaml_path)["stereo_calibration"];
+    int camera_id) {
+    const YAML::Node camera_params =
+        YAML::LoadFile(yaml_path)["parameters"][std::to_string(camera_id)];
 
-    const auto yaml_image_size = extrinsics["image_size"].as<std::vector<int>>();
-    image_size = cv::Size(yaml_image_size[0], yaml_image_size[1]);
-
-    const auto yaml_camera_matrix = extrinsics["rotation"].as<std::vector<double>>();
+    const auto yaml_camera_matrix = camera_params["rotation"].as<std::vector<double>>();
     rotation_vectors = cv::Mat(yaml_camera_matrix, true);
-    rotation_vectors = rotation_vectors.reshape(0, {3, 3});
+    rotation_vectors = rotation_vectors.reshape(0, {3, 1});
 
-    const auto coefs = extrinsics["translation"].as<std::vector<double>>();
-    for (size_t i = 0; i < coefs.size(); ++i) {
-        printf("%f ", coefs[i]);
-    }
-    printf("\n");
+    const auto coefs = camera_params["translation"].as<std::vector<double>>();
 
     translation_vectors = cv::Mat(coefs, true);
     translation_vectors = translation_vectors.reshape(0, {3, 1});
-    for (size_t i = 0; i < coefs.size(); ++i) {
-        printf("%f ", translation_vectors.at<double>(i, 0));
-    }
-    printf("\n");
 }
 
 cv::Mat CameraIntrinsicParameters::undistortImage(cv::Mat& src) {
