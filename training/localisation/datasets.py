@@ -29,6 +29,7 @@ class Denormalize():
 def get_train_transform(width=320, height=192):
     return v2.Compose([
         #TODO: Add bbox safe random crop
+        v2.Resize(size=(height, width), antialias=True),
         v2.RandomHorizontalFlip(p = 0.5),
         v2.RandomVerticalFlip(p = 0.5),
         v2.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
@@ -39,7 +40,7 @@ def get_train_transform(width=320, height=192):
 
 def get_valid_transform(width=320, height=192):
     return v2.Compose([
-        v2.Resize(size=(height, width)),
+        v2.Resize(size=(height, width), antialias=True),
         v2.ToDtype(torch.float32, scale=True),
         v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
@@ -79,8 +80,8 @@ class LocalisationDataset(Dataset):
         if self.transforms:
             image, boxes_out = self.transforms(image, boxes)
             box = boxes_out[0]
-            target['bbox_center'] = [int((box[0] + box[2]) / 2), int((box[1] + box[3]) / 2)]
-            target['bbox_width'] = (box[2] - box[0] + box[3] - box[1]) / 4
+            target['ball_center'] = [int((box[0] + box[2]) / 2), int((box[1] + box[3]) / 2)]
+            target['ball_rad'] = (box[2] - box[0] + box[3] - box[1]) / 4
 
         return image, target
 
@@ -88,11 +89,13 @@ class LocalisationDataset(Dataset):
         return len(self.images)
 
 def collate_fn(batch):
-    return tuple(zip(*batch))
+    images, targets = list(zip(*batch))
+    images = torch.stack(images)
+    return images, targets
 
 
-class DetectionDataModule(L.LightningDataModule):
-    def __init__(self, data_dir, annot_file, width, height, batch_size):
+class LocalisationDataModule(L.LightningDataModule):
+    def __init__(self, data_dir, annot_file, width=320, height=192, batch_size=32):
         super().__init__()
         self.data_dir = data_dir
         self.annot_file = annot_file
@@ -114,10 +117,7 @@ class DetectionDataModule(L.LightningDataModule):
     
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         images, targets = batch
-        
-        images = list(image.to(device) for image in images)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-        return images, targets
+        return images.to(device), targets
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Localisation Dataset Parameters')
@@ -137,9 +137,8 @@ if __name__ == '__main__':
     def visualize(image, target):
         image = Denormalize()(image.permute(1, 2, 0).numpy())
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        center = target['bbox_center']
-        width = target['bbox_width']
-        cv2.circle(image, center, 5, (255, 0, 0), -1)
+        center = target['ball_center']
+        cv2.circle(image, center, 1, (255, 0, 0), -1)
         cv2.imshow('image', image)
         cv2.waitKey(0)
     
