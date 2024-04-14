@@ -15,7 +15,7 @@ find_package(yaml_cpp_vendor REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(Boost REQUIRED)
 find_package(camera_srvs REQUIRED)
-find_package(lock_free_queue REQUIRED)
+find_package(common REQUIRED)
 
 add_library(mvsdk SHARED IMPORTED)
 set_target_properties(mvsdk PROPERTIES IMPORTED_LOCATION "/lib/libMVSDK.so")
@@ -28,11 +28,9 @@ add_executable(calibration src/calibration_main.cpp src/calibration.cpp
                            src/params.cpp)
 
 target_include_directories(
-  camera
-  PUBLIC
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../lock_free_queue/include>"
-    "/usr/include")
+  camera PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>" "/usr/include")
+
 target_include_directories(
   calibration PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                      "/usr/include")
@@ -44,7 +42,7 @@ ament_target_dependencies(
   OpenCV
   sensor_msgs
   yaml_cpp_vendor
-  lock_free_queue)
+  common)
 
 ament_target_dependencies(
   calibration
@@ -61,7 +59,7 @@ ament_target_dependencies(
   Boost
   camera_srvs)
 
-target_link_libraries(camera mvsdk queue_lib)
+target_link_libraries(camera mvsdk common::common)
 
 install(TARGETS camera calibration DESTINATION lib/${PROJECT_NAME})
 

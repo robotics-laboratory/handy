@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>lock_free_queue</name>
+  <name>common</name>
   <version>0.0.0</version>
-  <description>lock_free_queue</description>
+  <description>common</description>
   <license>MIT</license>
   <maintainer email="denis.bakin5@gmail.com">Denis Bakin</maintainer>
 
