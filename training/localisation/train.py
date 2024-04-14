@@ -4,7 +4,7 @@ import torch.nn as nn
 import argparse
 
 
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import StepLR
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 from model import BallLocalisation
@@ -30,7 +30,7 @@ def normal_dist_target(center, rad, width, height, sigma, device='cpu'):
         y_pos = torch.arange(0, h, device=device)
         target_ball_position[w:] = gaussian_1d(y_pos, center[1], sigma=sigma)
 
-        target_ball_position[target_ball_position < 0.0001] = 0.
+        target_ball_position[target_ball_position < 0.05] = 0.
 
     return target_ball_position
 
@@ -53,7 +53,7 @@ class Ball_Detection_Loss(nn.Module):
 
         return loss_ball_x + loss_ball_y
 
-def get_predicted_ball_pos(prob, width, thesh=0.01):
+def get_predicted_ball_pos(prob, width, thesh=0.0001):
     pred = prob.clone()
     pred[pred < thesh] = 0
     pred_x = torch.argmax(pred[:, :width], dim=1)
@@ -62,11 +62,10 @@ def get_predicted_ball_pos(prob, width, thesh=0.01):
 
 
 class LitLocalisation(L.LightningModule):
-    def __init__(self, model, sigma=None, milestones=[30, 45]):
+    def __init__(self, model, sigma=None):
         super().__init__()
         self.model = model
         self.sigma = sigma
-        self.milestones = milestones
         self.loss = Ball_Detection_Loss(model.width, model.height)
 
     def training_step(self, batch, batch_idx):
@@ -115,21 +114,20 @@ class LitLocalisation(L.LightningModule):
         self.log('val_rmse', rmse, on_step=True, on_epoch=True)
     
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD(self.parameters(), lr=0.0005, momentum=0.9, nesterov=True)
-        scheduler = MultiStepLR(optimizer=optimizer, milestones=[45], gamma=0.1, verbose=True) 
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+        scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
         return [optimizer], [scheduler]
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train the localisation model')
     parser.add_argument('--data_dir', type=str, help='Path to the data directory')
     parser.add_argument('--annot_file', type=str, help='Path to the annotation file')
-    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
+    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs')
     parser.add_argument('--width', type=int, default=320, help='Width of the input image')
     parser.add_argument('--height', type=int, default=192, help='Height of the input image')
-    parser.add_argument('--batch_size', type=int, default=16, help='Batch size')
-    parser.add_argument('--dropout_p', type=float, default=0.7, help='Dropout probability')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
+    parser.add_argument('--dropout_p', type=float, default=0.5, help='Dropout probability')
     parser.add_argument('--sigma', type=float, default=None, help='Sigma for the Gaussian distribution')
-    parser.add_argument('--milestones', type=int, nargs='+', default=[30, 45], help='Milestones for the learning rate scheduler')
     args = parser.parse_args()
 
     data_dir = args.data_dir
@@ -142,7 +140,7 @@ if __name__ == '__main__':
 
     model = BallLocalisation(dropout_p=args.dropout_p)
     data_module = LocalisationDataModule(data_dir, annot_file, width, height, batch_size)
-    lit_model = LitLocalisation(model, sigma, milestones)
+    lit_model = LitLocalisation(model, sigma)
 
     wandb_logger = WandbLogger(project='localisation')
     checkpoint_callback = ModelCheckpoint(monitor='val_loss', dirpath='checkpoints', filename='localisation-{epoch:02d}-{val_loss:.2f}')
