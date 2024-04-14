@@ -22,8 +22,10 @@ class BallLocalisation(nn.Module):
     input : tensor shape of (batch_size, 3, 320, 192)
     """
     def __init__(self, dropout_p=0.7):
+        self.width = 320
+        self.height = 192
         super(BallLocalisation, self).__init__()
-        self.conv1 = ConvBlock(3, 64, kernel_size=1, stride=1, padding=0)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=1, stride=1, padding="same")
         self.norm = nn.BatchNorm2d(64)
         self.relu = nn.ReLU()
         self.dropout2d = nn.Dropout2d(p=dropout_p)
