@@ -140,7 +140,7 @@ if __name__ == '__main__':
     sigma = args.sigma
     milestones = args.milestones
 
-    model = BallLocalisation()
+    model = BallLocalisation(dropout_p=args.dropout_p)
     data_module = LocalisationDataModule(data_dir, annot_file, width, height, batch_size)
     lit_model = LitLocalisation(model, sigma, milestones)
 
