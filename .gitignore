@@ -47,4 +47,5 @@ datasets/ball_dataset_side_1
 datasets/ball_dataset_side_2
 datasets/annotated_12_02_23
 datasets/test_set
+datasets/lab_16_04_24
 detection/detection-resnet34.ckpt
