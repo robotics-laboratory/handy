@@ -1,0 +1,27 @@
+parameters:
+
+  fps: 10.0
+  hardware_triger: False  # if True only master is sent trigger signal
+  strobe_pulse_width: 500 # in microseconds
+  strobe_polarity: 1      # 0 is valid at low level, 1 is valid at high level
+  master_camera_id: "1"
+
+1:
+  exposure_time: 6000       # range: ...
+  contrast: 100             # range: 0-100
+  gain_rgb: [120, 120, 120] # range: 0-400, auto default if analog_gain != -1
+  analog_gain: 50
+  gamma: 80                 # range: 0-250
+  saturation: 100           # range: 0-200
+  sharpness: 0              # range: 0-100
+  auto_exposure: False
+
+2:
+  exposure_time: 6000       # range: ...
+  contrast: 100             # range: 0-100
+  gain_rgb: [120, 120, 120] # range: 0-400, auto default if analog_gain != -1
+  analog_gain: 50
+  gamma: 80                 # range: 0-250
+  saturation: 100           # range: 0-200
+  sharpness: 0              # range: 0-100
+  auto_exposure: False
