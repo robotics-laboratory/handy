@@ -70,6 +70,7 @@ class SegmentationDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+        mask = np.clip(mask, 0, 1)
 
         image, mask = get_non_empty_mask_crop(image, mask)
 
