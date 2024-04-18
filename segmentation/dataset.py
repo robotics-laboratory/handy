@@ -24,8 +24,8 @@ def get_non_empty_mask_crop(image, mask, size=(256, 256)):
         x = random.randint(0, image.shape[0] - size[0])
         y = random.randint(0, image.shape[1] - size[1])
     else:
-        x = random.randint(max(x_max - size[0] + 1, 0), x_min)
-        y = random.randint(max(y_max - size[1] + 1, 0), y_min)
+        x = random.randint(max(x_max - size[0], 0), min(x_min, image.shape[0] - size[0]))
+        y = random.randint(max(y_max - size[1], 0), min(y_min, image.shape[1] - size[1]))
 
     return image[x:x+size[0], y:y+size[1]], mask[x:x+size[0], y:y+size[1]]
 
