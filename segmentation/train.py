@@ -73,5 +73,5 @@ if __name__ == '__main__':
         dirpath=f"checkpoint/{datetime.now().strftime('%m-%d-%H-%M-%S')}",
         filename="segmentation-{epoch:02d}",
     )
-    trainer = L.Trainer(logger=wandb_logger, accelerator="auto", max_epochs=args.epochs, callbacks=[checkpoint_callback])
+    trainer = L.Trainer(logger=wandb_logger, accelerator="auto", max_epochs=args.epochs, callbacks=[checkpoint_callback], log_every_n_steps=10)
     trainer.fit(lit_model, dm)
