@@ -14,6 +14,7 @@
 #include <iostream>
 #include <cstring>
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
@@ -46,7 +47,7 @@ void abortIfNot(std::string_view msg, int camera_idx, int status) {
 
 class Writer {
   public:
-    static constexpr int BUFFER_CAPACITY = 900;
+    static constexpr int BUFFER_CAPACITY = 1000;
 
     Writer(char* param_file, char* output_filename, int duration) {
         param_.param_file = {param_file};
@@ -62,7 +63,7 @@ class Writer {
         state_.files.resize(state_.camera_num);
         state_.camera_handles.resize(state_.camera_num);
         state_.counters = std::vector<std::atomic<int>>(state_.camera_num);
-        state_.current_buffer_idx = std::vector<std::atomic<int>>(state_.camera_num);
+        state_.current_buffer_idx = std::vector<std::atomic<size_t>>(state_.camera_num);
         state_.alligned_buffers = std::vector<void*>(state_.camera_num);
 
         printf("camera number: %d\n", state_.camera_num);
@@ -86,19 +87,10 @@ class Writer {
                     ->handleFrame(idx, raw_buffer, frame_info);
             };
 
-            CameraSetCallbackFunction(state_.camera_handles[i], std::move(func), this, nullptr);
-
             // if node is launch in soft trigger mode
             CameraSetTriggerMode(state_.camera_handles[i], SOFT_TRIGGER);
 
-            const std::string path_to_file =
-                param_.output_filename + "_" + std::to_string(i) + ".out";
-            state_.files[i] =
-                open(path_to_file.c_str(), O_WRONLY | O_CREAT | O_DIRECT, S_IWUSR | S_IRUSR);
-            if (state_.files[i] == -1) {
-                printf("failed to open %d\n", i);
-                exit(EXIT_FAILURE);
-            }
+            CameraSetCallbackFunction(state_.camera_handles[i], std::move(func), this, nullptr);
 
             applyParamsToCamera(state_.camera_handles[i]);
             abortIfNot("start", CameraPlay(state_.camera_handles[i]));
@@ -110,31 +102,27 @@ class Writer {
         printf("latency=%fs\n", param_.latency.count());
         printf("frames will be taken %d\n", fps * duration);
 
-        for (int trigger_cnt = 0; trigger_cnt < fps * duration; ++trigger_cnt) {
+        for (int trigger_cnt = 0; trigger_cnt < BUFFER_CAPACITY; ++trigger_cnt) {
             for (int i = 0; i < state_.camera_num; ++i) {
                 CameraSoftTrigger(state_.camera_handles[i]);
             }
             std::this_thread::sleep_for(param_.latency);
-            if ((trigger_cnt + 1) % BUFFER_CAPACITY == 0) {
-                for (int i = 0; i < state_.camera_num; ++i) {
-                    write(
-                        state_.files[i],
-                        state_.alligned_buffers[i],
-                        state_.frame_sizes[i].area() * BUFFER_CAPACITY);
-                    state_.current_buffer_idx[i].store(0);
-                }
-            }
+            // if ((trigger_cnt + 1) % BUFFER_CAPACITY == 0) {
+            //     printf("starting writing\n");
+
+            //     for (int i = 0; i < state_.camera_num; ++i) {
+            //         std::lock_guard<std::mutex> lock(state_.file_mutexes[i]);
+            //         write(
+            //             state_.files[i],
+            //             state_.alligned_buffers[i],
+            //             state_.frame_sizes[i].area() * BUFFER_CAPACITY);
+            //         state_.current_buffer_idx[i].store(0);
+            //     }
+            //     break;
+            // }
         }
 
         std::this_thread::sleep_for(param_.latency * 100);
-        int frames_left = (fps * duration + 1) % BUFFER_CAPACITY;
-        for (int i = 0; i < state_.camera_num; ++i) {
-            write(
-                state_.files[i],
-                state_.alligned_buffers[i],
-                state_.frame_sizes[i].area() * frames_left);
-            state_.current_buffer_idx[i].store(0);
-        }
 
         printf("%d %d\n", state_.counters[0].load(), state_.counters[1].load());
 
@@ -144,8 +132,21 @@ class Writer {
             abortIfNot(
                 "camera " + std::to_string(i) + " uninit", CameraUnInit(state_.camera_handles[i]));
 
+            long page_size = sysconf(_SC_PAGE_SIZE);
+            long size =
+                state_.frame_sizes[i].area() * BUFFER_CAPACITY / page_size * page_size + page_size;
+            if (msync(state_.alligned_buffers[i], size, MS_SYNC) == -1) {
+                perror("Could not sync the file to disk");
+            }
+            // Free the mmapped memory
+            if (munmap(state_.alligned_buffers[i], size) == -1) {
+                close(state_.files[i]);
+                perror("Error un-mmapping the file");
+                exit(1);
+            }
+
             close(state_.files[i]);
-            free(state_.alligned_buffers[i]);
+            // free(state_.alligned_buffers[i]);
         }
     }
 
@@ -156,10 +157,12 @@ class Writer {
         const int camera_idx = state_.handle_to_idx[handle];
         ++state_.counters[camera_idx];
         std::lock_guard<std::mutex> lock(state_.file_mutexes[camera_idx]);
+        size_t buffer_idx = state_.current_buffer_idx[camera_idx].fetch_add(1);
+        printf("%d buffer id %ld\n", handle, buffer_idx);
+
         std::memcpy(
             (uint8_t*)state_.alligned_buffers[camera_idx] +
-                state_.frame_sizes[camera_idx].area() *
-                    state_.current_buffer_idx[camera_idx].fetch_add(1),
+                state_.frame_sizes[camera_idx].area() * buffer_idx,
             raw_buffer,
             frame_info->iWidth * frame_info->iHeight);
 
@@ -197,18 +200,60 @@ class Writer {
                 resolution_data->iHeight);
             state_.frame_sizes[camera_idx] = {resolution_data->iWidth, resolution_data->iHeight};
 
-            struct statx res;
-            int status =
-                statx(state_.files[camera_idx], "", AT_EMPTY_PATH, STATX_BASIC_STATS, &res);
-            if (status == -1) {
-                printf("statx error\n");
+            // struct statx res;
+            // int status =
+            //     statx(state_.files[camera_idx], "", AT_EMPTY_PATH, STATX_BASIC_STATS, &res);
+            // if (status == -1) {
+            //     printf("statx error\n");
+            //     exit(EXIT_FAILURE);
+            // }
+            // printf("allignment: %d\n", res.stx_blksize);
+            // status = posix_memalign(
+            //     &state_.alligned_buffers[camera_idx],
+            //     res.stx_blksize,
+            //     state_.frame_sizes[camera_idx].area() * BUFFER_CAPACITY);
+            // if (status != 0) {
+            //     printf("posix_memalign error %d\n", status);
+            //     exit(EXIT_FAILURE);
+            // }
+
+            const std::string path_to_file = param_.output_filename + "_" + camera_id_str + ".out";
+            state_.files[camera_idx] =
+                open(path_to_file.c_str(), O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
+            if (state_.files[camera_idx] == -1) {
+                printf("failed to open %s\n", camera_id_str.c_str());
                 exit(EXIT_FAILURE);
             }
-            printf("allignment: %d\n", res.stx_blksize);
-            posix_memalign(
-                &state_.alligned_buffers[camera_idx],
-                res.stx_blksize,
-                state_.frame_sizes[camera_idx].area() * BUFFER_CAPACITY);
+            long page_size = sysconf(_SC_PAGE_SIZE);
+
+            if (ftruncate(
+                    state_.files[camera_idx],
+                    state_.frame_sizes[camera_idx].area() * BUFFER_CAPACITY / page_size *
+                            page_size +
+                        page_size) == -1) {
+                close(state_.files[camera_idx]);
+                perror("Error resizing the file");
+                exit(1);
+            }
+
+            state_.alligned_buffers[camera_idx] = mmap(
+                NULL,
+                state_.frame_sizes[camera_idx].area() * BUFFER_CAPACITY / page_size * page_size +
+                    page_size,
+                PROT_WRITE,
+                MAP_SHARED,
+                state_.files[camera_idx],
+                0);
+            // malloc(state_.frame_sizes[camera_idx].area() * BUFFER_CAPACITY);
+            if (state_.alligned_buffers[camera_idx] == MAP_FAILED) {
+                perror("mmap");
+                printf("malloc error\n");
+                exit(EXIT_FAILURE);
+            }
+            // int status = posix_memalign(
+            //     &state_.alligned_buffers[camera_idx],
+            //     res.stx_blksize,
+            //     state_.frame_sizes[camera_idx].area() * BUFFER_CAPACITY);
         }
 
         {
@@ -287,7 +332,7 @@ class Writer {
     }
 
     struct Size {
-        int area() const { return width * height; };
+        size_t area() const { return static_cast<size_t>(width * height); };
 
         int width;
         int height;
@@ -303,7 +348,7 @@ class Writer {
 
     struct State {
         std::vector<std::atomic<int>> counters;
-        std::vector<std::atomic<int>> current_buffer_idx;
+        std::vector<std::atomic<size_t>> current_buffer_idx;
         int camera_num = 2;
         std::vector<int> files;
         std::map<int, int> handle_to_idx;
