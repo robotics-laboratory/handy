@@ -91,13 +91,13 @@ class SegmentationDataModule(L.LightningDataModule):
     
     def setup(self, stage):
         self.train_dataset = SegmentationDataset(
-            os.path.join(self.data_dir, 'train', 'images_bgr'),
+            os.path.join(self.data_dir, 'train', 'image_bgr'),
             os.path.join(self.data_dir, 'train', 'masks'),
             size=self.size,
             transform=get_train_transform()
         )
         self.val_dataset = SegmentationDataset(
-            os.path.join(self.data_dir, 'val', 'images_bgr'),
+            os.path.join(self.data_dir, 'val', 'image_bgr'),
             os.path.join(self.data_dir, 'val', 'masks'),
             size=self.size,
             transform=get_val_transform()
