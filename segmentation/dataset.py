@@ -5,6 +5,7 @@ import lightning as L
 import numpy as np
 import random
 import torch
+import torchvision.transforms as T
 
 import torch.utils
 from torch.utils.data import Dataset
@@ -23,9 +24,8 @@ def get_non_empty_mask_crop(image, mask, size=(256, 256)):
         x = random.randint(0, image.shape[0] - size[0])
         y = random.randint(0, image.shape[1] - size[1])
     else:
-        x = random.randint(x_max - size[0] + 1, x_min)
-        y = random.randint(y_max - size[1] + 1, y_min)
-
+        x = random.randint(max(x_max - size[0] + 1, 0), x_min)
+        y = random.randint(max(y_max - size[1] + 1, 0), y_min)
 
     return image[x:x+size[0], y:y+size[1]], mask[x:x+size[0], y:y+size[1]]
 
@@ -71,7 +71,6 @@ class SegmentationDataset(Dataset):
 
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
         mask = np.clip(mask, 0, 1)
-
         image, mask = get_non_empty_mask_crop(image, mask)
 
         if self.transform:
@@ -115,5 +114,5 @@ class SegmentationDataModule(L.LightningDataModule):
             num_workers=2, pin_memory=True, persistent_workers=True
         )
     
-    def transfer_batch_to_device(self, batch, device):
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
         return batch[0].to(device), batch[1].to(device)
