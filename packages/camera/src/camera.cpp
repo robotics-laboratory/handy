@@ -12,6 +12,8 @@
 #include <ctime>
 #include <atomic>
 #include <iostream>
+#include <cstring>
+#include <sys/stat.h>
 
 #include <yaml-cpp/yaml.h>
 #include <algorithm>
@@ -44,6 +46,8 @@ void abortIfNot(std::string_view msg, int camera_idx, int status) {
 
 class Writer {
   public:
+    static constexpr int BUFFER_CAPACITY = 900;
+
     Writer(char* param_file, char* output_filename, int duration) {
         param_.param_file = {param_file};
         param_.output_filename = {output_filename};
@@ -58,6 +62,8 @@ class Writer {
         state_.files.resize(state_.camera_num);
         state_.camera_handles.resize(state_.camera_num);
         state_.counters = std::vector<std::atomic<int>>(state_.camera_num);
+        state_.current_buffer_idx = std::vector<std::atomic<int>>(state_.camera_num);
+        state_.alligned_buffers = std::vector<void*>(state_.camera_num);
 
         printf("camera number: %d\n", state_.camera_num);
 
@@ -85,16 +91,18 @@ class Writer {
             // if node is launch in soft trigger mode
             CameraSetTriggerMode(state_.camera_handles[i], SOFT_TRIGGER);
 
-            applyParamsToCamera(state_.camera_handles[i]);
-            abortIfNot("start", CameraPlay(state_.camera_handles[i]));
-            printf("inited API and started camera handle = %d\n", state_.camera_handles[i]);
-
-            const std::string path_to_file = "camera_" + std::to_string(i) + ".out";
-            state_.files[i] = open(path_to_file.c_str(), O_WRONLY | O_CREAT, S_IWUSR | S_IRUSR);
+            const std::string path_to_file =
+                param_.output_filename + "_" + std::to_string(i) + ".out";
+            state_.files[i] =
+                open(path_to_file.c_str(), O_WRONLY | O_CREAT | O_DIRECT, S_IWUSR | S_IRUSR);
             if (state_.files[i] == -1) {
                 printf("failed to open %d\n", i);
                 exit(EXIT_FAILURE);
             }
+
+            applyParamsToCamera(state_.camera_handles[i]);
+            abortIfNot("start", CameraPlay(state_.camera_handles[i]));
+            printf("inited API and started camera handle = %d\n", state_.camera_handles[i]);
         }
 
         const auto fps = YAML::LoadFile(param_.param_file)["parameters"]["fps"].as<int>();
@@ -107,8 +115,26 @@ class Writer {
                 CameraSoftTrigger(state_.camera_handles[i]);
             }
             std::this_thread::sleep_for(param_.latency);
+            if ((trigger_cnt + 1) % BUFFER_CAPACITY == 0) {
+                for (int i = 0; i < state_.camera_num; ++i) {
+                    write(
+                        state_.files[i],
+                        state_.alligned_buffers[i],
+                        state_.frame_sizes[i].area() * BUFFER_CAPACITY);
+                    state_.current_buffer_idx[i].store(0);
+                }
+            }
         }
-        std::this_thread::sleep_for(param_.latency * 10);
+
+        std::this_thread::sleep_for(param_.latency * 100);
+        int frames_left = (fps * duration + 1) % BUFFER_CAPACITY;
+        for (int i = 0; i < state_.camera_num; ++i) {
+            write(
+                state_.files[i],
+                state_.alligned_buffers[i],
+                state_.frame_sizes[i].area() * frames_left);
+            state_.current_buffer_idx[i].store(0);
+        }
 
         printf("%d %d\n", state_.counters[0].load(), state_.counters[1].load());
 
@@ -119,25 +145,32 @@ class Writer {
                 "camera " + std::to_string(i) + " uninit", CameraUnInit(state_.camera_handles[i]));
 
             close(state_.files[i]);
+            free(state_.alligned_buffers[i]);
         }
     }
 
   private:
     void handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
-        auto start = std::chrono::system_clock::now();
+        auto start = std::chrono::high_resolution_clock::now();
 
         const int camera_idx = state_.handle_to_idx[handle];
         ++state_.counters[camera_idx];
         std::lock_guard<std::mutex> lock(state_.file_mutexes[camera_idx]);
-        write(state_.files[camera_idx], raw_buffer, frame_info->iWidth * frame_info->iHeight);
-        CameraReleaseImageBuffer(handle, raw_buffer);
-        // Some computation here
-        auto end = std::chrono::system_clock::now();
+        std::memcpy(
+            (uint8_t*)state_.alligned_buffers[camera_idx] +
+                state_.frame_sizes[camera_idx].area() *
+                    state_.current_buffer_idx[camera_idx].fetch_add(1),
+            raw_buffer,
+            frame_info->iWidth * frame_info->iHeight);
 
-        std::chrono::duration<double> elapsed_seconds = end - start;
-        std::time_t end_time = std::chrono::system_clock::to_time_t(end);
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> elapsed = end - start;
 
-        std::cout << "elapsed: " << elapsed_seconds.count() << "s" << std::endl;
+        // std::cout << "Function took " << elapsed.count() << " ms to complete.\n";
+
+        if (elapsed.count() > 10) {
+            std::cout << "WARNING: Function took more than 10 ms " << elapsed.count() << '\n';
+        }
     }
 
     int getCameraId(int camera_handle) {
@@ -163,6 +196,19 @@ class Writer {
                 resolution_data->iWidth,
                 resolution_data->iHeight);
             state_.frame_sizes[camera_idx] = {resolution_data->iWidth, resolution_data->iHeight};
+
+            struct statx res;
+            int status =
+                statx(state_.files[camera_idx], "", AT_EMPTY_PATH, STATX_BASIC_STATS, &res);
+            if (status == -1) {
+                printf("statx error\n");
+                exit(EXIT_FAILURE);
+            }
+            printf("allignment: %d\n", res.stx_blksize);
+            posix_memalign(
+                &state_.alligned_buffers[camera_idx],
+                res.stx_blksize,
+                state_.frame_sizes[camera_idx].area() * BUFFER_CAPACITY);
         }
 
         {
@@ -257,12 +303,14 @@ class Writer {
 
     struct State {
         std::vector<std::atomic<int>> counters;
+        std::vector<std::atomic<int>> current_buffer_idx;
         int camera_num = 2;
         std::vector<int> files;
         std::map<int, int> handle_to_idx;
         std::vector<Size> frame_sizes;
         std::vector<std::mutex> file_mutexes;
         std::vector<int> camera_handles;
+        std::vector<void*> alligned_buffers;
     } state_{};
 };
 
