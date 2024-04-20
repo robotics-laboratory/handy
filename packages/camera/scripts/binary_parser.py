@@ -1,9 +1,10 @@
+import argparse
+import os
+from concurrent.futures import ThreadPoolExecutor
+
 import cv2
 import numpy as np
-import os
-import argparse
 from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor
 
 
 def save_image(i, img_data, output_folder, width, height):
@@ -16,7 +17,10 @@ def read_and_convert(file_path, output_folder, width=1920, height=1200):
         os.makedirs(output_folder)
 
     num_images = os.path.getsize(file_path) // width // height
-    print(f"{num_images} images of size {height}x{width} will be written to {output_folder}")
+    print(
+        f"{num_images} images of size {height}x{width} will be written to",
+        output_folder,
+    )
 
     executor = ThreadPoolExecutor()
     with open(file_path, "rb") as f:
