@@ -1,0 +1,6 @@
+outs:
+- md5: 90b646460cabb3129a4460637c474d15.dir
+  size: 11967419975
+  nfiles: 8000
+  hash: md5
+  path: green_light_6ms

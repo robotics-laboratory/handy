@@ -1,0 +1,6 @@
+outs:
+- md5: 12fa64fd477079cbde046101bee39dcb.dir
+  size: 5985412843
+  nfiles: 4000
+  hash: md5
+  path: white_light_6ms

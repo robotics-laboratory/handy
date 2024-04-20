@@ -1,0 +1,6 @@
+outs:
+- md5: 942ea6de714878c631b4b3cdf1ffff26.dir
+  size: 8262419969
+  nfiles: 6000
+  hash: md5
+  path: orange_dark_6ms

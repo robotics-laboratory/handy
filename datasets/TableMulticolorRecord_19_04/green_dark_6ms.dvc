@@ -1,0 +1,6 @@
+outs:
+- md5: a931100ed10f3117ccde87999550b6c9.dir
+  size: 8261648570
+  nfiles: 6000
+  hash: md5
+  path: green_dark_6ms
