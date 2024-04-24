@@ -1,6 +1,0 @@
-outs:
-- md5: 2784d184ee60d9bd3c48aa7f850b2ca0.dir
-  size: 219094
-  nfiles: 8
-  hash: md5
-  path: sorted_frames
