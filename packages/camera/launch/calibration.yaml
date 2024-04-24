@@ -1,19 +1,9 @@
-launch:
-- arg:
-    name: "calibration_file_path"
-    default: "$(find-pkg-share camera)/params/camera_params.yaml"
-
-- node:
-    pkg: "camera"
-    exec: "calibration"
-    name: "calibration"
-    param:
-    # calibration
-    - { name: "calibration_file_path", value: "$(var calibration_file_path)" } # only .yaml file
-    - { name: "iou_threshold", value: 0.5 }
-    - { name: "min_accepted_calib_error", value: 0.7 }
-    - { name: "required_board_coverage", value: 0.7 }
-    - { name: "marker_color", value: [0.0, 1.0, 0.0, 0.12] } #  [R, G, B, A], each in range 0.0-1.0
-
-    # visualisation
-    - { name: "publish_preview_markers", value: true }
+parameters:
+    camera_num: 2
+    calibration_file_path: "param.yaml" # only .yaml file
+    mono_source_dirs: ["first", "second"]
+    stereo_source_dirs: ["first", "second"]
+    iou_threshold: 0.5
+    min_accepted_calib_error: 0.7
+    required_board_coverage: 0.7
+    marker_color: [0.0, 1.0, 0.0, 0.12] #  [R, G, B, A], each in range 0.0-1.0
