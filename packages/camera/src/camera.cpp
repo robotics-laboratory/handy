@@ -379,22 +379,6 @@ void CameraNode::applyParamsToCamera(int handle) {
         abortIfNot("set sharpness", CameraSetSharpness(handle, sharpness));
         RCLCPP_INFO(this->get_logger(), "camera=%i, sharpness=%i", camera_idx, sharpness);
     }
-
-    if (!param_.publish_rectified_preview) {
-        return;
-    }
-
-    prefix = std::to_string(getCameraId(handle)) + ".intrinsic_params.";
-    const std::vector<std::string> param_names = {
-        "image_size.width", "image_size.height", "camera_matrix", "distorsion_coefs"};
-    bool has_all_params = std::all_of(
-        param_names.begin(), param_names.end(), [&prefix, this](const std::string& param_name) {
-            return this->has_parameter(prefix + param_name);
-        });
-    if (!has_all_params) {
-        RCLCPP_ERROR(this->get_logger(), "camera %d failed to read instrinsic params", camera_idx);
-        exit(EXIT_FAILURE);
-    }
 }
 
 namespace {

@@ -12,11 +12,11 @@ namespace handy::calibration {
  * @param corners vector of OpenCV points that should be covered by a convex hull
  * @return convex hull as a boost polygon
  */
-Polygon convertToBoostPolygon(const std::vector<cv::Point2f>& corners) {
+Polygon convertToBoostPolygon(const std::vector<std::vector<cv::Point2f>>& corners) {
     Polygon poly;
     Polygon hull;
     for (size_t i = 0; i < corners.size(); ++i) {
-        poly.outer().emplace_back(corners[i].x, corners[i].y);
+        poly.outer().emplace_back(corners[i][0].x, corners[i][0].y);
     }
     boost::geometry::convex_hull(poly, hull);
     return hull;
@@ -62,6 +62,7 @@ CalibrationNode::CalibrationNode(const YAML::Node& param_node) {
     cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_250);
     param_.charuco_board = cv::aruco::CharucoBoard(pattern_size, 0.06f, 0.04f, dictionary);
     param_.charuco_board.setLegacyPattern(false);
+    param_.aruco_board = cv::aruco::GridBoard(cv::Size{5, 7}, 0.06f, 0.03f, dictionary);
 
     cv::aruco::DetectorParameters detector_params;
     detector_params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_APRILTAG;
@@ -70,6 +71,20 @@ CalibrationNode::CalibrationNode(const YAML::Node& param_node) {
 
     charuco_detector_ = std::make_unique<cv::aruco::CharucoDetector>(
         param_.charuco_board, board_params, detector_params);
+
+    aruco_detector_ = std::make_unique<cv::aruco::ArucoDetector>(dictionary);
+
+    state_.is_calibrated.resize(param_.camera_num);
+    state_.image_points_all.resize(param_.camera_num);
+    state_.obj_points_all.resize(param_.camera_num);
+    state_.polygons_all.resize(param_.camera_num);
+
+    for (int i = 0; i < param_.camera_num; ++i) {
+        state_.intrinsic_params.push_back(CameraIntrinsicParameters::loadFromYaml(
+            param_.path_to_save_params, param_.camera_ids[i]));
+        // state_.intrinsic_params.emplace_back();
+        // state_.intrinsic_params.back().camera_id = param_.camera_ids[i];
+    }
 }
 
 void CalibrationNode::declareLaunchParams(const YAML::Node& param_node) {
@@ -79,6 +94,7 @@ void CalibrationNode::declareLaunchParams(const YAML::Node& param_node) {
     param_.iou_threshold = param_node["iou_threshold"].as<double>();
     param_.min_accepted_error = param_node["min_accepted_calib_error"].as<double>();
     param_.marker_color = param_node["marker_color"].as<std::vector<double>>();
+    param_.camera_ids = param_node["camera_ids"].as<std::vector<int>>();
     param_.camera_num = param_node["camera_num"].as<int>();
 }
 
@@ -89,16 +105,19 @@ bool CalibrationNode::handleFrame(const cv::Mat& image, int camera_idx) {
     assert(state_.frame_size->width == image.cols && state_.frame_size->height == image.rows);
 
     std::vector<int> current_ids;
-    std::vector<cv::Point2f> current_corners;
+    std::vector<std::vector<cv::Point2f>> current_corners;
     std::vector<cv::Point2f> current_image_points;
     std::vector<cv::Point3f> current_obj_points;
 
-    charuco_detector_->detectBoard(image, current_corners, current_ids);
+    // charuco_detector_->detectBoard(image, current_corners, current_ids);
+    aruco_detector_->detectMarkers(image, current_corners, current_ids);
 
     if (current_corners.size() < 20) {
         return false;
     }
-    param_.charuco_board.matchImagePoints(
+    // param_.charuco_board.matchImagePoints(
+    //     current_corners, current_ids, current_obj_points, current_image_points);
+    param_.aruco_board.matchImagePoints(
         current_corners, current_ids, current_obj_points, current_image_points);
 
     if (current_ids.size() < 30) {
@@ -108,32 +127,41 @@ bool CalibrationNode::handleFrame(const cv::Mat& image, int camera_idx) {
     //     appendCornerMarkers(current_corners);
     //     signal_.detected_corners->publish(state_.board_corners_array);
     // }
-    if (!checkMaxSimilarity(current_corners)) {
-        return;
+    if (!checkMaxSimilarity(current_corners, camera_idx)) {
+        return false;
     }
     // if (param_.publish_preview_markers) {
     //     state_.board_markers_array.markers.push_back(
     //         getBoardMarkerFromCorners(current_corners, image_ptr->header));
     //     signal_.detected_boards->publish(state_.board_markers_array);
     // }
+    for (int i = 0; i < current_ids.size(); ++i) {
+        printf("%d ", current_ids[i]);
+    }
+    printf("\n");
 
-    state_.obj_points_all[camera_idx].push_back(current_obj_points);
-    state_.image_points_all[camera_idx].push_back(current_image_points);
+    // state_.obj_points_all[camera_idx].push_back(current_obj_points);
+    // state_.image_points_all[camera_idx].push_back(current_image_points);
+    state_.obj_points_all[camera_idx].emplace_back();
+    state_.image_points_all[camera_idx].emplace_back();
+
     state_.polygons_all[camera_idx].push_back(convertToBoostPolygon(current_corners));
     return true;
 }
 
-bool CalibrationNode::checkMaxSimilarity(std::vector<cv::Point2f>& corners) const {
+bool CalibrationNode::checkMaxSimilarity(std::vector<std::vector<cv::Point2f>>& corners, int camera_idx) const {
     Polygon new_poly = convertToBoostPolygon(corners);
     return std::all_of(
-        state_.polygons_all.begin(), state_.polygons_all.end(), [&](const Polygon& prev_poly) {
+        state_.polygons_all[camera_idx].begin(),
+        state_.polygons_all[camera_idx].end(),
+        [&](const Polygon& prev_poly) {
             return getIou(prev_poly, new_poly) <= param_.iou_threshold;
         });
 }
 
-int CalibrationNode::getImageCoverage() const {
+int CalibrationNode::getImageCoverage(int camera_idx) const {
     MultiPolygon current_coverage;
-    for (const Polygon& new_poly : state_.polygons_all) {
+    for (const Polygon& new_poly : state_.polygons_all[camera_idx]) {
         MultiPolygon tmp_poly;
         boost::geometry::union_(current_coverage, new_poly, tmp_poly);
         current_coverage = tmp_poly;
@@ -143,23 +171,36 @@ int CalibrationNode::getImageCoverage() const {
     return static_cast<int>(ratio * 100);
 }
 
+void CalibrationNode::clearDetections() {
+    for (int i = 0; i < param_.camera_num; ++i) {
+        state_.image_points_all[i].clear();
+        state_.obj_points_all[i].clear();
+        state_.polygons_all[i].clear();
+    }
+}
+
+void CalibrationNode::clearLastDetection(int camera_idx) {
+    state_.image_points_all[camera_idx].pop_back();
+    state_.obj_points_all[camera_idx].pop_back();
+    state_.polygons_all[camera_idx].pop_back();
+}
+
 void CalibrationNode::calibrate(int camera_idx) {
     printf("Calibration inialized");
-    int coverage_percentage = getImageCoverage();
+    int coverage_percentage = getImageCoverage(camera_idx);
     if (coverage_percentage < param_.required_board_coverage) {
         printf("Coverage of %d is not sufficient", coverage_percentage);
         return;
     }
 
-    CameraIntrinsicParameters intrinsic_params{};
-    intrinsic_params.image_size = *state_.frame_size;
+    state_.intrinsic_params[camera_idx].image_size = *state_.frame_size;
     std::vector<double> per_view_errors;
     double rms = cv::calibrateCamera(
-        state_.obj_points_all,
-        state_.image_points_all,
+        state_.obj_points_all[camera_idx],
+        state_.image_points_all[camera_idx],
         *state_.frame_size,
-        intrinsic_params.camera_matrix,
-        intrinsic_params.dist_coefs,
+        state_.intrinsic_params[camera_idx].camera_matrix,
+        state_.intrinsic_params[camera_idx].dist_coefs,
         cv::noArray(),
         cv::noArray(),
         cv::noArray(),
@@ -171,7 +212,7 @@ void CalibrationNode::calibrate(int camera_idx) {
     printf("Calibration done with error of %f and coverage of %d", rms, coverage_percentage);
 
     if (rms < param_.min_accepted_error) {
-        intrinsic_params.storeYaml(param_.path_to_save_params);
+        state_.intrinsic_params[camera_idx].storeYaml(param_.path_to_save_params);
     }
 }
 }  // namespace handy::calibration
