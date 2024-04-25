@@ -31,6 +31,7 @@ class CalibrationNode {
     CalibrationNode(const YAML::Node& param_node);
     bool handleFrame(const cv::Mat& image, int camera_idx);
     void calibrate(int camera_idx);
+    void stereoCalibrate();
     void clearDetections();
     void clearLastDetection(int camera_idx);
 
@@ -39,6 +40,9 @@ class CalibrationNode {
 
     bool checkMaxSimilarity(std::vector<std::vector<cv::Point2f>>& corners, int camera_idx) const;
     int getImageCoverage(int camera_idx) const;
+    void fillImageObjectPoints(
+        std::vector<std::vector<cv::Point2f>>& image_points,
+        std::vector<std::vector<cv::Point3f>>& obj_points, int camera_idx);
 
     void initCornerMarkers();
     void appendCornerMarkers(const std::vector<cv::Point2f>& detected_corners);
@@ -48,7 +52,7 @@ class CalibrationNode {
 
     struct Params {
         int camera_num = 2;
-        std::string path_to_save_params = "";
+        std::string path_to_params = "";
         std::vector<cv::Point3f> square_obj_points;
         cv::aruco::CharucoBoard charuco_board;
         cv::aruco::GridBoard aruco_board;
@@ -65,8 +69,9 @@ class CalibrationNode {
     struct State {
         std::optional<cv::Size> frame_size = std::nullopt;
 
-        std::vector<std::vector<std::vector<cv::Point2f>>> image_points_all;
-        std::vector<std::vector<std::vector<cv::Point3f>>> obj_points_all;
+        // for each camera, each view, each detected marker vector of 4 aruco corners
+        std::vector<std::vector<std::vector<std::vector<cv::Point2f>>>> marker_corners_all;
+        std::vector<std::vector<std::vector<int>>> marker_ids_all;
         std::vector<std::vector<Polygon>> polygons_all;
 
         std::vector<bool> is_calibrated;

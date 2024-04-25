@@ -57,6 +57,7 @@ int main(int argc, char* argv[]) {
         }
     }
     printf("%d %d boards were detected finally\n", counters[0], counters[1]);
+    node.stereoCalibrate();
 
     return 0;
 }

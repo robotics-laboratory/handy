@@ -75,20 +75,20 @@ CalibrationNode::CalibrationNode(const YAML::Node& param_node) {
     aruco_detector_ = std::make_unique<cv::aruco::ArucoDetector>(dictionary);
 
     state_.is_calibrated.resize(param_.camera_num);
-    state_.image_points_all.resize(param_.camera_num);
-    state_.obj_points_all.resize(param_.camera_num);
+    state_.marker_corners_all.resize(param_.camera_num);
+    state_.marker_ids_all.resize(param_.camera_num);
     state_.polygons_all.resize(param_.camera_num);
 
     for (int i = 0; i < param_.camera_num; ++i) {
-        state_.intrinsic_params.push_back(CameraIntrinsicParameters::loadFromYaml(
-            param_.path_to_save_params, param_.camera_ids[i]));
+        state_.intrinsic_params.push_back(
+            CameraIntrinsicParameters::loadFromYaml(param_.path_to_params, param_.camera_ids[i]));
         // state_.intrinsic_params.emplace_back();
         // state_.intrinsic_params.back().camera_id = param_.camera_ids[i];
     }
 }
 
 void CalibrationNode::declareLaunchParams(const YAML::Node& param_node) {
-    param_.path_to_save_params = param_node["calibration_file_path"].as<std::string>();
+    param_.path_to_params = param_node["calibration_file_path"].as<std::string>();
     param_.required_board_coverage = param_node["required_board_coverage"].as<double>();
     param_.min_accepted_error = param_node["min_accepted_calib_error"].as<double>();
     param_.iou_threshold = param_node["iou_threshold"].as<double>();
@@ -123,33 +123,20 @@ bool CalibrationNode::handleFrame(const cv::Mat& image, int camera_idx) {
     if (current_ids.size() < 30) {
         return false;
     }
-    // if (param_.publish_preview_markers) {
-    //     appendCornerMarkers(current_corners);
-    //     signal_.detected_corners->publish(state_.board_corners_array);
-    // }
+
     if (!checkMaxSimilarity(current_corners, camera_idx)) {
         return false;
     }
-    // if (param_.publish_preview_markers) {
-    //     state_.board_markers_array.markers.push_back(
-    //         getBoardMarkerFromCorners(current_corners, image_ptr->header));
-    //     signal_.detected_boards->publish(state_.board_markers_array);
-    // }
-    for (int i = 0; i < current_ids.size(); ++i) {
-        printf("%d ", current_ids[i]);
-    }
-    printf("\n");
 
-    // state_.obj_points_all[camera_idx].push_back(current_obj_points);
-    // state_.image_points_all[camera_idx].push_back(current_image_points);
-    state_.obj_points_all[camera_idx].emplace_back();
-    state_.image_points_all[camera_idx].emplace_back();
+    state_.marker_corners_all[camera_idx].push_back(current_corners);
+    state_.marker_ids_all[camera_idx].push_back(current_ids);
 
     state_.polygons_all[camera_idx].push_back(convertToBoostPolygon(current_corners));
     return true;
 }
 
-bool CalibrationNode::checkMaxSimilarity(std::vector<std::vector<cv::Point2f>>& corners, int camera_idx) const {
+bool CalibrationNode::checkMaxSimilarity(
+    std::vector<std::vector<cv::Point2f>>& corners, int camera_idx) const {
     Polygon new_poly = convertToBoostPolygon(corners);
     return std::all_of(
         state_.polygons_all[camera_idx].begin(),
@@ -173,16 +160,30 @@ int CalibrationNode::getImageCoverage(int camera_idx) const {
 
 void CalibrationNode::clearDetections() {
     for (int i = 0; i < param_.camera_num; ++i) {
-        state_.image_points_all[i].clear();
-        state_.obj_points_all[i].clear();
+        state_.marker_corners_all[i].clear();
+        state_.marker_ids_all[i].clear();
         state_.polygons_all[i].clear();
     }
 }
 
 void CalibrationNode::clearLastDetection(int camera_idx) {
-    state_.image_points_all[camera_idx].pop_back();
-    state_.obj_points_all[camera_idx].pop_back();
+    state_.marker_corners_all[camera_idx].pop_back();
+    state_.marker_ids_all[camera_idx].pop_back();
     state_.polygons_all[camera_idx].pop_back();
+}
+
+void CalibrationNode::fillImageObjectPoints(
+    std::vector<std::vector<cv::Point2f>>& image_points,
+    std::vector<std::vector<cv::Point3f>>& obj_points, int camera_idx) {
+    for (int i = 0; i < state_.marker_corners_all[camera_idx].size(); ++i) {
+        image_points.emplace_back();
+        obj_points.emplace_back();
+        param_.aruco_board.matchImagePoints(
+            state_.marker_corners_all[camera_idx][i],
+            state_.marker_ids_all[camera_idx][i],
+            obj_points.back(),
+            image_points.back());
+    }
 }
 
 void CalibrationNode::calibrate(int camera_idx) {
@@ -192,12 +193,15 @@ void CalibrationNode::calibrate(int camera_idx) {
         printf("Coverage of %d is not sufficient", coverage_percentage);
         return;
     }
+    std::vector<std::vector<cv::Point2f>> image_points;
+    std::vector<std::vector<cv::Point3f>> obj_points;
+    fillImageObjectPoints(image_points, obj_points, camera_idx);
 
     state_.intrinsic_params[camera_idx].image_size = *state_.frame_size;
     std::vector<double> per_view_errors;
     double rms = cv::calibrateCamera(
-        state_.obj_points_all[camera_idx],
-        state_.image_points_all[camera_idx],
+        obj_points,
+        image_points,
         *state_.frame_size,
         state_.intrinsic_params[camera_idx].camera_matrix,
         state_.intrinsic_params[camera_idx].dist_coefs,
@@ -212,7 +216,95 @@ void CalibrationNode::calibrate(int camera_idx) {
     printf("Calibration done with error of %f and coverage of %d", rms, coverage_percentage);
 
     if (rms < param_.min_accepted_error) {
-        state_.intrinsic_params[camera_idx].storeYaml(param_.path_to_save_params);
+        state_.intrinsic_params[camera_idx].storeYaml(param_.path_to_params);
     }
+}
+
+void CalibrationNode::stereoCalibrate() {
+    std::vector<std::vector<std::vector<cv::Point2f>>> image_points_all;
+    std::vector<std::vector<std::vector<cv::Point3f>>> obj_points_all;
+    for (int i = 0; i < param_.camera_num; ++i) {
+        image_points_all.emplace_back();
+        obj_points_all.emplace_back();
+        fillImageObjectPoints(image_points_all[i], obj_points_all[i], i);
+    }
+
+    std::vector<std::vector<std::vector<cv::Point2f>>> image_points_common(param_.camera_num);
+    std::vector<std::vector<cv::Point3f>> obj_points_common;
+    for (size_t detection_idx = 0; detection_idx < image_points_all[0].size(); ++detection_idx) {
+        if (obj_points_common.empty() || !obj_points_common.back().empty()) {
+            obj_points_common.emplace_back();
+            for (size_t camera_idx = 0; camera_idx < param_.camera_num; ++camera_idx) {
+                image_points_common[camera_idx].emplace_back();
+            }
+        }
+
+        for (size_t i = 0; i < obj_points_all[0][detection_idx].size(); ++i) {
+            std::vector<size_t> found_indexes;
+            if (std::all_of(
+                    obj_points_all.begin(),
+                    obj_points_all.end(),
+                    [&](const auto& camera_obj_points) {
+                        auto found = std::find(
+                            camera_obj_points[detection_idx].begin(),
+                            camera_obj_points[detection_idx].end(),
+                            obj_points_all[0][detection_idx][i]);
+                        if (found != camera_obj_points[detection_idx].end()) {
+                            found_indexes.push_back(
+                                std::distance(camera_obj_points[detection_idx].begin(), found));
+                            return true;
+                        }
+                        return false;
+                    })) {
+                obj_points_common.back().push_back(obj_points_all[0][detection_idx][i]);
+                for (size_t camera_idx = 0; camera_idx < found_indexes.size(); ++camera_idx) {
+                    const cv::Point2f& common_point_to_add =
+                        image_points_all[camera_idx][detection_idx][found_indexes[camera_idx]];
+                    image_points_common[camera_idx].back().push_back(common_point_to_add);
+                }
+            }
+        }
+    }
+
+    cv::Mat rotation;
+    cv::Mat translation;
+
+    double rms = cv::stereoCalibrate(
+        obj_points_common,
+        image_points_common[0],
+        image_points_common[1],
+        state_.intrinsic_params[0].camera_matrix,
+        state_.intrinsic_params[0].dist_coefs,
+        state_.intrinsic_params[1].camera_matrix,
+        state_.intrinsic_params[1].dist_coefs,
+        *state_.frame_size,
+        rotation,
+        translation,
+        cv::noArray(),
+        cv::noArray(),
+        cv::CALIB_FIX_INTRINSIC,
+        cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+
+    printf("Calibration done with error of %f ", rms);
+
+    cv::Mat zero_transformation = (cv::Mat_<double>(3, 1) << 0, 0, 0);
+    if (!CameraIntrinsicParameters::saveStereoCalibration(
+            param_.path_to_params, zero_transformation, zero_transformation, 0)) {
+        printf(
+            "Failed to save result of stereo calibration (id=%d) to the file: %s",
+            0,
+            param_.path_to_params.c_str());
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (!CameraIntrinsicParameters::saveStereoCalibration(
+            param_.path_to_params, rotation, translation, 1)) {
+        printf(
+            "Failed to save result of stereo calibration (id=%d) to the file: %s",
+            1,
+            param_.path_to_params.c_str());
+        std::exit(EXIT_FAILURE);
+    }
+    printf("Saved stereo calibration result to %s\n", param_.path_to_params);
 }
 }  // namespace handy::calibration
