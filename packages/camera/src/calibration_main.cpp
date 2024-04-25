@@ -19,6 +19,18 @@ std::string ljust(std::string line_to_format, int required_length, char fill_chr
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    cv::Mat transformation =
+        (cv::Mat_<double>(3, 1) << 0.01175419895518242, 2.170836441913732, 2.19333242876324);
+    cv::Mat table;
+    cv::Rodrigues(transformation, table);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            printf("%f\t", table.at<double>(i, j));
+        }
+        printf("\n");
+    }
+    return 0;
+
     const YAML::Node param_node = YAML::LoadFile("calibration.yaml")["parameters"];
     auto camera_num = param_node["camera_num"].as<int>();
     auto stereo_directories = param_node["stereo_source_dirs"].as<std::vector<std::string>>();

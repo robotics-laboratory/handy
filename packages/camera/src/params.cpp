@@ -173,7 +173,7 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
     CameraIntrinsicParameters result{};
     result.camera_id = camera_id;
     const std::string camera_id_str = std::to_string(camera_id);
-    
+
     const YAML::Node intrinsics = YAML::LoadFile(yaml_path)["parameters"];
 
     const auto yaml_image_size = intrinsics[camera_id_str]["image_size"].as<std::vector<int>>();

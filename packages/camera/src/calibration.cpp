@@ -284,27 +284,29 @@ void CalibrationNode::stereoCalibrate() {
         cv::noArray(),
         cv::CALIB_FIX_INTRINSIC,
         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
+    cv::Mat rotation_vector;
+    cv::Rodrigues(rotation, rotation_vector);
 
-    printf("Calibration done with error of %f ", rms);
+    printf("Calibration done with error of %f \n", rms);
 
     cv::Mat zero_transformation = (cv::Mat_<double>(3, 1) << 0, 0, 0);
     if (!CameraIntrinsicParameters::saveStereoCalibration(
-            param_.path_to_params, zero_transformation, zero_transformation, 0)) {
+            param_.path_to_params, zero_transformation, zero_transformation, 1)) {
         printf(
-            "Failed to save result of stereo calibration (id=%d) to the file: %s",
-            0,
-            param_.path_to_params.c_str());
-        std::exit(EXIT_FAILURE);
-    }
-
-    if (!CameraIntrinsicParameters::saveStereoCalibration(
-            param_.path_to_params, rotation, translation, 1)) {
-        printf(
-            "Failed to save result of stereo calibration (id=%d) to the file: %s",
+            "Failed to save result of stereo calibration (id=%d) to the file: %s\n",
             1,
             param_.path_to_params.c_str());
         std::exit(EXIT_FAILURE);
     }
-    printf("Saved stereo calibration result to %s\n", param_.path_to_params);
+
+    if (!CameraIntrinsicParameters::saveStereoCalibration(
+            param_.path_to_params, rotation_vector, translation, 2)) {
+        printf(
+            "Failed to save result of stereo calibration (id=%d) to the file: %s\n",
+            2,
+            param_.path_to_params.c_str());
+        std::exit(EXIT_FAILURE);
+    }
+    printf("Saved stereo calibration result to %s\n", param_.path_to_params.c_str());
 }
 }  // namespace handy::calibration
