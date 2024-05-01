@@ -59,8 +59,8 @@ class LitDetector(L.LightningModule):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str, help='Path to directory with images')
-    parser.add_argument('--annot_file', type=str, help='Path to annotation file')
+    parser.add_argument('--train_dir', type=str, help='Path to train directory')
+    parser.add_argument('--val_dir', type=str, help='Path to validation directory')
     parser.add_argument('--width', type=int, help='Image width')
     parser.add_argument('--height', type=int, help='Image height')
     parser.add_argument('--backbone', type=str, help='Backbone name')
@@ -69,9 +69,10 @@ if __name__ == '__main__':
     parser.add_argument('--obt', action='store_true', help='Flag for one batch test')
 
     args = parser.parse_args()
-
-    model = get_model(backbone_name = args.backbone, size=args.width)
-    dm = DetectionDataModule(args.data_dir, args.annot_file, args.width, args.height, args.batch_size)
+    print("Building model...")
+    model = get_model(backbone_name = args.backbone, size=(args.width, args.height))
+    print("Loading data...")
+    dm = DetectionDataModule(args.train_dir, args.val_dir, args.width, args.height, args.batch_size)
     lit_model = LitDetector(model)
     wandb_logger = WandbLogger(project="Ball-Detection")
 
@@ -82,5 +83,6 @@ if __name__ == '__main__':
         dirpath=f"checkpoint/{datetime.now().strftime('%H-%M-%S')}",
         filename="detection-" + args.backbone + "-{epoch:02d}",
     )
+    print("Starting training...")
     trainer = L.Trainer(logger=wandb_logger, accelerator="auto", fast_dev_run=args.obt, max_epochs=args.epochs, callbacks=[checkpoint_callback])
     trainer.fit(lit_model, dm)

@@ -88,23 +88,22 @@ class DetectionDataset(Dataset):
         transforms (callable, optional): Optional transforms to be applied to the images.
         train (bool): Whether to use the training or testing set.
     """
-    def __init__(self, image_dir, annot_file, width, height, transforms=None, train=True):
+    def __init__(self, image_dir, annot_file, width, height, transforms=None):
 
         self.image_dir = image_dir
         self.annot_file = annot_file
         self.width = width
         self.height = height
         self.transforms = transforms
-        images = []
         self.bboxes = json.load(open(annot_file))
 
+        images = []
         for file in os.listdir(self.image_dir):
-            if file.endswith('.png'):
+            if file.endswith('.png') and file in self.bboxes:
                 images.append(file)
         
         images.sort()
-        train_images, test_images = sklearn.model_selection.train_test_split(images, train_size=0.8, random_state=42)
-        self.images = train_images if train else test_images
+        self.images = images
     
     def __getitem__(self, index):
         image_name = self.images[index]
@@ -153,21 +152,21 @@ def collate_fn(batch):
     return tuple(zip(*batch))
 
 class DetectionDataModule(L.LightningDataModule):
-    def __init__(self, data_dir, annot_dir, width, height, batch_size):
+    def __init__(self, train_dir, val_dir, width, height, batch_size):
         super().__init__()
-        self.data_dir = data_dir
-        self.annot_dir = annot_dir
+        self.train_dir = train_dir
+        self.val_dir = val_dir
         self.width = width
         self.height = height
         self.batch_size = batch_size
     
     def setup(self, stage):
-        self.train_dataset = DetectionDataset(self.data_dir, self.annot_dir, 
+        self.train_dataset = DetectionDataset(os.path.join(self.train_dir, 'images_rgb'), os.path.join(self.train_dir, 'boxes.json'),
                                               self.width, self.height, 
-                                              transforms=get_train_transform(), train=True)
-        self.valid_dataset = DetectionDataset(self.data_dir, self.annot_dir,
+                                              transforms=get_train_transform())
+        self.valid_dataset = DetectionDataset(os.path.join(self.val_dir, 'images_rgb'), os.path.join(self.val_dir, 'boxes.json'),
                                               self.width, self.height,
-                                              transforms=get_valid_transform(), train=False)
+                                              transforms=get_valid_transform())
     
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=2, collate_fn=collate_fn, persistent_workers=True)
@@ -187,7 +186,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Detection Dataset Parameters')
     parser.add_argument('--image_dir', type=str, default='datasets/annotated_12_02_23/ball', help='Path to the directory containing the images')
     parser.add_argument('--annot_file', type=str, default='datasets/annotated_12_02_23/bounding_boxes.json', help='Path to the file containing the bounding box annotations')
-    parser.add_argument('--width', type=int, default=300, help='The width to which the images will be resized')
+    parser.add_argument('--width', type=int, default=480, help='The width to which the images will be resized')
     parser.add_argument('--height', type=int, default=300, help='The height to which the images will be resized')
 
     args = parser.parse_args()
