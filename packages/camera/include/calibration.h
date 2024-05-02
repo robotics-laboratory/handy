@@ -34,6 +34,7 @@ class CalibrationNode {
     void stereoCalibrate();
     void clearDetections();
     void clearLastDetection(int camera_idx);
+    bool isMonoCalibrated(int camera_idx);
 
   private:
     void declareLaunchParams(const YAML::Node& param_node);
@@ -46,9 +47,6 @@ class CalibrationNode {
 
     void initCornerMarkers();
     void appendCornerMarkers(const std::vector<cv::Point2f>& detected_corners);
-    // visualization_msgs::msg::ImageMarker getCornerMarker(cv::Point2f point);
-    // visualization_msgs::msg::ImageMarker getBoardMarkerFromCorners(
-    // std::vector<cv::Point2f>& detected_corners, std_msgs::msg::Header& header);
 
     struct Params {
         int camera_num = 2;
@@ -78,7 +76,6 @@ class CalibrationNode {
         std::vector<CameraIntrinsicParameters> intrinsic_params;
     } state_;
 
-    std::unique_ptr<cv::aruco::CharucoDetector> charuco_detector_ = nullptr;
     std::unique_ptr<cv::aruco::ArucoDetector> aruco_detector_ = nullptr;
 };
 }  // namespace handy::calibration

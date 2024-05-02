@@ -67,12 +67,8 @@ CalibrationNode::CalibrationNode(const YAML::Node& param_node) {
     cv::aruco::DetectorParameters detector_params;
     detector_params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_APRILTAG;
     detector_params.cornerRefinementWinSize = 10;
-    cv::aruco::CharucoParameters board_params;
 
-    charuco_detector_ = std::make_unique<cv::aruco::CharucoDetector>(
-        param_.charuco_board, board_params, detector_params);
-
-    aruco_detector_ = std::make_unique<cv::aruco::ArucoDetector>(dictionary);
+    aruco_detector_ = std::make_unique<cv::aruco::ArucoDetector>(dictionary, detector_params);
 
     state_.is_calibrated.resize(param_.camera_num);
     state_.marker_corners_all.resize(param_.camera_num);
@@ -82,8 +78,6 @@ CalibrationNode::CalibrationNode(const YAML::Node& param_node) {
     for (int i = 0; i < param_.camera_num; ++i) {
         state_.intrinsic_params.push_back(
             CameraIntrinsicParameters::loadFromYaml(param_.path_to_params, param_.camera_ids[i]));
-        // state_.intrinsic_params.emplace_back();
-        // state_.intrinsic_params.back().camera_id = param_.camera_ids[i];
     }
 }
 
@@ -109,14 +103,11 @@ bool CalibrationNode::handleFrame(const cv::Mat& image, int camera_idx) {
     std::vector<cv::Point2f> current_image_points;
     std::vector<cv::Point3f> current_obj_points;
 
-    // charuco_detector_->detectBoard(image, current_corners, current_ids);
     aruco_detector_->detectMarkers(image, current_corners, current_ids);
 
     if (current_corners.size() < 20) {
         return false;
     }
-    // param_.charuco_board.matchImagePoints(
-    //     current_corners, current_ids, current_obj_points, current_image_points);
     param_.aruco_board.matchImagePoints(
         current_corners, current_ids, current_obj_points, current_image_points);
 
@@ -186,11 +177,13 @@ void CalibrationNode::fillImageObjectPoints(
     }
 }
 
+bool CalibrationNode::isMonoCalibrated(int camera_idx) { return state_.is_calibrated[camera_idx]; }
+
 void CalibrationNode::calibrate(int camera_idx) {
-    printf("Calibration inialized");
+    printf("Calibration inialized\n");
     int coverage_percentage = getImageCoverage(camera_idx);
     if (coverage_percentage < param_.required_board_coverage) {
-        printf("Coverage of %d is not sufficient", coverage_percentage);
+        printf("Coverage of %d is not sufficient\n", coverage_percentage);
         return;
     }
     std::vector<std::vector<cv::Point2f>> image_points;
@@ -213,7 +206,7 @@ void CalibrationNode::calibrate(int camera_idx) {
         cv::CALIB_FIX_S1_S2_S3_S4,
         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 50, DBL_EPSILON));
 
-    printf("Calibration done with error of %f and coverage of %d", rms, coverage_percentage);
+    printf("Calibration done with error of %f and coverage of %d\n", rms, coverage_percentage);
 
     if (rms < param_.min_accepted_error) {
         state_.intrinsic_params[camera_idx].storeYaml(param_.path_to_params);

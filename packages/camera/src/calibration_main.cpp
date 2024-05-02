@@ -1,51 +1,65 @@
 #include "calibration.h"
 
-#include <yaml-cpp/yaml.h>
-#include <string>
+#include <cstdlib>
+#include <filesystem>
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
-#include <algorithm>
-#include <cstdlib>
-#include <filesystem>
+#include <string>
+#include <yaml-cpp/yaml.h>
 
-namespace {
-std::string ljust(std::string line_to_format, int required_length, char fill_chr) {
-    while (line_to_format.size() < required_length) {
-        line_to_format = fill_chr + line_to_format;
-    }
-    return line_to_format;
-}
-}  // namespace
-
-int main(int argc, char* argv[]) {
-    cv::Mat transformation =
-        (cv::Mat_<double>(3, 1) << 0.01175419895518242, 2.170836441913732, 2.19333242876324);
-    cv::Mat table;
-    cv::Rodrigues(transformation, table);
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            printf("%f\t", table.at<double>(i, j));
-        }
-        printf("\n");
-    }
-    return 0;
-
-    const YAML::Node param_node = YAML::LoadFile("calibration.yaml")["parameters"];
+int main() {
+    const YAML::Node param_node =
+        YAML::LoadFile("../../share/camera/launch/calibration_launch.yaml")["parameters"];
     auto camera_num = param_node["camera_num"].as<int>();
+    auto camera_ids = param_node["camera_ids"].as<std::vector<int>>();
     auto stereo_directories = param_node["stereo_source_dirs"].as<std::vector<std::string>>();
 
-    handy::calibration::CalibrationNode node(param_node);
+    handy::calibration::CalibrationNode calibration_node(param_node);
 
-    // mono calibration...
+    // mono calibration
+    for (int i = 0; i < camera_num; ++i) {
+        const int current_camera_id = camera_ids[i];
+        const YAML::Node source_dir_node =
+            param_node["mono_source_dirs"][std::to_string(current_camera_id)];
+        if (!source_dir_node.IsDefined()) {
+            continue;
+        }
 
-    // ...
+        const auto mono_source_dir = source_dir_node.as<std::string>();
+        int detected_boards_counter = 0;
+        int total = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(mono_source_dir)) {
+            ++total;
+            printf("reading %d\n", total);
+            cv::Mat raw_image = cv::imread(entry.path(), cv::IMREAD_GRAYSCALE);
+            if (raw_image.empty()) {
+                printf(
+                    "error while reading %s for camera idx=%d\n",
+                    entry.path().filename().c_str(),
+                    i);
+                exit(EXIT_FAILURE);
+            }
+            cv::Mat image;
+            cv::cvtColor(raw_image, image, cv::COLOR_BayerBG2BGR);
+            if (calibration_node.handleFrame(image, i)) {
+                ++detected_boards_counter;
+                printf(
+                    "detected board on %s\ntotal is %d/%d\n",
+                    entry.path().filename().c_str(),
+                    detected_boards_counter,
+                    total);
+            }
+        }
+        calibration_node.calibrate(i);
+    }
+    calibration_node.clearDetections();
+    printf("mono calibration done or loaded. Starting stereo calibration\n");
 
     // stereo calibration
-    int counters[2] = {0, 0};
+    std::vector<int> detections_counters(camera_num, 0);
     for (const auto& entry : std::filesystem::directory_iterator(stereo_directories[0])) {
         const std::string base_filename = entry.path().filename();
-        // printf("%s\n", entry.path().filename().c_str());
         for (int i = 0; i < camera_num; ++i) {
             cv::Mat raw_image =
                 cv::imread(stereo_directories[i] + base_filename, cv::IMREAD_GRAYSCALE);
@@ -56,20 +70,19 @@ int main(int argc, char* argv[]) {
             cv::Mat image;
             cv::cvtColor(raw_image, image, cv::COLOR_BayerBG2BGR);
 
-            if (!node.handleFrame(image, i)) {
+            if (!calibration_node.handleFrame(image, i)) {
                 // delete the last detections across all camera in case one failed to detect a board
                 for (int j = 0; j < i; ++j) {
-                    node.clearLastDetection(j);
-                    --counters[j];
+                    calibration_node.clearLastDetection(j);
+                    --detections_counters[j];
                 }
                 break;
             }
-            ++counters[i];
-            printf("%d %d boards were detected\n", counters[0], counters[1]);
+            ++detections_counters[i];
         }
     }
-    printf("%d %d boards were detected finally\n", counters[0], counters[1]);
-    node.stereoCalibrate();
+    printf("%d %d boards were detected\n", detections_counters[0], detections_counters[1]);
+    calibration_node.stereoCalibrate();
 
     return 0;
 }

@@ -1,0 +1,13 @@
+parameters:
+    camera_num: 2
+    camera_ids: [1, 2]
+    calibration_file_path: "../../share/camera/launch/params.yaml" # only .yaml file
+    mono_source_dirs:
+        1: "/handy/datasets/TableOrange2msRecord_22_04/calibration_boards/aruco_plain_1_1/"
+        2: "/handy/datasets/TableOrange2msRecord_22_04/calibration_boards/aruco_plain_1_2/"
+    stereo_source_dirs: ["/handy/datasets/TableOrange2msRecord_22_04/calibration_boards/aruco_plain_1_1/",
+                        "/handy/datasets/TableOrange2msRecord_22_04/calibration_boards/aruco_plain_1_2/"]
+    iou_threshold: 0.5
+    min_accepted_calib_error: 0.7
+    required_board_coverage: 0.7
+    marker_color: [0.0, 1.0, 0.0, 0.12] #  [R, G, B, A], each in range 0.0-1.0
