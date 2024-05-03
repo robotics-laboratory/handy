@@ -4,7 +4,7 @@ import argparse
 from datetime import datetime
 from torchmetrics.classification import BinaryJaccardIndex
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 
 from models import UNet
@@ -15,14 +15,17 @@ class LitSegmentation(L.LightningModule):
     def __init__(self, model):
         super().__init__()
         self.model = model
-        self.loss = DiceLoss()
+        self.dice_loss = DiceLoss()
+        self.bce_loss = torch.nn.BCEWithLogitsLoss()
         self.train_iou = BinaryJaccardIndex()
         self.val_iou = BinaryJaccardIndex()
     
     def training_step(self, batch, batch_idx):
         images, masks = batch
         pred_mask = self.model(images).squeeze(1)
-        loss = self.loss(pred_mask, masks)
+        bce_loss = self.bce_loss(pred_mask, masks.float())
+        dice_loss = self.dice_loss(pred_mask, masks)
+        loss = bce_loss + dice_loss
 
         self.train_iou.update(pred_mask, masks)
         self.log('train_loss', loss.item(), on_step=True, on_epoch=True, batch_size=len(images))
@@ -36,7 +39,9 @@ class LitSegmentation(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         images, masks = batch
         pred_mask = self.model(images).squeeze(1)
-        loss = self.loss(pred_mask, masks)
+        bce_loss = self.bce_loss(pred_mask, masks.float())
+        dice_loss = self.dice_loss(pred_mask, masks)
+        loss = bce_loss + dice_loss
 
         self.val_iou.update(pred_mask, masks)
         self.log('val_loss', loss.item(), on_step=True, on_epoch=True, batch_size=len(images))
@@ -48,8 +53,18 @@ class LitSegmentation(L.LightningModule):
         self.val_iou.reset()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.0001)
-        return optimizer
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5)
+        return {
+                    "optimizer": optimizer,
+                    "lr_scheduler": {
+                        "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=5),
+                        "monitor": "val_iou",
+                        'interval': 'epoch',
+                        'frequency': 1,
+                        'name': "lr"
+                    },
+                }
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -61,7 +76,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    model = UNet(3, 1, 64)
+    model = UNet(3, 1, 16)
     dm = SegmentationDataModule(args.data_dir, size=(args.width, args.height), batch_size=args.batch_size)
     lit_model = LitSegmentation(model)
     wandb_logger = WandbLogger(project="Ball-Segmentation")
@@ -73,5 +88,6 @@ if __name__ == '__main__':
         dirpath=f"checkpoint/{datetime.now().strftime('%m-%d-%H-%M-%S')}",
         filename="segmentation-{epoch:02d}",
     )
-    trainer = L.Trainer(logger=wandb_logger, accelerator="auto", max_epochs=args.epochs, callbacks=[checkpoint_callback], log_every_n_steps=10)
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+    trainer = L.Trainer(logger=wandb_logger, accelerator="auto", max_epochs=args.epochs, callbacks=[checkpoint_callback, lr_monitor], log_every_n_steps=10)
     trainer.fit(lit_model, dm)

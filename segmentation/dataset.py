@@ -33,12 +33,8 @@ def get_non_empty_mask_crop(image, mask, size=(256, 256)):
 def get_train_transform():
     return A.Compose([
         A.HorizontalFlip(p=0.5),
-        A.ToGray(p=0.3),
+        A.ToGray(p=0.5),
         A.RandomBrightnessContrast(p=0.3),
-        A.ToGray(p=0.3),
-        A.RandomBrightnessContrast(p=0.3),
-        A.ColorJitter(p=0.3),
-        A.RandomGamma(p=0.3),
         A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ToTensorV2(p=1.0)
     ])
@@ -90,13 +86,13 @@ class SegmentationDataModule(L.LightningDataModule):
     
     def setup(self, stage):
         self.train_dataset = SegmentationDataset(
-            os.path.join(self.data_dir, 'train', 'image_bgr'),
+            os.path.join(self.data_dir, 'train', 'images_bgr'),
             os.path.join(self.data_dir, 'train', 'masks'),
             size=self.size,
             transform=get_train_transform()
         )
         self.val_dataset = SegmentationDataset(
-            os.path.join(self.data_dir, 'val', 'image_bgr'),
+            os.path.join(self.data_dir, 'val', 'images_bgr'),
             os.path.join(self.data_dir, 'val', 'masks'),
             size=self.size,
             transform=get_val_transform()
