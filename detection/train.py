@@ -3,9 +3,9 @@ import torch
 import argparse
 from datetime import datetime
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 from pytorch_lightning.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 
 from model import get_model
@@ -47,14 +47,15 @@ class LitDetector(L.LightningModule):
     def on_validation_epoch_end(self):
         mAP_result = self.val_map.compute()
         self.log('mAP_small', mAP_result['map_small'])
-        self.log('mAP_medium', mAP_result['map_medium'])
         self.log('mAP@0.50', mAP_result['map_50'])
         self.log('mAP@0.50:0.95', mAP_result['map'])
+        self.log('mAR_small', mAP_result['mar_small'])
+        self.log('mAR top 1', mAP_result['mar_1'])
         self.val_map.reset()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD(self.parameters(), lr=0.0005, momentum=0.9, nesterov=True)
-        scheduler = MultiStepLR(optimizer=optimizer, milestones=[45], gamma=0.1, verbose=True) 
+        optimizer = torch.optim.SGD(self.parameters(), lr=0.001, momentum=0.9, weight_decay=5e-4)
+        scheduler = CosineAnnealingLR(optimizer, 200, last_epoch=-1)
         return [optimizer], [scheduler]
 
 if __name__ == '__main__':
@@ -74,7 +75,7 @@ if __name__ == '__main__':
     print("Loading data...")
     dm = DetectionDataModule(args.train_dir, args.val_dir, args.width, args.height, args.batch_size)
     lit_model = LitDetector(model)
-    wandb_logger = WandbLogger(project="Ball-Detection")
+    wandb_logger = WandbLogger(project="Ball Detection Table Set")
 
     checkpoint_callback = ModelCheckpoint(
         save_top_k=10,
@@ -84,5 +85,6 @@ if __name__ == '__main__':
         filename="detection-" + args.backbone + "-{epoch:02d}",
     )
     print("Starting training...")
-    trainer = L.Trainer(logger=wandb_logger, accelerator="auto", fast_dev_run=args.obt, max_epochs=args.epochs, callbacks=[checkpoint_callback])
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+    trainer = L.Trainer(logger=wandb_logger, accelerator="auto", fast_dev_run=args.obt, max_epochs=args.epochs, callbacks=[checkpoint_callback, lr_monitor], log_every_n_steps=10)
     trainer.fit(lit_model, dm)
