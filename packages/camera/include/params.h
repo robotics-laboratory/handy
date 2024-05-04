@@ -9,17 +9,21 @@ struct CameraIntrinsicParameters {
     CameraIntrinsicParameters() = default;
 
     CameraIntrinsicParameters(
-        cv::Size size, cv::Mat camera_matrix, const cv::Vec<double, 5>& distort_coefs);
+        cv::Size size, cv::Mat camera_matrix, const cv::Vec<double, 5>& distort_coefs,
+        int cam_id = 0);
 
-    void initUndistortMaps();
     cv::Mat undistortImage(cv::Mat& src);
 
     void storeYaml(const std::string& yaml_path) const;
-    static CameraIntrinsicParameters loadFromYaml(const std::string& yaml_path);
-    static CameraIntrinsicParameters loadFromParams(
-        cv::Size param_image_size, const std::vector<double>& param_camera_matrix,
-        const std::vector<double>& param_dist_coefs);
+    static CameraIntrinsicParameters loadFromYaml(const std::string& yaml_path, int camera_id = 0);
+    static bool saveStereoCalibration(
+        const std::string& yaml_path, cv::Mat& rotation_vector, cv::Mat& translation_vector,
+        int camera_id);
+    static void loadStereoCalibration(
+        const std::string& yaml_path, cv::Mat& rotation_vector, cv::Mat& translation_vector,
+        int camera_id);
 
+    int camera_id = 0;
     cv::Size image_size{};
     cv::Mat camera_matrix{};
     cv::Vec<double, 5> dist_coefs{};

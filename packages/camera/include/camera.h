@@ -55,6 +55,7 @@ class CameraNode : public rclcpp::Node {
   private:
     void applyParamsToCamera(int handle);
     int getCameraId(int camera_handle);
+    void initCalibParams(int camera_handle);
 
     void triggerOnTimer();
     void handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info);
