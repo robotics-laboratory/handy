@@ -17,6 +17,7 @@ add_executable(camera src/camera.cpp src/camera_status.cpp)
 add_executable(
   calibration src/calibration_main.cpp src/calibration.cpp src/params.cpp
 )
+add_executable(triangulation src/triangulation.cpp src/params.cpp)
 
 target_include_directories(
   camera PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -25,15 +26,23 @@ target_include_directories(
 
 target_include_directories(
   calibration PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                     "/usr/include"
+                    "/usr/include"
 )
+target_include_directories(
+  triangulation PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+                    "/usr/include")
 
 ament_target_dependencies(camera yaml_cpp_vendor)
 ament_target_dependencies(calibration yaml_cpp_vendor Boost OpenCV)
 
+ament_target_dependencies(
+  triangulation
+  OpenCV
+  yaml_cpp_vendor)
+
 target_link_libraries(camera mvsdk)
 
-install(TARGETS camera DESTINATION lib/${PROJECT_NAME})
+install(TARGETS camera calibration triangulation DESTINATION lib/${PROJECT_NAME})
 
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/params")
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/params")
