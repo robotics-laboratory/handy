@@ -1,0 +1,6 @@
+outs:
+- md5: 7abcfb63c142dc9b88ba553746cdc404.dir
+  size: 5512126747
+  nfiles: 4000
+  hash: md5
+  path: white_dark_6ms

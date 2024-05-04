@@ -1,0 +1,6 @@
+outs:
+- md5: c1220b972df0c1240333c5a026c4625e.dir
+  size: 14854427229
+  nfiles: 8000
+  hash: md5
+  path: calibration_boards

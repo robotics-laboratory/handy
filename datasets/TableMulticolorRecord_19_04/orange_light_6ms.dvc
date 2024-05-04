@@ -1,0 +1,6 @@
+outs:
+- md5: 4067b7966c1eff87056fe72ab50e4bb2.dir
+  size: 11803559470
+  nfiles: 8000
+  hash: md5
+  path: orange_light_6ms
