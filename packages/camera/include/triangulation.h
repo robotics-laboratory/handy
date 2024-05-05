@@ -15,9 +15,9 @@ struct StereoParameters {
 
 class TriangulationNode {
   public:
-    TriangulationNode(std::string &params_file_path, std::vector<int> &camera_ids);
+    TriangulationNode(std::string &params_file_path, std::vector<int> camera_ids);
 
-    cv::Point3f triangulatePosition(std::vector<cv::Point2f> &image_points);
+    cv::Point3f triangulatePosition(std::vector<cv::Point2f> image_points);
 
   private:
     struct Params {
@@ -26,7 +26,5 @@ class TriangulationNode {
         std::vector<cv::Mat> projection_matrices = {};
     } param_{};
 
-    // struct State {
-    // } state_{};
 };
 }  // namespace handy
