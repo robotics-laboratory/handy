@@ -3,10 +3,12 @@
 #include <iostream>
 #include <yaml-cpp/yaml.h>
 #include <opencv2/calib3d.hpp>
+#include <algorithm>
+#include <fstream>
 // #include <opencv2/sfm/projection.hpp>
 
 namespace handy {
-TriangulationNode::TriangulationNode(std::string& params_file_path, std::vector<int>& camera_ids) {
+TriangulationNode::TriangulationNode(std::string& params_file_path, std::vector<int> camera_ids) {
     if (camera_ids.size() != 2) {
         printf("only 2 cameras are supported\n");
         exit(EXIT_FAILURE);
@@ -34,7 +36,7 @@ TriangulationNode::TriangulationNode(std::string& params_file_path, std::vector<
     }
 }
 
-cv::Point3f TriangulationNode::triangulatePosition(std::vector<cv::Point2f>& image_points) {
+cv::Point3f TriangulationNode::triangulatePosition(std::vector<cv::Point2f> image_points) {
     std::vector<cv::Point2f> point_1 = {image_points[0]};
     std::vector<cv::Point2f> point_2 = {image_points[1]};
     cv::Mat res_point_homogen;
@@ -56,7 +58,59 @@ cv::Point3f TriangulationNode::triangulatePosition(std::vector<cv::Point2f>& ima
 int main(int argc, char* argv[]) {
     if (argc != 3) {
         printf("help:\n./triangulation <path_to_param_file> <path_to_detected_balls.yaml>\n");
+        return 0;
     }
+    YAML::Node detections_yaml = YAML::LoadFile(argv[2]);
+    auto first_camera = detections_yaml
+                            ["/home/bakind/handy/datasets/TableOrange2msRecord_22_04/"
+                             "orange_dark_2ms/orange_dark_2ms_2_1_mask"]["bounding_boxes"]
+                                .as<std::vector<std::vector<float>>>();
+    auto second_camera = detections_yaml
+                             ["/home/bakind/handy/datasets/TableOrange2msRecord_22_04/"
+                              "orange_dark_2ms/orange_dark_2ms_2_2_mask"]["bounding_boxes"]
+                                 .as<std::vector<std::vector<float>>>();
+
+    if (first_camera.size() != second_camera.size()) {
+        printf(
+            "number of frames does not match: %ld and %ld\n",
+            first_camera.size(),
+            second_camera.size());
+        exit(EXIT_FAILURE);
+    }
+    printf("%d\n", first_camera.size());
+    std::string path_file_param(argv[1]);
+    handy::TriangulationNode triangulation_node(path_file_param, {1, 2});
+    std::vector<cv::Point3f> triangulated_points;
+
+    detections_yaml["triangulated_points"] = YAML::Node(YAML::NodeType::Sequence);
+    detections_yaml["triangulated_points"].SetStyle(YAML::EmitterStyle::Flow);
+
+    for (int i = 0; i < first_camera.size(); ++i) {
+        cv::Point2f first_image_point{
+            (first_camera[i][2] + first_camera[i][0]) / 2,
+            (first_camera[i][3] + first_camera[i][1]) / 2};
+        cv::Point2f second_image_point{
+            (second_camera[i][2] + second_camera[i][0]) / 2,
+            (second_camera[i][3] + second_camera[i][1]) / 2};
+
+        triangulated_points.push_back(
+            triangulation_node.triangulatePosition({first_image_point, second_image_point}));
+
+        std::vector<float> vector_point = {
+            triangulated_points.back().x,
+            triangulated_points.back().y,
+            triangulated_points.back().z};
+        detections_yaml["triangulated_points"].push_back(vector_point);
+        // printf(
+        //     "%f %f %f\n",
+        //     triangulated_points.back().x,
+        //     triangulated_points.back().y,
+        //     triangulated_points.back().z);
+    }
+    YAML::Emitter out;
+    out << detections_yaml;
+    std::ofstream fout(argv[2]);
+    fout << out.c_str();
 
     return 0;
 }
