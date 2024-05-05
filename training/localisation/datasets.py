@@ -147,10 +147,10 @@ def collate_fn(batch):
 
 
 class LocalisationDataModule(L.LightningDataModule):
-    def __init__(self, data_dir, annot_file, width=320, height=192, n_last=5,  batch_size=32):
+    def __init__(self, train_dir, val_dir, width=320, height=192, n_last=5,  batch_size=32):
         super().__init__()
-        self.data_dir = data_dir
-        self.annot_file = annot_file
+        self.train_dir = train_dir
+        self.val_dir = val_dir
         self.width = width
         self.height = height
         self.n_last = n_last
