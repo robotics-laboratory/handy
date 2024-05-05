@@ -19,13 +19,13 @@ class ConvBlock(nn.Module):
 class BallLocalisation(nn.Module):
     """
     Ball localisation model
-    input : tensor shape of (batch_size, 3, 320, 192)
+    input : tensor shape of (batch_size, n_last*3, 320, 192)
     """
-    def __init__(self, dropout_p=0.7):
+    def __init__(self, n_last=5, dropout_p=0.7):
         self.width = 320
         self.height = 192
         super(BallLocalisation, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=1, stride=1, padding="same")
+        self.conv1 = nn.Conv2d(n_last * 3, 64, kernel_size=1, stride=1, padding="same")
         self.norm = nn.BatchNorm2d(64)
         self.relu = nn.ReLU()
         self.dropout2d = nn.Dropout2d(p=dropout_p)

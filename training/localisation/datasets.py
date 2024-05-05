@@ -165,10 +165,10 @@ class LocalisationDataModule(L.LightningDataModule):
                                               transforms=get_valid_transform())
     
     def train_dataloader(self):
-        return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=2, collate_fn=collate_fn, persistent_workers=True)
+        return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=4, collate_fn=collate_fn, persistent_workers=True)
     
     def val_dataloader(self):
-        return torch.utils.data.DataLoader(self.valid_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2, collate_fn=collate_fn, persistent_workers=True)
+        return torch.utils.data.DataLoader(self.valid_dataset, batch_size=self.batch_size, shuffle=False, num_workers=4, collate_fn=collate_fn, persistent_workers=True)
     
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         images, targets = batch

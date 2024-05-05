@@ -120,25 +120,20 @@ class LitLocalisation(L.LightningModule):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train the localisation model')
-    parser.add_argument('--data_dir', type=str, help='Path to the data directory')
-    parser.add_argument('--annot_file', type=str, help='Path to the annotation file')
+    parser.add_argument('--train_dir', type=str, help='Path to train directory')
+    parser.add_argument('--val_dir', type=str, help='Path to validation directory')
     parser.add_argument('--epochs', type=int, default=50, help='Number of epochs')
     parser.add_argument('--width', type=int, default=320, help='Width of the input image')
     parser.add_argument('--height', type=int, default=192, help='Height of the input image')
+    parser.add_argument('--n_last', type=int, default=5, help='Number of last frames to consider')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
     parser.add_argument('--dropout_p', type=float, default=0.5, help='Dropout probability')
     parser.add_argument('--sigma', type=float, default=None, help='Sigma for the Gaussian distribution')
     args = parser.parse_args()
 
-    data_dir = args.data_dir
-    annot_file = args.annot_file
-    width = args.width
-    height = args.height
-    batch_size = args.batch_size
-    sigma = args.sigma
-    model = BallLocalisation(dropout_p=args.dropout_p)
-    data_module = LocalisationDataModule(data_dir, annot_file, width, height, batch_size)
-    lit_model = LitLocalisation(model, sigma)
+    model = BallLocalisation(dropout_p=args.dropout_p, n_last=args.n_last)
+    data_module = LocalisationDataModule(args.train_dir, args.val_dir, args.width, args.height, args.n_last, args.batch_size)
+    lit_model = LitLocalisation(model, args.sigma)
 
     wandb_logger = WandbLogger(project='localisation')
     checkpoint_callback = ModelCheckpoint(monitor='val_loss', dirpath='checkpoints', filename='localisation-{epoch:02d}-{val_loss:.2f}')
