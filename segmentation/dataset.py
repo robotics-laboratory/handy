@@ -35,14 +35,14 @@ def get_train_transform():
         A.HorizontalFlip(p=0.5),
         A.ToGray(p=0.5),
         A.RandomBrightnessContrast(p=0.3),
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        A.Normalize(mean=(0.077, 0.092, 0.142), std=(0.068, 0.079, 0.108)),
         ToTensorV2(p=1.0)
     ])
 
 
 def get_val_transform():
     return A.Compose([
-        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        A.Normalize(mean=(0.077, 0.092, 0.142), std=(0.068, 0.079, 0.108)),
         ToTensorV2(p=1.0)
     ])
 
@@ -53,7 +53,7 @@ class SegmentationDataset(Dataset):
         self.mask_dir = mask_dir
         self.size = size
         self.transform = transform
-        self.images = os.listdir(self.image_dir)
+        self.images = os.listdir(self.mask_dir)
 
     def __len__(self):
         return len(self.images)
