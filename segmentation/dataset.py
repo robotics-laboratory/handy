@@ -78,22 +78,23 @@ class SegmentationDataset(Dataset):
 
 
 class SegmentationDataModule(L.LightningDataModule):
-    def __init__(self, data_dir, size=(256, 256), batch_size=32):
+    def __init__(self, train_dir, val_dir, size=(256, 256), batch_size=32):
         super().__init__()
-        self.data_dir = data_dir
+        self.train_dir = train_dir
+        self.val_dir = val_dir
         self.size = size
         self.batch_size = batch_size
     
     def setup(self, stage):
         self.train_dataset = SegmentationDataset(
-            os.path.join(self.data_dir, 'train', 'images_rgb'),
-            os.path.join(self.data_dir, 'train', 'masks'),
+            os.path.join(self.train_dir, 'train', 'images_rgb'),
+            os.path.join(self.train_dir, 'train', 'masks'),
             size=self.size,
             transform=get_train_transform()
         )
         self.val_dataset = SegmentationDataset(
-            os.path.join(self.data_dir, 'val', 'images_rgb'),
-            os.path.join(self.data_dir, 'val', 'masks'),
+            os.path.join(self.val_dir, 'val', 'images_rgb'),
+            os.path.join(self.val_dir, 'val', 'masks'),
             size=self.size,
             transform=get_val_transform()
         )

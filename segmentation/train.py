@@ -68,7 +68,8 @@ class LitSegmentation(L.LightningModule):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str, help='Path to directory with images')
+    parser.add_argument('--train_dir', type=str, help='Path to train directory')
+    parser.add_argument('--val_dir', type=str, help='Path to validation directory')
     parser.add_argument('--width', type=int, default=256, help='Image width')
     parser.add_argument('--height', type=int, default=256, help='Image height')
     parser.add_argument('--batch_size', type=int, help='Batch size')
@@ -77,7 +78,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     model = UNet(3, 1, 16)
-    dm = SegmentationDataModule(args.data_dir, size=(args.width, args.height), batch_size=args.batch_size)
+    dm = SegmentationDataModule(args.train_dir, args.val_dir, size=(args.width, args.height), batch_size=args.batch_size)
     lit_model = LitSegmentation(model)
     wandb_logger = WandbLogger(project="Ball-Segmentation")
 
