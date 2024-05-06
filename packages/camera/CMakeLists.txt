@@ -34,10 +34,10 @@ target_include_directories(
 
 target_include_directories(
   calibration PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                    "/usr/include")
+                     "/usr/include")
 target_include_directories(
   triangulation PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                    "/usr/include")
+                       "/usr/include")
 
 ament_target_dependencies(
   camera
@@ -63,14 +63,12 @@ ament_target_dependencies(
   Boost
   camera_srvs)
 
-ament_target_dependencies(
-  triangulation
-  OpenCV
-  yaml_cpp_vendor)
+ament_target_dependencies(triangulation OpenCV yaml_cpp_vendor)
 
 target_link_libraries(camera mvsdk common::common)
 
-install(TARGETS camera calibration triangulation DESTINATION lib/${PROJECT_NAME})
+install(TARGETS camera calibration triangulation
+        DESTINATION lib/${PROJECT_NAME})
 
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/params")
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/params")
