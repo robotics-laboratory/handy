@@ -284,7 +284,11 @@ void CalibrationNode::stereoCalibrate() {
 
     cv::Mat zero_transformation = (cv::Mat_<double>(3, 1) << 0, 0, 0);
     if (!CameraIntrinsicParameters::saveStereoCalibration(
-            param_.path_to_params, zero_transformation, zero_transformation, 1)) {
+            param_.path_to_params,
+            zero_transformation,
+            zero_transformation,
+            image_points_common[0],
+            1)) {
         printf(
             "Failed to save result of stereo calibration (id=%d) to the file: %s\n",
             1,
@@ -293,7 +297,7 @@ void CalibrationNode::stereoCalibrate() {
     }
 
     if (!CameraIntrinsicParameters::saveStereoCalibration(
-            param_.path_to_params, rotation_vector, translation, 2)) {
+            param_.path_to_params, rotation_vector, translation, image_points_common[1], 2)) {
         printf(
             "Failed to save result of stereo calibration (id=%d) to the file: %s\n",
             2,

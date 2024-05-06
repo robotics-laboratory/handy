@@ -18,7 +18,7 @@ struct CameraIntrinsicParameters {
     static CameraIntrinsicParameters loadFromYaml(const std::string& yaml_path, int camera_id = 0);
     static bool saveStereoCalibration(
         const std::string& yaml_path, cv::Mat& rotation_vector, cv::Mat& translation_vector,
-        int camera_id);
+        std::vector<std::vector<cv::Point2f>>& common_detections, int camera_id);
     static void loadStereoCalibration(
         const std::string& yaml_path, cv::Mat& rotation_vector, cv::Mat& translation_vector,
         int camera_id);
