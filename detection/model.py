@@ -33,7 +33,7 @@ def get_model(n_classes=2, size=(480, 300), nms=0.45, backbone_name='resnet34'):
     
 
     out_channels = [out_channels] * 6
-    default_boxes = DefaultBoxGenerator(aspect_ratios=[[2/3, 1, 3/2], [2/3, 1, 3/2], [2/3, 1, 3/2], [2/3, 1, 3/2], [2/3, 1, 3/2], [2/3, 1, 3/2]], min_ratio=0.05, max_ratio=0.35)
+    default_boxes = DefaultBoxGenerator(aspect_ratios=[[2/3, 1, 3/2], [2/3, 1, 3/2, 2], [2/3, 1, 3/2], [2/3, 1, 3/2], [2/3, 1, 3/2], [2/3, 1, 3/2]], min_ratio=0.05, max_ratio=0.35)
     num_anchors = default_boxes.num_anchors_per_location()
     head = SSDHead(out_channels, num_anchors, n_classes)
     model = SSD(backbone=backbone, 

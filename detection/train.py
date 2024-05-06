@@ -55,7 +55,7 @@ class LitDetector(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(self.parameters(), lr=0.001, momentum=0.9, weight_decay=5e-4)
-        scheduler = CosineAnnealingLR(optimizer, 200, last_epoch=-1)
+        scheduler = CosineAnnealingLR(optimizer, 300, last_epoch=-1)
         return [optimizer], [scheduler]
 
 if __name__ == '__main__':
