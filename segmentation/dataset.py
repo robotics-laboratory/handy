@@ -86,13 +86,13 @@ class SegmentationDataModule(L.LightningDataModule):
     
     def setup(self, stage):
         self.train_dataset = SegmentationDataset(
-            os.path.join(self.data_dir, 'train', 'images_bgr'),
+            os.path.join(self.data_dir, 'train', 'images_rgb'),
             os.path.join(self.data_dir, 'train', 'masks'),
             size=self.size,
             transform=get_train_transform()
         )
         self.val_dataset = SegmentationDataset(
-            os.path.join(self.data_dir, 'val', 'images_bgr'),
+            os.path.join(self.data_dir, 'val', 'images_rgb'),
             os.path.join(self.data_dir, 'val', 'masks'),
             size=self.size,
             transform=get_val_transform()
@@ -101,13 +101,13 @@ class SegmentationDataModule(L.LightningDataModule):
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
             self.train_dataset, batch_size=self.batch_size, shuffle=True,
-            num_workers=2, pin_memory=True, persistent_workers=True
+            num_workers=4, pin_memory=True, persistent_workers=True
         )
     
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
             self.val_dataset, batch_size=self.batch_size, shuffle=False,
-            num_workers=2, pin_memory=True, persistent_workers=True
+            num_workers=4, pin_memory=True, persistent_workers=True
         )
     
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
