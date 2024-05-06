@@ -9,11 +9,28 @@ from cv_bridge import CvBridge
 from geometry_msgs.msg import TransformStamped
 from rclpy.serialization import serialize_message
 from sensor_msgs.msg import CameraInfo
+from visualization_msgs.msg import Marker
 
 SEC_MULTIPLIER = 10**9
 MS_MULTIPLIER = 10**6
 MCS_MULTIPLIER = 10**3
 NANO_MULTIPLIER = 1
+
+
+def euler_to_quaternion(roll, pitch, yaw):
+    qx = np.sin(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) - np.cos(
+        roll / 2
+    ) * np.sin(pitch / 2) * np.sin(yaw / 2)
+    qy = np.cos(roll / 2) * np.sin(pitch / 2) * np.cos(yaw / 2) + np.sin(
+        roll / 2
+    ) * np.cos(pitch / 2) * np.sin(yaw / 2)
+    qz = np.cos(roll / 2) * np.cos(pitch / 2) * np.sin(yaw / 2) - np.sin(
+        roll / 2
+    ) * np.sin(pitch / 2) * np.cos(yaw / 2)
+    qw = np.cos(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) + np.sin(
+        roll / 2
+    ) * np.sin(pitch / 2) * np.sin(yaw / 2)
+    return qx, qy, qz, qw
 
 
 class CameraParameters:
@@ -52,26 +69,11 @@ class CameraParameters:
         self.static_transformation.transform.translation.y = self.translation_vector[1]
         self.static_transformation.transform.translation.z = self.translation_vector[2]
 
-        qw = np.cos(self.rotation_vector[0] / 2) * np.cos(
-            self.rotation_vector[1] / 2
-        ) * np.cos(self.rotation_vector[2] / 2) + np.sin(
-            self.rotation_vector[0] / 2
-        ) * np.sin(self.rotation_vector[1] / 2) * np.sin(self.rotation_vector[2] / 2)
-        qx = np.sin(self.rotation_vector[0] / 2) * np.cos(
-            self.rotation_vector[1] / 2
-        ) * np.cos(self.rotation_vector[2] / 2) - np.cos(
-            self.rotation_vector[0] / 2
-        ) * np.sin(self.rotation_vector[1] / 2) * np.sin(self.rotation_vector[2] / 2)
-        qy = np.cos(self.rotation_vector[0] / 2) * np.sin(
-            self.rotation_vector[1] / 2
-        ) * np.cos(self.rotation_vector[2] / 2) + np.sin(
-            self.rotation_vector[0] / 2
-        ) * np.cos(self.rotation_vector[1] / 2) * np.sin(self.rotation_vector[2] / 2)
-        qz = np.cos(self.rotation_vector[0] / 2) * np.cos(
-            self.rotation_vector[1] / 2
-        ) * np.sin(self.rotation_vector[2] / 2) - np.sin(
-            self.rotation_vector[0] / 2
-        ) * np.sin(self.rotation_vector[1] / 2) * np.cos(self.rotation_vector[2] / 2)
+        # qx, qy, qz, qw = euler_to_quaternion(self.rotation_vector[2],
+        # self.rotation_vector[0], self.rotation_vector[1])
+        qx, qy, qz, qw = euler_to_quaternion(
+            self.rotation_vector[0], self.rotation_vector[1], self.rotation_vector[2]
+        )
 
         self.static_transformation.transform.rotation.x = qx
         self.static_transformation.transform.rotation.y = qy
@@ -117,35 +119,6 @@ class CameraParameters:
         self.static_transformation.header.stamp.nanosec = current_time // SEC_MULTIPLIER
 
         writer.write("/tf", serialize_message(self.static_transformation), current_time)
-
-
-# for i in range(n):
-#     current_time = 10 * i * 10**6
-#     msg = Marker()
-#     msg.header.frame_id = "camera_1"
-#     msg.header.stamp.sec = current_time // 10**9
-#     msg.header.stamp.nanosec = current_time % 10**9
-#     msg.ns = "ball_markers"
-#     msg.id = i
-#     msg.type = Marker.SPHERE
-#     msg.action = Marker.ADD
-#     msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = map(
-#         float, new_line.split()
-#     )
-#     msg.pose.orientation.x = 0.0
-#     msg.pose.orientation.y = 0.0
-#     msg.pose.orientation.z = 0.0
-#     msg.pose.orientation.w = 1.0
-#     msg.scale.x = 0.1  # size of the ball (1m diameter)
-#     msg.scale.y = 0.1
-#     msg.scale.z = 0.1
-#     msg.color.r = 1.0  # orange color
-#     msg.color.g = 0.5
-#     msg.color.b = 0.0
-#     msg.color.a = 1.0  # alpha (1.0 = opaque, 0.0 = transparent)
-#     msg.lifetime.nanosec = 10 * 10**6  # ttl = 10ms
-
-#     writer.write("/ball_marker", serialize_message(msg), 10 * i * 10**6)
 
 
 def init_writer(export_file):
@@ -218,18 +191,53 @@ def init_parser():
     return parser
 
 
-def simulate(writer, mask_sources, rgb_sources, intrinsics):
-    filenames_to_publish = sorted(os.listdir(mask_sources[0]))
+def init_ball_marker(marker_id, current_time, position, camera_id, ttl=100):
+    msg = Marker()
+    msg.header.frame_id = f"camera_{camera_id}"
+    msg.header.stamp.sec = current_time // SEC_MULTIPLIER
+    msg.header.stamp.nanosec = current_time % SEC_MULTIPLIER
+    msg.ns = "ball_markers"
+    msg.id = marker_id
+    msg.type = Marker.SPHERE
+    msg.action = Marker.ADD
+    msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = position
+
+    msg.pose.orientation.x = 0.0
+    msg.pose.orientation.y = 0.0
+    msg.pose.orientation.z = 0.0
+    msg.pose.orientation.w = 1.0
+
+    msg.scale.x = 0.1  # size of the ball (1m diameter)
+    msg.scale.y = 0.1
+    msg.scale.z = 0.1
+
+    msg.color.r = 1.0  # orange color
+    msg.color.g = 0.5
+    msg.color.b = 0.0
+    msg.color.a = 1.0  # alpha (1.0 = opaque, 0.0 = transparent)
+
+    msg.lifetime.nanosec = ttl * 10**6  # ttl = 10ms
+
+    return msg
+
+
+def simulate(writer, mask_sources, rgb_sources, filename_to_3d_points, intrinsics):
+    filenames_to_publish = sorted(filename_to_3d_points.keys())
     cv_bridge_instance = CvBridge()
 
     current_simulation_time = 0  # in nanoseconds
-    for filename in filenames_to_publish:
+    for i in range(len(filenames_to_publish)):
+        filename = filenames_to_publish[i]
         for camera_idx in range(2):
             # load and segmentate image
             image = cv2.imread(os.path.join(rgb_sources[camera_idx], filename))
             mask = cv2.imread(
                 os.path.join(mask_sources[camera_idx], filename), cv2.IMREAD_GRAYSCALE
             )
+            if image is None or mask is None:
+                print(os.path.join(rgb_sources[camera_idx], filename))
+                print(os.path.join(mask_sources[camera_idx], filename))
+                quit()
             assert image.shape[:2] == mask.shape
             # segmentated_image = image
             # segmentated_image[:, :, 0] = image[:, :, 0] * mask
@@ -267,6 +275,14 @@ def simulate(writer, mask_sources, rgb_sources, intrinsics):
             intrinsics[camera_idx].publish_camera_info(writer, current_simulation_time)
             intrinsics[camera_idx].publish_transform(writer, current_simulation_time)
 
+        ball_marker = init_ball_marker(
+            i, current_simulation_time, filename_to_3d_points[filename], camera_idx + 1
+        )
+        writer.write(
+            "/triangulation/ball_marker",
+            serialize_message(ball_marker),
+            current_simulation_time,
+        )
         current_simulation_time += 15 * MS_MULTIPLIER  # 15 ms between the frames
 
 
@@ -297,6 +313,14 @@ if __name__ == "__main__":
     # read and publish camera info
     intrinsics = init_camera_info(writer, args.intrinsic_params, [1, 2])
 
-    simulate(writer, args.mask_sources, args.rgb_sources, intrinsics)
+    with open(args.detection_result, mode="r", encoding="utf-8") as file:
+        data = yaml.safe_load(file)
+    filenames_to_3d_points = dict(
+        zip(data[list(data.keys())[0]]["filenames"], data["triangulated_points"])
+    )
+
+    simulate(
+        writer, args.mask_sources, args.rgb_sources, filenames_to_3d_points, intrinsics
+    )
 
     del writer
