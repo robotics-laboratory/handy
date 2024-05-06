@@ -4,6 +4,7 @@ import os
 import random
 import cv2
 import numpy as np
+import json
 
 from model import get_model
 
@@ -15,12 +16,13 @@ if __name__ == "__main__":
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--result_dir', type=str)
     parser.add_argument('--backbone', type=str)
-    parser.add_argument('--size', type=int)
+    parser.add_argument('--width', type=int)
+    parser.add_argument('--height', type=int)
     parser.add_argument('--checkpoint', type=str)
     parser.add_argument('--threshold', type=float)
 
     args = parser.parse_args()
-    model = get_model(backbone_name=args.backbone, size=args.size)
+    model = get_model(backbone_name=args.backbone, size=(args.width, args.height))
 
     checkpoint = torch.load(args.checkpoint, map_location=torch.device('cpu'))
     model.load_state_dict({k[6:]: v for k, v in checkpoint["state_dict"].items() if k.startswith("model.")})
@@ -28,8 +30,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.eval().to(device)
 
-    width = args.size
-    height = args.size
+    width = args.width
+    height = args.height
 
     all_files = os.listdir(args.data_dir)
     image_files = [file for file in all_files if file.endswith(('.png', '.jpg', '.jpeg'))]
@@ -37,6 +39,8 @@ if __name__ == "__main__":
     selected_images = sorted(image_files)
 
     os.makedirs(args.result_dir, exist_ok=True)
+
+    bbox_centers = {}
 
     for i in range(len(selected_images)):
 
@@ -72,6 +76,14 @@ if __name__ == "__main__":
                 ymin = int((box[1] / image.shape[0]) * orig_image.shape[0])
                 xmax = int((box[2] / image.shape[1]) * orig_image.shape[1])
                 ymax = int((box[3] / image.shape[0]) * orig_image.shape[0])
+
+
+                center_x = (xmin + xmax) / 2
+                center_y = (ymin + ymax) / 2
+
+                bbox_centers[selected_images[i]] = (center_x, center_y)
+
+
                 cv2.rectangle(orig_image,
                             (xmin, ymin),
                             (xmax, ymax),
@@ -86,4 +98,7 @@ if __name__ == "__main__":
                             2, 
                             lineType=cv2.LINE_AA)
 
-            cv2.imwrite(os.path.join(args.result_dir, selected_images[i]), orig_image)
+        cv2.imwrite(os.path.join(args.result_dir, selected_images[i]), orig_image)
+
+    with open(os.path.join(args.result_dir, 'bbox_centers.json'), 'w') as f:
+        json.dump(bbox_centers, f)

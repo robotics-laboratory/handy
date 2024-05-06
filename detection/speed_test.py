@@ -9,7 +9,8 @@ from model import get_model
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--backbone', type=str)
-    parser.add_argument('--size', type=int)
+    parser.add_argument('--width', type=int)
+    parser.add_argument('--height', type=int)
     parser.add_argument('--checkpoint', type=str)
     parser.add_argument('--img_path', type=str)
 
@@ -23,7 +24,7 @@ if __name__ == "__main__":
     model.eval().to(device)
 
     image = cv2.imread(args.img_path)
-    image = cv2.resize(image, (args.size, args.size))
+    image = cv2.resize(image, (args.width, args.height))
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
     image /= 255.0
     image_input = np.transpose(image, (2, 0, 1)).astype(np.float32)
