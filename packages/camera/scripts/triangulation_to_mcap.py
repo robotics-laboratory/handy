@@ -10,6 +10,7 @@ from geometry_msgs.msg import TransformStamped, Quaternion
 from rclpy.serialization import serialize_message
 from sensor_msgs.msg import CameraInfo
 from visualization_msgs.msg import Marker
+from scipy.spatial.transform import Rotation
 
 SEC_MULTIPLIER = 10**9
 MS_MULTIPLIER = 10**6
@@ -69,24 +70,7 @@ class CameraParameters:
         self.static_transformation.transform.translation.y = self.translation_vector[1]
         self.static_transformation.transform.translation.z = self.translation_vector[2]
 
-        # Calculate Euler angles from rotation matrix
-        sy = np.sqrt(
-            self.rotation_matrix[0, 0] * self.rotation_matrix[0, 0]
-            + self.rotation_matrix[1, 0] * self.rotation_matrix[1, 0]
-        )
-        singular = sy < 1e-6
-
-        if not singular:
-            roll = np.arctan2(self.rotation_matrix[2, 1], self.rotation_matrix[2, 2])
-            pitch = np.arctan2(-self.rotation_matrix[2, 0], sy)
-            yaw = np.arctan2(self.rotation_matrix[1, 0], self.rotation_matrix[0, 0])
-        else:
-            roll = np.arctan2(-self.rotation_matrix[1, 2], self.rotation_matrix[1, 1])
-            pitch = np.arctan2(-self.rotation_matrix[2, 0], sy)
-            yaw = 0
-
-        # Now you can use your function to convert Euler angles to quaternion
-        qx, qy, qz, qw = euler_to_quaternion(roll, pitch, yaw)
+        qx, qy, qz, qw = Rotation.from_matrix(self.rotation_matrix).as_quat().tolist()
 
         self.static_transformation.transform.rotation.x = qx
         self.static_transformation.transform.rotation.y = qy
@@ -327,7 +311,7 @@ def init_camera_info(writer, params_path, camera_ids=[1, 2]):
     print(complanar_aruco_points.shape)
     centroid = np.mean(complanar_aruco_points, axis=0)
     print("centroid is", centroid)
-    _, _, VT = np.linalg.svd(complanar_aruco_points - centroid, full_matrices=False)
+    _, _, VT = np.linalg.svd(complanar_aruco_points[:10] - centroid, full_matrices=False)
     print("normal is", VT[-1, :])
     return intrinsics, VT[-1, :], centroid
 
@@ -369,25 +353,8 @@ def normal_to_quaternion(normal):
     print(rotation_vector)
 
     rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
-    sy = np.sqrt(
-            rotation_matrix[0, 0] * rotation_matrix[0, 0]
-            + rotation_matrix[1, 0] * rotation_matrix[1, 0]
-        )
-    singular = sy < 1e-6
-
-    if not singular:
-        roll = np.arctan2(rotation_matrix[2, 1], rotation_matrix[2, 2])
-        pitch = np.arctan2(-rotation_matrix[2, 0], sy)
-        yaw = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])
-    else:
-        roll = np.arctan2(-rotation_matrix[1, 2], rotation_matrix[1, 1])
-        pitch = np.arctan2(-rotation_matrix[2, 0], sy)
-        yaw = 0
-
-    # Now you can use your function to convert Euler angles to quaternion
     quat = Quaternion()
-    quat.x, quat.y, quat.z, quat.w = euler_to_quaternion(roll, pitch, yaw)
-    
+    quat.x, quat.y, quat.z, quat.w = Rotation.from_matrix(rotation_matrix).as_quat().tolist()    
     return quat
 
 
