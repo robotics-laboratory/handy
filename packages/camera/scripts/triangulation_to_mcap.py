@@ -6,7 +6,7 @@ import numpy as np
 import rosbag2_py
 import yaml
 from cv_bridge import CvBridge
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, Quaternion
 from rclpy.serialization import serialize_message
 from sensor_msgs.msg import CameraInfo
 from visualization_msgs.msg import Marker
@@ -69,11 +69,24 @@ class CameraParameters:
         self.static_transformation.transform.translation.y = self.translation_vector[1]
         self.static_transformation.transform.translation.z = self.translation_vector[2]
 
-        # qx, qy, qz, qw = euler_to_quaternion(self.rotation_vector[2],
-        # self.rotation_vector[0], self.rotation_vector[1])
-        qx, qy, qz, qw = euler_to_quaternion(
-            self.rotation_vector[0], self.rotation_vector[1], self.rotation_vector[2]
+        # Calculate Euler angles from rotation matrix
+        sy = np.sqrt(
+            self.rotation_matrix[0, 0] * self.rotation_matrix[0, 0]
+            + self.rotation_matrix[1, 0] * self.rotation_matrix[1, 0]
         )
+        singular = sy < 1e-6
+
+        if not singular:
+            roll = np.arctan2(self.rotation_matrix[2, 1], self.rotation_matrix[2, 2])
+            pitch = np.arctan2(-self.rotation_matrix[2, 0], sy)
+            yaw = np.arctan2(self.rotation_matrix[1, 0], self.rotation_matrix[0, 0])
+        else:
+            roll = np.arctan2(-self.rotation_matrix[1, 2], self.rotation_matrix[1, 1])
+            pitch = np.arctan2(-self.rotation_matrix[2, 0], sy)
+            yaw = 0
+
+        # Now you can use your function to convert Euler angles to quaternion
+        qx, qy, qz, qw = euler_to_quaternion(roll, pitch, yaw)
 
         self.static_transformation.transform.rotation.x = qx
         self.static_transformation.transform.rotation.y = qy
@@ -133,6 +146,13 @@ def init_writer(export_file):
     writer.create_topic(
         rosbag2_py.TopicMetadata(
             name="/triangulation/ball_marker",
+            type="visualization_msgs/msg/Marker",
+            serialization_format="cdr",
+        )
+    )
+    writer.create_topic(
+        rosbag2_py.TopicMetadata(
+            name="/triangulation/table_plane",
             type="visualization_msgs/msg/Marker",
             serialization_format="cdr",
         )
@@ -226,7 +246,7 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_3d_points, intrinsic
     cv_bridge_instance = CvBridge()
 
     current_simulation_time = 0  # in nanoseconds
-    for i in range(len(filenames_to_publish)):
+    for i in range(len(filenames_to_publish))[:100]:
         filename = filenames_to_publish[i]
         for camera_idx in range(2):
             # load and segmentate image
@@ -245,6 +265,8 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_3d_points, intrinsic
             # segmentated_image[:, :, 2] = segmentated_image[:, :, 2] * mask
             # Highlight color and intensity
 
+            image = intrinsics[camera_idx].undistort(image)
+
             highlight_color = [0, 255, 255]  # Yellow color
             alpha = 0.3  # Intensity of highlight
             # Create an image with highlight color
@@ -253,7 +275,6 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_3d_points, intrinsic
             highlighted_area = cv2.bitwise_and(highlight, highlight, mask=mask)
             # Alpha blend highlighted_area and original image
             image = cv2.addWeighted(image, 1, highlighted_area, alpha, 0)
-            image = intrinsics[camera_idx].undistort(image)
 
             # prepare CompressedImages
             camera_feed_msg = cv_bridge_instance.cv2_to_compressed_imgmsg(
@@ -301,7 +322,73 @@ def init_camera_info(writer, params_path, camera_ids=[1, 2]):
                     data["parameters"][camera_id]["translation"],
                 )
             )
-    return intrinsics
+    print(data.keys())
+    complanar_aruco_points = np.array(data["triangulated_common_points"], dtype=float)
+    print(complanar_aruco_points.shape)
+    centroid = np.mean(complanar_aruco_points, axis=0)
+    print("centroid is", centroid)
+    _, _, VT = np.linalg.svd(complanar_aruco_points - centroid, full_matrices=False)
+    print("normal is", VT[-1, :])
+    return intrinsics, VT[-1, :], centroid
+
+
+def publish_table_plain(writer, normal, centroid):
+    marker = Marker()
+    marker.header.frame_id = "world"
+    marker.type = marker.CUBE
+    marker.action = marker.ADD
+    marker.scale.x = 100.0  # Adjust as needed
+    marker.scale.y = 100.0  # Adjust as needed
+    marker.scale.z = 0.01  # Thin along the z-axis
+    marker.color.a = 1.0  # Don't forget to set the alpha!
+    marker.color.r = 0.0
+    marker.color.g = 0.0
+    marker.color.b = 0.8
+    marker.pose.position.x = centroid[0]
+    marker.pose.position.y = centroid[1]
+    marker.pose.position.z = centroid[2]
+    # You'll need to convert the normal vector to a quaternion for the pose orientation
+    # This is a bit involved - you might want to use a helper function
+    marker.pose.orientation = normal_to_quaternion(normal)
+    writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+
+def normal_to_quaternion(normal):
+    # Ensure the normal is a unit vector
+    normal = normal / np.linalg.norm(normal)
+
+    # Compute the angle between the normal and the z-axis
+    angle = np.arccos(np.dot(normal, [0, 0, 1]))
+
+    # Compute the axis of rotation
+    axis = np.cross(normal, [0, 0, 1])
+    axis = axis / np.linalg.norm(axis)
+
+    # Use scipy to create a rotation and convert it to a quaternion
+    rotation_vector = angle * axis
+    print('++++++++++++++')
+    print(rotation_vector)
+
+    rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
+    sy = np.sqrt(
+            rotation_matrix[0, 0] * rotation_matrix[0, 0]
+            + rotation_matrix[1, 0] * rotation_matrix[1, 0]
+        )
+    singular = sy < 1e-6
+
+    if not singular:
+        roll = np.arctan2(rotation_matrix[2, 1], rotation_matrix[2, 2])
+        pitch = np.arctan2(-rotation_matrix[2, 0], sy)
+        yaw = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])
+    else:
+        roll = np.arctan2(-rotation_matrix[1, 2], rotation_matrix[1, 1])
+        pitch = np.arctan2(-rotation_matrix[2, 0], sy)
+        yaw = 0
+
+    # Now you can use your function to convert Euler angles to quaternion
+    quat = Quaternion()
+    quat.x, quat.y, quat.z, quat.w = euler_to_quaternion(roll, pitch, yaw)
+    
+    return quat
 
 
 if __name__ == "__main__":
@@ -311,7 +398,10 @@ if __name__ == "__main__":
     writer = init_writer(args.export)
 
     # read and publish camera info
-    intrinsics = init_camera_info(writer, args.intrinsic_params, [1, 2])
+    intrinsics, table_plane_normal, table_plain_centroid = init_camera_info(
+        writer, args.intrinsic_params, [1, 2]
+    )
+    publish_table_plain(writer, table_plane_normal, table_plain_centroid)
 
     with open(args.detection_result, mode="r", encoding="utf-8") as file:
         data = yaml.safe_load(file)

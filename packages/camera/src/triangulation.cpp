@@ -13,7 +13,6 @@ TriangulationNode::TriangulationNode(std::string& params_file_path, std::vector<
         printf("only 2 cameras are supported\n");
         exit(EXIT_FAILURE);
     }
-
     for (int i = 0; i < camera_ids.size(); ++i) {
         param_.cameras_intrinsics.push_back(
             CameraIntrinsicParameters::loadFromYaml(params_file_path, camera_ids[i]));
@@ -101,16 +100,45 @@ int main(int argc, char* argv[]) {
             triangulated_points.back().y,
             triangulated_points.back().z};
         detections_yaml["triangulated_points"].push_back(vector_point);
-        // printf(
-        //     "%f %f %f\n",
-        //     triangulated_points.back().x,
-        //     triangulated_points.back().y,
-        //     triangulated_points.back().z);
     }
     YAML::Emitter out;
     out << detections_yaml;
     std::ofstream fout(argv[2]);
     fout << out.c_str();
+
+    YAML::Node params_yaml = YAML::LoadFile(argv[1]);
+    first_camera =
+        params_yaml["parameters"]["1"]["common_points"].as<std::vector<std::vector<float>>>();
+    second_camera =
+        params_yaml["parameters"]["2"]["common_points"].as<std::vector<std::vector<float>>>();
+
+    std::vector<cv::Point3f> triangulated_common_points;
+
+    params_yaml["triangulated_common_points"] = YAML::Node(YAML::NodeType::Sequence);
+    params_yaml["triangulated_common_points"].SetStyle(YAML::EmitterStyle::Flow);
+
+    for (int i = 0; i < first_camera.size(); ++i) {
+        cv::Point2f first_image_point{
+            (first_camera[i][2] + first_camera[i][0]) / 2,
+            (first_camera[i][3] + first_camera[i][1]) / 2};
+        cv::Point2f second_image_point{
+            (second_camera[i][2] + second_camera[i][0]) / 2,
+            (second_camera[i][3] + second_camera[i][1]) / 2};
+
+        triangulated_common_points.push_back(
+            triangulation_node.triangulatePosition({first_image_point, second_image_point}));
+
+        std::vector<float> vector_point = {
+            triangulated_common_points.back().x,
+            triangulated_common_points.back().y,
+            triangulated_common_points.back().z};
+        params_yaml["triangulated_common_points"].push_back(vector_point);
+    }
+
+    YAML::Emitter params_out;
+    params_out << params_yaml;
+    std::ofstream fout_params_common(argv[1]);
+    fout_params_common << params_out.c_str();
 
     return 0;
 }
