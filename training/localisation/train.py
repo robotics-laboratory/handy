@@ -7,6 +7,8 @@ import argparse
 from torch.optim.lr_scheduler import StepLR
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
+from datetime import datetime
+
 from model import BallLocalisation
 from datasets import LocalisationDataModule
 
@@ -136,8 +138,13 @@ if __name__ == '__main__':
     lit_model = LitLocalisation(model, args.sigma)
 
     wandb_logger = WandbLogger(project='localisation')
-    checkpoint_callback = ModelCheckpoint(monitor='val_loss', dirpath='checkpoints', filename='localisation-{epoch:02d}-{val_loss:.2f}')
-
+    checkpoint_callback = ModelCheckpoint(
+        save_top_k=10,
+        monitor="epoch",
+        mode="max",
+        dirpath=f"checkpoint/{datetime.now().strftime('%m-%d-%H-%M-%S')}",
+        filename="localisation-{epoch:02d}",
+    )
     trainer = L.Trainer(max_epochs=args.epochs, logger=wandb_logger, callbacks=[checkpoint_callback], log_every_n_steps=10)
     trainer.fit(lit_model, data_module)
     

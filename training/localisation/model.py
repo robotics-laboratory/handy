@@ -66,3 +66,51 @@ class BallLocalisation(nn.Module):
 
         return self.sigmoid(x)
 
+class TTNetWithProb(nn.Module):
+    def __init__(self, local_model):
+        super(TTNetWithProb, self).__init__()
+        
+        self.backbone = nn.Sequential(
+            local_model.conv1,
+            local_model.norm,
+            local_model.relu,
+            local_model.conv_block1,
+            local_model.conv_block2,
+            local_model.dropout2d,
+            local_model.conv_block3,
+            local_model.conv_block4,
+            local_model.dropout2d,
+            local_model.conv_block5,
+            local_model.conv_block6,
+            local_model.dropout2d
+        )
+
+        self.head = nn.Sequential(
+            local_model.fc1,
+            local_model.relu, 
+            local_model.dropout1d,
+            local_model.fc2,
+            local_model.relu, 
+            local_model.dropout1d,
+            local_model.fc3,
+            local_model.sigmoid
+        )
+        
+        self.fc_cls = nn.Sequential(
+            nn.Linear(256*5*3, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 128),
+            nn.ReLU(),
+            nn.Linear(128, 2)
+        )
+    
+    def forward(self, x):
+
+        features = self.backbone(x)
+        features = features.view(x.size(0), -1)
+
+        logit = self.head(features)
+        cls = self.fc_cls(features)
+
+        return logit, cls
+

@@ -83,7 +83,10 @@ class LocalisationDataset(Dataset):
 
         for i in range(image_num, image_num - self.n_last, -1):
 
-            image_name = f"{image_prefix}{str(i).rjust(4, '0')}.png"
+            if i < 0:
+                image_name = f"{image_prefix}{str(0).rjust(4, '0')}.png"
+            else:
+                image_name = f"{image_prefix}{str(i).rjust(4, '0')}.png"
             image_path = os.path.join(self.image_dir, image_name)
 
             image = cv2.imread(image_path)
@@ -173,3 +176,100 @@ class LocalisationDataModule(L.LightningDataModule):
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         images, targets = batch
         return images.to(device), targets
+
+
+class ClassificationDataset(Dataset):
+    def __init__(self, image_dir, annot_file, width, height, n_last = 5, transforms=None):
+
+        self.image_dir = image_dir
+        self.annot_file = annot_file
+        self.width = width
+        self.height = height
+        self.n_last = n_last
+        self.transforms = transforms
+        self.labels = json.load(open(annot_file))
+
+        images = []
+        for file in os.listdir(self.image_dir):
+            if file.endswith('.png'):
+                images.append(file)
+        
+        images.sort()
+        self.images = images
+    
+    def __getitem__(self, index):
+        image_name = self.images[index]
+        image_path = os.path.join(self.image_dir, image_name)
+
+        image_num = int(image_name[-8:-4])
+        image_prefix = image_name[:-8]
+
+        resized_images = []
+
+        label = 1 if image_name in self.labels else 0
+
+        for i in range(image_num, image_num - self.n_last, -1):
+            if i < 0:
+                image_name = f"{image_prefix}{str(0).rjust(4, '0')}.png"
+            else:
+                image_name = f"{image_prefix}{str(i).rjust(4, '0')}.png"
+            image_path = os.path.join(self.image_dir, image_name)
+
+            image = cv2.imread(image_path)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
+            image_resized = cv2.resize(image, (self.width, self.height))
+            image_resized /= 255.0
+
+            resized_images.append(image_resized)
+
+        aug_images = []
+
+        bboxes = torch.as_tensor([[2, 2, 100, 100]], dtype=torch.int64)
+        labels = torch.as_tensor([label], dtype=torch.int64)
+
+        if self.transforms:
+            data = self.transforms(image=resized_images[0], return_replay=True, labels=labels, bboxes=bboxes)
+            replay = data['replay']
+            aug_images.append(data['image'])
+
+            for i in range(1, self.n_last):
+                data = A.ReplayCompose.replay(replay, image=resized_images[i], labels=labels,  bboxes=bboxes)
+                aug_images.append(data['image'])
+            
+            resized_images = aug_images
+        
+        stack = torch.cat(resized_images, dim=0)
+
+        return stack, label
+
+    def __len__(self):
+        return len(self.images)
+
+class ClassificationDataModule(L.LightningDataModule):
+    def __init__(self, train_dir, val_dir, width=320, height=192, n_last=5,  batch_size=32):
+        super().__init__()
+        self.train_dir = train_dir
+        self.val_dir = val_dir
+        self.width = width
+        self.height = height
+        self.n_last = n_last
+        self.batch_size = batch_size
+    
+    def setup(self, stage):
+        self.train_dataset = ClassificationDataset(os.path.join(self.train_dir, 'images_rgb'), os.path.join(self.train_dir, 'boxes.json'),
+                                              self.width, self.height, self.n_last,
+                                              transforms=get_train_transform())
+        self.valid_dataset = ClassificationDataset(os.path.join(self.val_dir, 'images_rgb'), os.path.join(self.val_dir, 'boxes.json'),
+                                              self.width, self.height, self.n_last,
+                                              transforms=get_valid_transform())
+    
+    def train_dataloader(self):
+        return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=4, persistent_workers=True)
+    
+    def val_dataloader(self):
+        return torch.utils.data.DataLoader(self.valid_dataset, batch_size=self.batch_size, shuffle=False, num_workers=4, persistent_workers=True)
+    
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        imgs, labels = batch
+        return imgs.to(device), labels.to(device)
+
