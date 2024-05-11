@@ -21,7 +21,7 @@ class BallLocalisation(nn.Module):
     Ball localisation model
     input : tensor shape of (batch_size, n_last*3, 320, 192)
     """
-    def __init__(self, n_last=5, dropout_p=0.7):
+    def __init__(self, n_last=5, dropout_p=0):
         self.width = 320
         self.height = 192
         super(BallLocalisation, self).__init__()

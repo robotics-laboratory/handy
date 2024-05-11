@@ -1,0 +1,5 @@
+outs:
+- md5: ea0dab743b6c6b336ee17d77d5dc8c3b
+  size: 79245231
+  hash: md5
+  path: TTNetWithProb.ckpt
