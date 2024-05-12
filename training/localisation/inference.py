@@ -47,12 +47,12 @@ if __name__ == "__main__":
 
         resized_images = []
 
-        for i in range(image_num, image_num - n_last, -1):
+        for j in range(image_num, image_num - n_last, -1):
 
-            if i < 0:
+            if j < 0:
                 image_name_l = f"{image_prefix}{str(0).rjust(4, '0')}.png"
             else:
-                image_name_l= f"{image_prefix}{str(i).rjust(4, '0')}.png"
+                image_name_l= f"{image_prefix}{str(j).rjust(4, '0')}.png"
             
             image_path_l = os.path.join(args.data_dir, image_name_l)
 
@@ -75,8 +75,6 @@ if __name__ == "__main__":
 
         with torch.no_grad():
             logit, cls = model(image_input)
-
-        
 
         image_path = os.path.join(args.data_dir, image_name)
         orig_image = cv2.imread(image_path)
