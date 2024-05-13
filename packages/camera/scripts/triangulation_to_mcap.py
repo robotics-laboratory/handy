@@ -6,11 +6,11 @@ import numpy as np
 import rosbag2_py
 import yaml
 from cv_bridge import CvBridge
-from geometry_msgs.msg import TransformStamped, Quaternion
+from geometry_msgs.msg import Quaternion, TransformStamped
 from rclpy.serialization import serialize_message
-from sensor_msgs.msg import CameraInfo
-from visualization_msgs.msg import Marker
 from scipy.spatial.transform import Rotation
+from sensor_msgs.msg import CameraInfo
+from visualization_msgs.msg import Marker, ImageMarker
 
 SEC_MULTIPLIER = 10**9
 MS_MULTIPLIER = 10**6
@@ -71,6 +71,25 @@ class CameraParameters:
         self.static_transformation.transform.translation.z = self.translation_vector[2]
 
         qx, qy, qz, qw = Rotation.from_matrix(self.rotation_matrix).as_quat().tolist()
+        print(
+            "angles are",
+            Rotation.from_matrix(self.rotation_matrix).as_euler("zyx") / 3.14 * 180,
+        )
+        # mat = np.hstack((self.rotation_matrix, self.translation_vector.reshape((3, 1))))
+
+        # # yaw,pitch,Take out roll
+        # (_, _, _, _, _, _, eulerAngles) = cv2.decomposeProjectionMatrix(mat)
+        # yaw = eulerAngles[1][0]
+        # pitch = eulerAngles[0][0]
+        # roll = eulerAngles[2][0]
+        # print("yaw:", yaw)
+        # print("pitch:", pitch)
+        # print("roll:", roll)
+        # qx, qy, qz, qw = (
+        #     Rotation.from_euler("zyx", [pitch, roll, yaw], degrees=True)
+        #     .as_quat()
+        #     .tolist()
+        # )
 
         self.static_transformation.transform.rotation.x = qx
         self.static_transformation.transform.rotation.y = qy
@@ -85,25 +104,15 @@ class CameraParameters:
         camera_info_msg.header.frame_id = f"camera_{self.camera_id}"
         camera_info_msg.header.stamp.sec = current_time % SEC_MULTIPLIER
         camera_info_msg.header.stamp.nanosec = current_time // SEC_MULTIPLIER
-        camera_info_msg.height = self.image_size[0]
-        camera_info_msg.width = self.image_size[1]
+        camera_info_msg.height = self.image_size[1]
+        camera_info_msg.width = self.image_size[0]
 
         camera_info_msg.distortion_model = "plumb_bob"
         camera_info_msg.d = self.dist_coefs.flatten().tolist()
 
         camera_info_msg.k = self.camera_matrix.flatten().tolist()
 
-        camera_info_msg.p = (
-            (
-                self.camera_matrix
-                @ np.concatenate(
-                    (self.rotation_matrix, self.translation_vector.reshape((3, 1))),
-                    axis=1,
-                )
-            )
-            .flatten()
-            .tolist()
-        )
+        camera_info_msg.p = (self.camera_matrix).flatten().tolist()
 
         writer.write(
             f"/camera_{self.camera_id}/info",
@@ -154,6 +163,13 @@ def init_writer(export_file):
             rosbag2_py.TopicMetadata(
                 name=f"/camera_{i + 1}/image",
                 type="sensor_msgs/msg/CompressedImage",
+                serialization_format="cdr",
+            )
+        )
+        writer.create_topic(
+            rosbag2_py.TopicMetadata(
+                name=f"/camera_{i + 1}/ball_center",
+                type="visualization_msgs/msg/ImageMarker",
                 serialization_format="cdr",
             )
         )
@@ -225,12 +241,51 @@ def init_ball_marker(marker_id, current_time, position, camera_id, ttl=100):
     return msg
 
 
-def simulate(writer, mask_sources, rgb_sources, filename_to_3d_points, intrinsics):
+def init_detection_center_marker(marker_id, current_time, position, camera_id, ttl=100):
+    msg = ImageMarker()
+    msg.header.frame_id = f"camera_{camera_id}"
+    msg.header.stamp.sec = current_time // SEC_MULTIPLIER
+    msg.header.stamp.nanosec = current_time % SEC_MULTIPLIER
+    msg.ns = "ball_markers"
+    msg.id = marker_id
+    msg.type = ImageMarker.CIRCLE
+    msg.action = ImageMarker.ADD
+
+    msg.position.x = float(position[0])
+    msg.position.y = float(position[1])
+    msg.position.z = 0.0
+
+    msg.scale = 3.0
+    msg.filled = 255
+
+    msg.fill_color.r = 1.0  # orange color
+    msg.fill_color.g = 0.0
+    msg.fill_color.b = 0.0
+    msg.fill_color.a = 1.0  # alpha (1.0 = opaque, 0.0 = transparent)
+
+    msg.outline_color.r = 1.0  # orange color
+    msg.outline_color.g = 0.0
+    msg.outline_color.b = 0.0
+    msg.outline_color.a = 1.0  # alpha (1.0 = opaque, 0.0 = transparent)
+
+    msg.lifetime.nanosec = ttl * 10**6  # ttl = 10ms
+
+    return msg
+
+
+def simulate(
+    writer,
+    mask_sources,
+    rgb_sources,
+    filename_to_3d_points,
+    intrinsics,
+    center_detections,
+):
     filenames_to_publish = sorted(filename_to_3d_points.keys())
     cv_bridge_instance = CvBridge()
 
     current_simulation_time = 0  # in nanoseconds
-    for i in range(len(filenames_to_publish))[:100]:
+    for i in range(len(filenames_to_publish[:100])):
         filename = filenames_to_publish[i]
         for camera_idx in range(2):
             # load and segmentate image
@@ -280,8 +335,21 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_3d_points, intrinsic
             intrinsics[camera_idx].publish_camera_info(writer, current_simulation_time)
             intrinsics[camera_idx].publish_transform(writer, current_simulation_time)
 
+            center_detection = init_detection_center_marker(
+                10**6 + i,
+                current_simulation_time,
+                center_detections[i][camera_idx],
+                camera_idx + 1,
+                ttl=50,
+            )
+            writer.write(
+                f"/camera_{camera_idx + 1}/ball_center",
+                serialize_message(center_detection),
+                current_simulation_time,
+            )
+
         ball_marker = init_ball_marker(
-            i, current_simulation_time, filename_to_3d_points[filename], camera_idx + 1
+            i, current_simulation_time, filename_to_3d_points[filename], 1
         )
         writer.write(
             "/triangulation/ball_marker",
@@ -306,17 +374,28 @@ def init_camera_info(writer, params_path, camera_ids=[1, 2]):
                     data["parameters"][camera_id]["translation"],
                 )
             )
-    print(data.keys())
-    complanar_aruco_points = np.array(data["triangulated_common_points"], dtype=float)
-    print(complanar_aruco_points.shape)
+    complanar_aruco_points = np.array(
+        data["triangulated_common_points"], dtype=np.float64
+    )
+    for i in range(complanar_aruco_points.shape[0]):
+        marker = init_ball_marker(
+            10**6 - i, i, complanar_aruco_points[i, :].tolist(), 1, ttl=0
+        )
+        marker.color.g = 1.0
+        writer.write("/triangulation/table_plane", serialize_message(marker), 0)
     centroid = np.mean(complanar_aruco_points, axis=0)
-    print("centroid is", centroid)
-    _, _, VT = np.linalg.svd(complanar_aruco_points[:10] - centroid, full_matrices=False)
+    # print(np.var(complanar_aruco_points, axis=0))
+    # print("centroid is", centroid)
+    _, _, VT = np.linalg.svd(
+        complanar_aruco_points[:10] - centroid, full_matrices=False
+    )
     print("normal is", VT[-1, :])
     return intrinsics, VT[-1, :], centroid
+    # return intrinsics, None, None
 
 
 def publish_table_plain(writer, normal, centroid):
+    # normal = np.array([0, -1, 0.5])
     marker = Marker()
     marker.header.frame_id = "world"
     marker.type = marker.CUBE
@@ -336,6 +415,7 @@ def publish_table_plain(writer, normal, centroid):
     marker.pose.orientation = normal_to_quaternion(normal)
     writer.write("/triangulation/table_plane", serialize_message(marker), 0)
 
+
 def normal_to_quaternion(normal):
     # Ensure the normal is a unit vector
     normal = normal / np.linalg.norm(normal)
@@ -349,12 +429,14 @@ def normal_to_quaternion(normal):
 
     # Use scipy to create a rotation and convert it to a quaternion
     rotation_vector = angle * axis
-    print('++++++++++++++')
+    print("++++++++++++++")
     print(rotation_vector)
 
     rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
     quat = Quaternion()
-    quat.x, quat.y, quat.z, quat.w = Rotation.from_matrix(rotation_matrix).as_quat().tolist()    
+    quat.x, quat.y, quat.z, quat.w = (
+        Rotation.from_matrix(rotation_matrix).as_quat().tolist()
+    )
     return quat
 
 
@@ -375,9 +457,15 @@ if __name__ == "__main__":
     filenames_to_3d_points = dict(
         zip(data[list(data.keys())[0]]["filenames"], data["triangulated_points"])
     )
+    plane_detections = data["detected_points"]
 
     simulate(
-        writer, args.mask_sources, args.rgb_sources, filenames_to_3d_points, intrinsics
+        writer,
+        args.mask_sources,
+        args.rgb_sources,
+        filenames_to_3d_points,
+        intrinsics,
+        plane_detections,
     )
 
     del writer
