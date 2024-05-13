@@ -11,11 +11,12 @@
 namespace handy {
 
 CameraIntrinsicParameters::CameraIntrinsicParameters(
-    cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs, const int cam_id) :
-    image_size(size),
-    camera_matrix(std::move(camera_matr)),
-    dist_coefs(distort_coefs),
-    camera_id(cam_id) {}
+    cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs, const int cam_id)
+    : image_size(size)
+    , camera_matrix(std::move(camera_matr))
+    , camera_matrix_inv(camera_matrix.inv())
+    , dist_coefs(distort_coefs)
+    , camera_id(cam_id) {}
 
 void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     const std::string camera_id_str = std::to_string(camera_id);
@@ -123,6 +124,7 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
         intrinsics[camera_id_str]["camera_matrix"].as<std::vector<double>>();
     result.camera_matrix = cv::Mat(yaml_camera_matrix, true);
     result.camera_matrix = result.camera_matrix.reshape(0, {3, 3});
+    result.camera_matrix_inv = result.camera_matrix.inv();
 
     const auto coefs = intrinsics[camera_id_str]["distortion_coefs"].as<std::vector<float>>();
     result.dist_coefs = cv::Mat(coefs, true);
@@ -157,6 +159,13 @@ void CameraIntrinsicParameters::loadStereoCalibration(
 
     translation_vectors = cv::Mat(coefs, true);
     translation_vectors = translation_vectors.reshape(0, {3, 1});
+}
+
+cv::Point2f CameraIntrinsicParameters::toImageCoord(cv::Point2f image_point) {
+        printf("%f %f\n", (image_point.x - camera_matrix.at<double>(0, 2)) / camera_matrix.at<double>(0, 0), (image_point.y - camera_matrix.at<double>(1, 2)) / camera_matrix.at<double>(1, 1));
+    return {
+        (image_point.x - camera_matrix.at<double>(0, 2)) / camera_matrix.at<double>(0, 0),
+        (image_point.y - camera_matrix.at<double>(1, 2)) / camera_matrix.at<double>(1, 1)};
 }
 
 cv::Mat CameraIntrinsicParameters::undistortImage(cv::Mat& src) {

@@ -6,14 +6,13 @@ import numpy as np
 import yaml
 
 
-def get_bbox(image):
-    a = np.where(image != 0)
-    bbox = [
-        float(np.min(a[0])),
-        float(np.min(a[1])),
-        float(np.max(a[0])),
-        float(np.max(a[1])),
-    ]
+def get_bbox(mask):
+    # x_min, y_min, x_max, y_max
+    horizontal_indicies = np.where(np.any(mask, axis=0))[0]
+    vertical_indicies = np.where(np.any(mask, axis=1))[0]
+    x1, x2 = horizontal_indicies[[0, -1]]
+    y1, y2 = vertical_indicies[[0, -1]]
+    bbox = list(map(float, [x1, y1, x2, y2]))
     return bbox
 
 

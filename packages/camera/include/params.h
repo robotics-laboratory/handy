@@ -23,9 +23,12 @@ struct CameraIntrinsicParameters {
         const std::string& yaml_path, cv::Mat& rotation_vector, cv::Mat& translation_vector,
         int camera_id);
 
+    cv::Point2f toImageCoord(cv::Point2f image_point);
+
     int camera_id = 0;
     cv::Size image_size{};
     cv::Mat camera_matrix{};
+    cv::Mat camera_matrix_inv{};
     cv::Vec<double, 5> dist_coefs{};
 
     struct Cached {
