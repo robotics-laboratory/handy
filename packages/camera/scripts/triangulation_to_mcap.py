@@ -11,6 +11,7 @@ from rclpy.serialization import serialize_message
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo
 from visualization_msgs.msg import Marker, ImageMarker
+import json
 
 SEC_MULTIPLIER = 10**9
 MS_MULTIPLIER = 10**6
@@ -273,31 +274,24 @@ def init_detection_center_marker(marker_id, current_time, position, camera_id, t
     return msg
 
 
-def simulate(
-    writer,
-    mask_sources,
-    rgb_sources,
-    filename_to_3d_points,
-    intrinsics,
-    center_detections,
-):
-    filenames_to_publish = sorted(filename_to_3d_points.keys())
+def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics):
+    filenames_to_publish = sorted(filename_to_info.keys())
     cv_bridge_instance = CvBridge()
 
     current_simulation_time = 0  # in nanoseconds
-    for i in range(len(filenames_to_publish[:100])):
+    for i in range(len(filenames_to_publish)):
         filename = filenames_to_publish[i]
         for camera_idx in range(2):
             # load and segmentate image
             image = cv2.imread(os.path.join(rgb_sources[camera_idx], filename))
-            mask = cv2.imread(
-                os.path.join(mask_sources[camera_idx], filename), cv2.IMREAD_GRAYSCALE
-            )
-            if image is None or mask is None:
-                print(os.path.join(rgb_sources[camera_idx], filename))
-                print(os.path.join(mask_sources[camera_idx], filename))
-                quit()
-            assert image.shape[:2] == mask.shape
+            # mask = cv2.imread(
+            #     os.path.join(mask_sources[camera_idx], filename), cv2.IMREAD_GRAYSCALE
+            # )
+            # if image is None or mask is None:
+            #     print(os.path.join(rgb_sources[camera_idx], filename))
+            #     print(os.path.join(mask_sources[camera_idx], filename))
+            #     quit()
+            # assert image.shape[:2] == mask.shape
             # segmentated_image = image
             # segmentated_image[:, :, 0] = image[:, :, 0] * mask
             # segmentated_image[:, :, 1] = segmentated_image[:, :, 1] * mask
@@ -306,14 +300,14 @@ def simulate(
 
             image = intrinsics[camera_idx].undistort(image)
 
-            highlight_color = [0, 255, 255]  # Yellow color
-            alpha = 0.3  # Intensity of highlight
+            # highlight_color = [0, 255, 255]  # Yellow color
+            # alpha = 0.3  # Intensity of highlight
             # Create an image with highlight color
-            highlight = np.full(image.shape, highlight_color, dtype=np.uint8)
+            # highlight = np.full(image.shape, highlight_color, dtype=np.uint8)
             # Bitwise-AND mask and original image
-            highlighted_area = cv2.bitwise_and(highlight, highlight, mask=mask)
+            # highlighted_area = cv2.bitwise_and(highlight, highlight, mask=mask)
             # Alpha blend highlighted_area and original image
-            image = cv2.addWeighted(image, 1, highlighted_area, alpha, 0)
+            # image = cv2.addWeighted(image, 1, highlighted_area, alpha, 0)
 
             # prepare CompressedImages
             camera_feed_msg = cv_bridge_instance.cv2_to_compressed_imgmsg(
@@ -338,7 +332,7 @@ def simulate(
             center_detection = init_detection_center_marker(
                 10**6 + i,
                 current_simulation_time,
-                center_detections[i][camera_idx],
+                filename_to_info[filename]["image_points"][camera_idx],
                 camera_idx + 1,
                 ttl=50,
             )
@@ -349,7 +343,7 @@ def simulate(
             )
 
         ball_marker = init_ball_marker(
-            i, current_simulation_time, filename_to_3d_points[filename], 1
+            i, current_simulation_time, filename_to_info[filename]["triangulated_point"], 1
         )
         writer.write(
             "/triangulation/ball_marker",
@@ -416,9 +410,9 @@ def publish_table_plain(writer, normal, centroid):
     writer.write("/triangulation/table_plane", serialize_message(marker), 0)
 
 
-def normal_to_quaternion(normal):
+def normal_to_quaternion(vector):
     # Ensure the normal is a unit vector
-    normal = normal / np.linalg.norm(normal)
+    normal = vector / np.linalg.norm(vector)
 
     # Compute the angle between the normal and the z-axis
     angle = np.arccos(np.dot(normal, [0, 0, 1]))
@@ -434,9 +428,10 @@ def normal_to_quaternion(normal):
 
     rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
     quat = Quaternion()
-    quat.x, quat.y, quat.z, quat.w = (
-        Rotation.from_matrix(rotation_matrix).as_quat().tolist()
+    rotation = Rotation.from_matrix(rotation_matrix) * Rotation.from_euler(
+        "zyx", [0, 0, 90], degrees=True
     )
+    quat.x, quat.y, quat.z, quat.w = rotation.as_quat().tolist()
     return quat
 
 
@@ -453,19 +448,14 @@ if __name__ == "__main__":
     publish_table_plain(writer, table_plane_normal, table_plain_centroid)
 
     with open(args.detection_result, mode="r", encoding="utf-8") as file:
-        data = yaml.safe_load(file)
-    filenames_to_3d_points = dict(
-        zip(data[list(data.keys())[0]]["filenames"], data["triangulated_points"])
-    )
-    plane_detections = data["detected_points"]
+        data = json.load(file)
 
     simulate(
         writer,
         args.mask_sources,
         args.rgb_sources,
-        filenames_to_3d_points,
+        data["triangulated_points"],
         intrinsics,
-        plane_detections,
     )
 
     del writer
