@@ -219,6 +219,32 @@ int main(int argc, char* argv[]) {
             {first_image_point.x, first_image_point.y},
             {second_image_point.x, second_image_point.y}};
     }
+    triangulation_json["table_orientation_points"] = {};
+
+    YAML::Node params_yaml = YAML::LoadFile(argv[1]);
+    cv::Point2f first_image_point{
+        params_yaml["parameters"]["1"]["table_orientation_points"][0][0].as<float>(),
+        params_yaml["parameters"]["1"]["table_orientation_points"][0][1].as<float>()};
+    cv::Point2f second_image_point{
+        params_yaml["parameters"]["2"]["table_orientation_points"][0][0].as<float>(),
+        params_yaml["parameters"]["2"]["table_orientation_points"][0][1].as<float>()};
+
+    cv::Point3f tmp_table_orientation =
+        triangulation_node.triangulatePosition({first_image_point, second_image_point});
+    triangulation_json["table_orientation_points"].push_back(
+        {tmp_table_orientation.x, tmp_table_orientation.y, tmp_table_orientation.z});
+
+    first_image_point = {
+        params_yaml["parameters"]["1"]["table_orientation_points"][1][0].as<float>(),
+        params_yaml["parameters"]["1"]["table_orientation_points"][1][1].as<float>()};
+    second_image_point = {
+        params_yaml["parameters"]["2"]["table_orientation_points"][1][0].as<float>(),
+        params_yaml["parameters"]["2"]["table_orientation_points"][1][1].as<float>()};
+
+    tmp_table_orientation =
+        triangulation_node.triangulatePosition({first_image_point, second_image_point});
+    triangulation_json["table_orientation_points"].push_back(
+        {tmp_table_orientation.x, tmp_table_orientation.y, tmp_table_orientation.z});
 
     std::ofstream fout(argv[4]);
     fout << triangulation_json.dump();
