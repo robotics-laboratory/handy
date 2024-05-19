@@ -208,6 +208,11 @@ def init_parser():
         "--detection-result", help="yaml with the result of detection", required=True
     )
     parser.add_argument("--export", help="some_file.mcap", required=True)
+    parser.add_argument(
+        "--transform-cam-to-world",
+        help="boolean flag whether to write and transform points from to table coordinate frame",
+        action="store_true",
+    )
 
     return parser
 
@@ -274,7 +279,7 @@ def init_detection_center_marker(marker_id, current_time, position, camera_id, t
     return msg
 
 
-def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics):
+def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics, R, T):
     filenames_to_publish = sorted(filename_to_info.keys())
     cv_bridge_instance = CvBridge()
 
@@ -342,9 +347,17 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics):
                 current_simulation_time,
             )
 
+        current_point = np.array(
+            filename_to_info[filename]["triangulated_point"], dtype=float
+        ).reshape((3, 1))
         ball_marker = init_ball_marker(
-            i, current_simulation_time, filename_to_info[filename]["triangulated_point"], 1
+            i,
+            current_simulation_time,
+            (R @ current_point - T).flatten().tolist(),
+            current_point.flatten().tolist(),
+            1,
         )
+        ball_marker.header.frame_id = "table"
         writer.write(
             "/triangulation/ball_marker",
             serialize_message(ball_marker),
@@ -371,12 +384,12 @@ def init_camera_info(writer, params_path, camera_ids=[1, 2]):
     complanar_aruco_points = np.array(
         data["triangulated_common_points"], dtype=np.float64
     )
-    for i in range(complanar_aruco_points.shape[0]):
-        marker = init_ball_marker(
-            10**6 - i, i, complanar_aruco_points[i, :].tolist(), 1, ttl=0
-        )
-        marker.color.g = 1.0
-        writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+    # for i in range(complanar_aruco_points.shape[0]):
+    #     marker = init_ball_marker(
+    #         10**6 - i, i, complanar_aruco_points[i, :].tolist(), 1, ttl=0
+    #     )
+    #     marker.color.g = 1.0
+    #     writer.write("/triangulation/table_plane", serialize_message(marker), 0)
     centroid = np.mean(complanar_aruco_points, axis=0)
     # print(np.var(complanar_aruco_points, axis=0))
     # print("centroid is", centroid)
@@ -412,14 +425,14 @@ def publish_table_plain(writer, normal, centroid):
 
 def normal_to_quaternion(vector):
     # Ensure the normal is a unit vector
-    normal = vector / np.linalg.norm(vector)
+    normal = vector / np.linalg.norm(vector, ord=2)
 
     # Compute the angle between the normal and the z-axis
     angle = np.arccos(np.dot(normal, [0, 0, 1]))
 
     # Compute the axis of rotation
     axis = np.cross(normal, [0, 0, 1])
-    axis = axis / np.linalg.norm(axis)
+    axis = axis / np.linalg.norm(axis, ord=2)
 
     # Use scipy to create a rotation and convert it to a quaternion
     rotation_vector = angle * axis
@@ -435,6 +448,35 @@ def normal_to_quaternion(vector):
     return quat
 
 
+def get_cam2world_transform(
+    table_plane_normal, table_plane_centroid, table_orientation_points
+):
+    x_vector = -np.array(table_orientation_points[0], dtype=float) + np.array(
+        table_orientation_points[1], dtype=float
+    )
+    z_vector = (
+        table_plane_normal
+        - (table_plane_normal.dot(x_vector) / np.linalg.norm(x_vector, ord=2))
+        * x_vector
+    )
+    # z_vector = table_plane_normal
+    y_vector = np.cross(x_vector, z_vector)
+
+    x_vector /= np.linalg.norm(x_vector, ord=2)
+    y_vector /= np.linalg.norm(y_vector, ord=2)
+    z_vector /= np.linalg.norm(z_vector, ord=2)
+
+    R = np.concatenate(
+        (y_vector.reshape((3, 1)), x_vector.reshape((3, 1)), z_vector.reshape((3, 1))),
+        axis=1,
+    )
+    T = table_plane_centroid.reshape((3, 1))
+    R_inv = np.linalg.inv(R)
+
+    return R, T, R_inv, R_inv @ T
+    # return R, T
+
+
 if __name__ == "__main__":
     # init all modules
     parser = init_parser()
@@ -442,13 +484,40 @@ if __name__ == "__main__":
     writer = init_writer(args.export)
 
     # read and publish camera info
-    intrinsics, table_plane_normal, table_plain_centroid = init_camera_info(
+    intrinsics, table_plane_normal, table_plane_centroid = init_camera_info(
         writer, args.intrinsic_params, [1, 2]
     )
-    publish_table_plain(writer, table_plane_normal, table_plain_centroid)
+    publish_table_plain(writer, table_plane_normal, table_plane_centroid)
 
     with open(args.detection_result, mode="r", encoding="utf-8") as file:
         data = json.load(file)
+
+    # marker_1 = init_ball_marker(67812, 0, data["table_orientation_points"][0], 1, ttl=0)
+    # writer.write("/triangulation/ball_marker", serialize_message(marker_1), 0)
+    # marker_2 = init_ball_marker(67813, 0, data["table_orientation_points"][1], 1, ttl=0)
+    # writer.write("/triangulation/ball_marker", serialize_message(marker_2), 0)
+
+    R, T, R2table, T2table = get_cam2world_transform(
+        table_plane_normal, table_plane_centroid, data["table_orientation_points"]
+    )
+
+    static_transformation = TransformStamped()
+    static_transformation.child_frame_id = "table"
+    static_transformation.header.frame_id = "world"
+
+    static_transformation.transform.translation.x = T[0, 0]
+    static_transformation.transform.translation.y = T[1, 0]
+    static_transformation.transform.translation.z = T[2, 0]
+    static_transformation.header.stamp.sec = 0
+    static_transformation.header.stamp.nanosec = 0
+
+    qx, qy, qz, qw = Rotation.from_matrix(R).as_quat().tolist()
+
+    static_transformation.transform.rotation.x = qx
+    static_transformation.transform.rotation.y = qy
+    static_transformation.transform.rotation.z = qz
+    static_transformation.transform.rotation.w = qw
+    writer.write("/tf", serialize_message(static_transformation), 0)
 
     simulate(
         writer,
@@ -456,6 +525,21 @@ if __name__ == "__main__":
         args.rgb_sources,
         data["triangulated_points"],
         intrinsics,
+        R2table,
+        T2table,
     )
-
     del writer
+
+    if not args.transform_cam_to_world:
+        quit()
+
+    for filename in data["triangulated_points"]:
+        point = np.array(
+            data["triangulated_points"][filename]["triangulated_point"], dtype=float
+        ).reshape((3, 1))
+        table_point = R2table @ point - T2table
+        data["triangulated_points"][filename][
+            "triangulated_point"
+        ] = table_point.flatten().tolist()
+    with open(args.detection_result, mode="w", encoding="utf-8") as file:
+        json.dump(data, file)
