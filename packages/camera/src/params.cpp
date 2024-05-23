@@ -59,7 +59,7 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
 
 bool CameraIntrinsicParameters::saveStereoCalibration(
     const std::string& yaml_path, cv::Mat& rotation_vector, cv::Mat& translation_vector,
-    int camera_id) {
+    std::vector<std::vector<cv::Point2f>>& common_detections, int camera_id) {
     if (rotation_vector.cols * rotation_vector.rows != 3 ||
         translation_vector.cols * translation_vector.rows != 3) {
         return false;
@@ -86,6 +86,16 @@ bool CameraIntrinsicParameters::saveStereoCalibration(
         camera_id_node["translation"].push_back(translation_vector.at<double>(i));
     }
 
+    camera_id_node["common_points"] = YAML::Node(YAML::NodeType::Sequence);
+    camera_id_node["common_points"].SetStyle(YAML::EmitterStyle::Flow);
+    for (size_t i = 0; i < common_detections.size(); ++i) {
+        for (size_t j = 0; j < common_detections[i].size(); ++j) {
+            cv::Point2f image_point = common_detections[i][j];
+            camera_id_node["common_points"].push_back(
+                std::vector<float>{image_point.x, image_point.y});
+        }
+    }
+
     std::ofstream output_file(yaml_path);
     if (!output_file) {
         throw std::invalid_argument("unable to open file");
@@ -103,6 +113,9 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
 
     const YAML::Node intrinsics = YAML::LoadFile(yaml_path)["parameters"];
 
+    if (!intrinsics[camera_id_str].IsDefined()) {  // if there is no such camera calibrated
+        return result;
+    }
     const auto yaml_image_size = intrinsics[camera_id_str]["image_size"].as<std::vector<int>>();
     result.image_size = cv::Size(yaml_image_size[0], yaml_image_size[1]);
 

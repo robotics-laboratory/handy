@@ -87,9 +87,10 @@ TEST(camera, ParamsStereoCalibWrite) {
     const std::string path_to_yaml = "test_params.yaml";
     cv::Mat rotation_check = (cv::Mat_<double>(3, 1) << 111., 333., 555.);
     cv::Mat translation_check = (cv::Mat_<double>(3, 1) << 1., 2., 3.);
+    std::vector<std::vector<cv::Point2f>> common_detections{};
 
     handy::CameraIntrinsicParameters::saveStereoCalibration(
-        path_to_yaml, rotation_check, translation_check, 1);
+        path_to_yaml, rotation_check, translation_check, common_detections, 1);
 
     // check for file to exist
     std::ifstream test_file(path_to_yaml);
