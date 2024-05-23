@@ -35,7 +35,7 @@ void abortIfNot(std::string_view msg, int camera_idx, int status) {
     }
 }
 
-Writer::Writer(char* param_file, char* output_filename) {
+Writer::Writer(const char* param_file, const char* output_filename) {
     param_.param_file = {param_file};
     param_.output_filename = {output_filename};
 
@@ -123,8 +123,8 @@ Writer::Writer(char* param_file, char* output_filename) {
         abortIfNot(
             "camera " + std::to_string(i) + " uninit", CameraUnInit(state_.camera_handles[i]));
 
-        long page_size = sysconf(_SC_PAGE_SIZE);
-        long size = state_.frame_sizes[i].area() * param_.frames_to_take / page_size * page_size +
+        int64_t page_size = sysconf(_SC_PAGE_SIZE);
+        int64_t size = state_.frame_sizes[i].area() * param_.frames_to_take / page_size * page_size +
                     page_size;
         if (msync(state_.alligned_buffers[i], size, MS_SYNC) == -1) {
             perror("Could not sync the file to disk");
@@ -149,8 +149,7 @@ void Writer::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* f
     size_t buffer_idx = state_.current_buffer_idx[camera_idx].fetch_add(1);
     printf("%d buffer id %ld\n", handle, buffer_idx);
 
-    std::memcpy(
-        (uint8_t*)state_.alligned_buffers[camera_idx] +
+    std::memcpy(static_cast<uint8_t*>(state_.alligned_buffers[camera_idx]) +
             state_.frame_sizes[camera_idx].area() * buffer_idx,
         raw_buffer,
         frame_info->iWidth * frame_info->iHeight);
@@ -194,7 +193,7 @@ void Writer::applyParamsToCamera(int handle) {
             printf("failed to open %s\n", camera_id_str.c_str());
             exit(EXIT_FAILURE);
         }
-        long page_size = sysconf(_SC_PAGE_SIZE);
+        int64_t page_size = sysconf(_SC_PAGE_SIZE);
 
         if (ftruncate(
                 state_.files[camera_idx],
@@ -207,7 +206,7 @@ void Writer::applyParamsToCamera(int handle) {
         }
 
         state_.alligned_buffers[camera_idx] = mmap(
-            NULL,
+            nullptr,
             state_.frame_sizes[camera_idx].area() * param_.frames_to_take / page_size * page_size +
                 page_size,
             PROT_WRITE,
@@ -246,7 +245,7 @@ void Writer::applyParamsToCamera(int handle) {
 
     {
         const std::string param = "contrast";
-        const int contrast = camera_params[param].as<int>();
+        const auto contrast = camera_params[param].as<int>();
 
         abortIfNot("set contrast", camera_idx, CameraSetContrast(handle, contrast));
         printf("camera=%i, contrast=%i\n", camera_idx, contrast);
@@ -254,14 +253,14 @@ void Writer::applyParamsToCamera(int handle) {
 
     {
         const std::string param = "analog_gain";
-        const int gain = camera_params[param].as<int>();
+        const auto gain = camera_params[param].as<int>();
 
         if (gain != -1) {
             abortIfNot("set analog gain", CameraSetAnalogGain(handle, gain));
             printf("camera=%i, analog_gain=%i\n", camera_idx, gain);
         } else {
             const std::string param = "gain_rgb";
-            const std::vector<int64_t> gain = camera_params[param].as<std::vector<int64_t>>();
+            const auto gain = camera_params[param].as<std::vector<int64_t>>();
 
             if (gain.size() != 3) {
                 printf("camera=%i, expected gain_rgb as tuple with size 3\n", camera_idx);

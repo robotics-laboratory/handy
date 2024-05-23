@@ -11,11 +11,11 @@ using namespace std::chrono_literals;
 namespace handy::camera {
 class Writer {
   public:
-    Writer(char* param_file, char* output_filename);
+    Writer(const char* param_file, const char* output_filename);
 
   private:
     void handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info);
-    int getCameraId(int camera_handle);
+    static int getCameraId(int camera_handle);
     void applyParamsToCamera(int handle);
 
     struct Size {
