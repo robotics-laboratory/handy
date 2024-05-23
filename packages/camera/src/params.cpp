@@ -135,8 +135,8 @@ bool CameraIntrinsicParameters::saveStereoCalibration(
 
     camera_id_node["common_points"] = YAML::Node(YAML::NodeType::Sequence);
     camera_id_node["common_points"].SetStyle(YAML::EmitterStyle::Flow);
-    for (int i = 0; i < common_detections.size(); ++i) {
-        for (int j = 0; j < common_detections[i].size(); ++j) {
+    for (size_t i = 0; i < common_detections.size(); ++i) {
+        for (size_t j = 0; j < common_detections[i].size(); ++j) {
             cv::Point2f image_point = common_detections[i][j];
             camera_id_node["common_points"].push_back(
                 std::vector<float>{image_point.x, image_point.y});
@@ -186,6 +186,9 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
 
     const YAML::Node intrinsics = YAML::LoadFile(yaml_path)["parameters"];
 
+    if (!intrinsics[camera_id_str].IsDefined()) {  // if there is no such camera calibrated
+        return result;
+    }
     const auto yaml_image_size = intrinsics[camera_id_str]["image_size"].as<std::vector<int>>();
     const auto yaml_image_size = intrinsics[camera_id_str]["image_size"].as<std::vector<int>>();
     result.image_size = cv::Size(yaml_image_size[0], yaml_image_size[1]);

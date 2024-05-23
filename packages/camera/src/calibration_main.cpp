@@ -19,6 +19,9 @@ int main() {
 
     // mono calibration
     for (int i = 0; i < camera_num; ++i) {
+        if (!param_node["mono_source_dirs"][std::to_string(camera_ids[i])].IsDefined()) {
+            continue;
+        }
         const int current_camera_id = camera_ids[i];
         const YAML::Node source_dir_node =
             param_node["mono_source_dirs"][std::to_string(current_camera_id)];

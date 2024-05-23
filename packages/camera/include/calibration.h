@@ -1,6 +1,6 @@
 #pragma once
 
-#include <opencv2/aruco/charuco.hpp>
+#include <opencv2/aruco.hpp>
 #include <opencv2/core/core.hpp>
 
 #include <boost/geometry.hpp>
@@ -34,7 +34,6 @@ class CalibrationNode {
     void stereoCalibrate();
     void clearDetections();
     void clearLastDetection(int camera_idx);
-    bool isMonoCalibrated(int camera_idx);
 
   private:
     void declareLaunchParams(const YAML::Node& param_node);
@@ -52,12 +51,8 @@ class CalibrationNode {
         int camera_num = 2;
         std::string path_to_params = "";
         std::vector<cv::Point3f> square_obj_points;
-        cv::aruco::CharucoBoard charuco_board;
         cv::aruco::GridBoard aruco_board;
 
-        bool publish_preview_markers = true;
-
-        std::vector<double> marker_color = {0.0, 1.0, 0.0, 0.12};
         double min_accepted_error = 0.75;
         double iou_threshold = 0.5;
         double required_board_coverage = 0.7;

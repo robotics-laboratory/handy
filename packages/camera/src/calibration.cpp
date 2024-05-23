@@ -60,8 +60,6 @@ CalibrationNode::CalibrationNode(const YAML::Node& param_node) {
     }
 
     cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_5X5_250);
-    param_.charuco_board = cv::aruco::CharucoBoard(pattern_size, 0.06f, 0.04f, dictionary);
-    param_.charuco_board.setLegacyPattern(false);
     param_.aruco_board = cv::aruco::GridBoard(cv::Size{5, 7}, 0.06f, 0.03f, dictionary);
 
     cv::aruco::DetectorParameters detector_params;
@@ -87,7 +85,6 @@ void CalibrationNode::declareLaunchParams(const YAML::Node& param_node) {
     param_.min_accepted_error = param_node["min_accepted_calib_error"].as<double>();
     param_.iou_threshold = param_node["iou_threshold"].as<double>();
     param_.min_accepted_error = param_node["min_accepted_calib_error"].as<double>();
-    param_.marker_color = param_node["marker_color"].as<std::vector<double>>();
     param_.camera_ids = param_node["camera_ids"].as<std::vector<int>>();
     param_.camera_num = param_node["camera_num"].as<int>();
 }
@@ -177,8 +174,6 @@ void CalibrationNode::fillImageObjectPoints(
     }
 }
 
-bool CalibrationNode::isMonoCalibrated(int camera_idx) { return state_.is_calibrated[camera_idx]; }
-
 void CalibrationNode::calibrate(int camera_idx) {
     printf("Calibration inialized\n");
     int coverage_percentage = getImageCoverage(camera_idx);
@@ -225,40 +220,43 @@ void CalibrationNode::stereoCalibrate() {
     std::vector<std::vector<std::vector<cv::Point2f>>> image_points_common(param_.camera_num);
     std::vector<std::vector<cv::Point3f>> obj_points_common;
     for (size_t detection_idx = 0; detection_idx < image_points_all[0].size(); ++detection_idx) {
+        // add new detection only in case there was none or the last one was successful (not empty)
         if (obj_points_common.empty() || !obj_points_common.back().empty()) {
             obj_points_common.emplace_back();
-            for (size_t camera_idx = 0; camera_idx < param_.camera_num; ++camera_idx) {
+            for (int camera_idx = 0; camera_idx < param_.camera_num; ++camera_idx) {
                 image_points_common[camera_idx].emplace_back();
             }
         }
 
-        for (size_t i = 0; i < obj_points_all[0][detection_idx].size(); ++i) {
+        for (cv::Point3f& current_object_point : obj_points_all[0][detection_idx]) {
             std::vector<size_t> found_indexes;
-            if (std::all_of(
-                    obj_points_all.begin(),
-                    obj_points_all.end(),
-                    [&](const auto& camera_obj_points) {
-                        auto found = std::find(
-                            camera_obj_points[detection_idx].begin(),
-                            camera_obj_points[detection_idx].end(),
-                            obj_points_all[0][detection_idx][i]);
-                        if (found != camera_obj_points[detection_idx].end()) {
-                            found_indexes.push_back(
-                                std::distance(camera_obj_points[detection_idx].begin(), found));
-                            return true;
-                        }
-                        return false;
-                    })) {
-                obj_points_common.back().push_back(obj_points_all[0][detection_idx][i]);
-                for (size_t camera_idx = 0; camera_idx < found_indexes.size(); ++camera_idx) {
-                    const cv::Point2f& common_point_to_add =
-                        image_points_all[camera_idx][detection_idx][found_indexes[camera_idx]];
-                    image_points_common[camera_idx].back().push_back(common_point_to_add);
-                }
+            // check that all cameras contain current point in current detection
+            bool is_common = std::all_of(
+                obj_points_all.begin(), obj_points_all.end(), [&](const auto& camera_obj_points) {
+                    auto found = std::find(
+                        camera_obj_points[detection_idx].begin(),
+                        camera_obj_points[detection_idx].end(),
+                        current_object_point);
+                    if (found != camera_obj_points[detection_idx].end()) {
+                        found_indexes.push_back(
+                            std::distance(camera_obj_points[detection_idx].begin(), found));
+                        return true;
+                    }
+                    return false;
+                });
+            if (!is_common) {
+                break;
+            }
+            obj_points_common.back().push_back(current_object_point);
+            for (int camera_idx = 0; camera_idx < param_.camera_num; ++camera_idx) {
+                const cv::Point2f& common_point_to_add =
+                    image_points_all[camera_idx][detection_idx][found_indexes[camera_idx]];
+                image_points_common[camera_idx].back().push_back(common_point_to_add);
             }
         }
     }
 
+    // for now the calibration is only possible for no more than 2 cameras
     cv::Mat rotation;
     cv::Mat translation;
 
@@ -282,6 +280,7 @@ void CalibrationNode::stereoCalibrate() {
 
     printf("Calibration done with error of %f \n", rms);
 
+    // for calibration we assume that the first camera is the center of the world
     cv::Mat zero_transformation = (cv::Mat_<double>(3, 1) << 0, 0, 0);
     if (!CameraIntrinsicParameters::saveStereoCalibration(
             param_.path_to_params,
