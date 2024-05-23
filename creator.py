@@ -1,7 +1,8 @@
+import os
+import sys
+
 import cv2
 import numpy as np
-import sys
-import os
 
 
 def equalise_hist(img):
@@ -15,20 +16,22 @@ def equalise_hist(img):
 
     return img
 
-def read_and_convert(file_path, output_folder, equal_hist=False, num_images=0, width=1920, height=1200):
+
+def read_and_convert(
+    file_path, output_folder, equal_hist=False, num_images=0, width=1920, height=1200
+):
     # Ensure the output folder exists
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-    equal_dir = output_folder+"_equalised"
+    equal_dir = output_folder + "_equalised"
     if equal_hist and not os.path.exists(equal_dir):
         os.makedirs(equal_dir)
-
 
     if num_images == 0:
         num_images = os.path.getsize(file_path) // 1920 // 1200
         print(num_images)
     # Open the file in binary mode
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
         for i in range(num_images):
             # Read the image data
             img_data = f.read(width * height)
@@ -40,13 +43,13 @@ def read_and_convert(file_path, output_folder, equal_hist=False, num_images=0, w
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BayerRG2RGB)
 
             # Save the image
-            cv2.imwrite(os.path.join(output_folder, f'image_{i}.png'), img_rgb)
+            cv2.imwrite(os.path.join(output_folder, f"image_{i}.png"), img_rgb)
             if equal_hist:
                 equaled_img = equalise_hist(img_rgb)
-                cv2.imwrite(os.path.join(equal_dir, f'image_{i}.png'), img_rgb)
-
+                cv2.imwrite(os.path.join(equal_dir, f"image_{i}.png"), equaled_img)
 
         print(f"written {num_images}")
+
 
 if __name__ == "__main__":
     # Get the file path from the command line arguments

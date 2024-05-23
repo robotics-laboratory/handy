@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.8)
 project(camera)
 
 add_compile_options(-Wall -Wextra -Werror=unused-variable -Wpedantic)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -22,38 +23,22 @@ set_target_properties(mvsdk PROPERTIES IMPORTED_LOCATION "/lib/libMVSDK.so")
 
 add_library(queue_lib INTERFACE)
 
-add_executable(camera src/camera.cpp
-                      src/camera_status.cpp)
+add_executable(camera src/camera.cpp src/camera_status.cpp)
 # add_executable(calibration src/calibration_main.cpp src/calibration.cpp
-#                            src/params.cpp)
+# src/params.cpp)
 
 target_include_directories(
   camera PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                 "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>" "/usr/include")
 
-# target_include_directories(
-#   calibration PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-#                      "/usr/include")
+# target_include_directories( calibration PUBLIC
+# "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "/usr/include")
 
-ament_target_dependencies(
-  camera
-  # OpenCV
-  yaml_cpp_vendor)
+ament_target_dependencies(camera yaml_cpp_vendor)
 
-# ament_target_dependencies(
-#   calibration
-#   rclcpp
-#   cv_bridge
-#   OpenCV
-#   sensor_msgs
-#   yaml_cpp_vendor
-#   std_srvs
-#   foxglove_msgs
-#   visualization_msgs
-#   geometry_msgs
-#   std_msgs
-#   Boost
-#   camera_srvs)
+# ament_target_dependencies( calibration rclcpp cv_bridge OpenCV sensor_msgs
+# yaml_cpp_vendor std_srvs foxglove_msgs visualization_msgs geometry_msgs
+# std_msgs Boost camera_srvs)
 
 target_link_libraries(camera mvsdk common::common)
 

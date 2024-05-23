@@ -56,6 +56,8 @@ Writer::Writer(char* param_file, char* output_filename) {
     YAML::Node launch_params = YAML::LoadFile(param_.param_file)["parameters"];
     const auto fps = launch_params["fps"].as<int>();
     const auto duration = launch_params["duration"].as<int>();
+    param_.master_camera_id = launch_params["master_camera_id"].as<int>();
+    param_.use_hardware_triger = launch_params["hardware_triger"].as<bool>();
     param_.latency = std::chrono::duration<double>(1. / fps);
     param_.frames_to_take = fps * duration;
     printf("latency=%fs\n", param_.latency.count());
@@ -98,7 +100,10 @@ Writer::Writer(char* param_file, char* output_filename) {
     for (int trigger_cnt = 0; trigger_cnt < param_.frames_to_take; ++trigger_cnt) {
         timer.wait();
         for (int i = 0; i < state_.camera_num; ++i) {
-            CameraSoftTrigger(state_.camera_handles[i]);
+            if (!param_.use_hardware_triger ||
+                state_.camera_handles[i] == param_.master_camera_id) {
+                CameraSoftTrigger(state_.camera_handles[i]);
+            }
         }
         timer.expires_at(timer.expires_at() + interval);
     }
@@ -108,7 +113,10 @@ Writer::Writer(char* param_file, char* output_filename) {
         state_.file_mutexes[i].lock();
     }
 
-    printf("%d %d\n", state_.counters[0].load(), state_.counters[1].load());
+    printf(
+        "Got and written from cameras: %d %d\n",
+        state_.counters[0].load(),
+        state_.counters[1].load());
 
     for (int i = 0; i < state_.camera_num; ++i) {
         abortIfNot("camera " + std::to_string(i) + " stop", CameraStop(state_.camera_handles[i]));
@@ -208,7 +216,6 @@ void Writer::applyParamsToCamera(int handle) {
             0);
         if (state_.alligned_buffers[camera_idx] == MAP_FAILED) {
             perror("mmap");
-            printf("malloc error\n");
             exit(EXIT_FAILURE);
         }
     }

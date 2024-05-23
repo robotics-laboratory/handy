@@ -31,6 +31,8 @@ class Writer {
         std::string output_filename;
         int fps = 20;
         int frames_to_take = 1000;
+        int master_camera_id = 1;
+        bool use_hardware_triger = false;
     } param_{};
 
     struct State {

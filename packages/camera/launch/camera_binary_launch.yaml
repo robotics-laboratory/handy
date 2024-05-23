@@ -1,10 +1,10 @@
 parameters:
-  fps: 10
+  fps: 10 # 90 is the max fps to handle by experiments
   duration: 10 # seconds
   hardware_triger: False  # if True only master is sent software trigger signal
   strobe_pulse_width: 500 # in microseconds
   strobe_polarity: 1      # 0 is valid at low level, 1 is valid at high level
-  master_camera_id: "1"
+  master_camera_id: 1
 
   1:
     exposure_time: 6000       # range: ...
