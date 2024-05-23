@@ -1,120 +1,50 @@
-#pragma once
-
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/compressed_image.hpp>
-
-#include <opencv2/core/core.hpp>
-
 #include "CameraApi.h"
-#include "common/lock_free_queue.h"
-#include "params.h"
 
-#include <chrono>
-#include <cstdint>
-#include <memory>
+#include <mutex>
+#include <atomic>
 #include <string>
-#include <string_view>
+#include <vector>
+#include <map>
+
+using namespace std::chrono_literals;
 
 namespace handy::camera {
-
-struct StampedImageBuffer {
-    uint8_t* raw_buffer = nullptr;
-    uint8_t* bgr_buffer = nullptr;
-    tSdkFrameHead frame_info{};
-    rclcpp::Time timestamp{};
-};
-
-struct CameraPool {
+class Writer {
   public:
-    CameraPool() = default;
-    CameraPool(size_t height, size_t width, size_t frame_n)
-        : frame_n_(frame_n), raw_frame_size_(height * width), bgr_frame_size_(height * width * 3) {
-        raw_.resize(raw_frame_size_ * frame_n_);
-        bgr_.resize(bgr_frame_size_ * frame_n_);
-    }
-
-    uint8_t* getRawFrame(size_t frame_idx) { return raw_.data() + frame_idx * raw_frame_size_; }
-    uint8_t* getBgrFrame(size_t frame_idx) { return bgr_.data() + frame_idx * bgr_frame_size_; }
+    Writer(const char* param_file, const char* output_filename);
 
   private:
-    size_t frame_n_ = 0;
-    size_t raw_frame_size_ = 0;
-    size_t bgr_frame_size_ = 0;
-    std::vector<uint8_t> raw_ = {};
-    std::vector<uint8_t> bgr_ = {};
-};
-
-class CameraNode : public rclcpp::Node {
-  public:
-    CameraNode();
-    ~CameraNode() override;
-
-    constexpr static int kMaxCameraNum = 4;
-    constexpr static int kQueueCapacity = 5;
-
-  private:
-    void applyParamsToCamera(int handle);
-    int getCameraId(int camera_handle);
-    void initCalibParams(int camera_handle);
-
-    void triggerOnTimer();
     void handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info);
-    void handleQueue(int camera_idx);
+    static int getCameraId(int camera_handle);
+    void applyParamsToCamera(int handle);
 
-    void publishRawImage(uint8_t* buffer, const rclcpp::Time& timestamp, int camera_idx);
-    void publishBGRImage(
-        uint8_t* buffer, uint8_t* bgr_buffer, const rclcpp::Time& timestamp, int camera_idx,
-        tSdkFrameHead& frame_inf);
+    struct Size {
+        size_t area() const { return static_cast<size_t>(width * height); };
 
-    void abortIfNot(std::string_view msg, int status);
-    void abortIfNot(std::string_view msg, int camera_idx, int status);
+        int width;
+        int height;
+    };
 
     struct Params {
-        cv::Size preview_frame_size = cv::Size(640, 480);
-        std::chrono::duration<double> latency{50.0};
-        std::string calibration_file_path = "";
-        int camera_num = kMaxCameraNum;
-        bool publish_bgr = false;
-        bool publish_bgr_preview = false;
-        bool publish_raw = false;
-        bool publish_raw_preview = false;
-        bool publish_rectified_preview = false;
-        bool hardware_trigger = false;
-        int max_buffer_size = 0;
-        int master_camera_idx = -1;
+        std::chrono::duration<double> latency{50.0};  // in milliseconds
+        std::string param_file;
+        std::string output_filename;
+        int fps = 20;
+        int frames_to_take = 1000;
+        int master_camera_id = 1;
+        bool use_hardware_triger = false;
     } param_{};
 
     struct State {
-        std::array<std::unique_ptr<LockFreeQueue<StampedImageBuffer>>, kMaxCameraNum> camera_images;
-        std::array<std::unique_ptr<LockFreeQueue<std::pair<uint8_t*, uint8_t*>>>, kMaxCameraNum>
-            free_buffers;
-        std::vector<int> camera_handles = {};
-        std::map<int, int> handle_to_camera_idx = {};
-        std::vector<CameraIntrinsicParameters> cameras_intrinsics = {};
-        std::vector<cv::Size> frame_sizes = {};
-        CameraPool buffers;
+        std::vector<std::atomic<int>> counters;
+        std::vector<std::atomic<size_t>> current_buffer_idx;
+        int camera_num = 2;
+        std::vector<int> files;
+        std::map<int, int> handle_to_idx;
+        std::vector<Size> frame_sizes;
+        std::vector<std::mutex> file_mutexes;
+        std::vector<int> camera_handles;
+        std::vector<void*> alligned_buffers;
     } state_{};
-
-    struct Signals {
-        std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_img;
-        std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_img;
-
-        // clang-format off
-        std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> rectified_preview_img;
-        std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> raw_preview_img;
-        std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr> bgr_preview_img;
-        // clang-format on
-    } signals_{};
-
-    struct CallbackGroups {
-        rclcpp::CallbackGroup::SharedPtr trigger_timer = nullptr;
-        rclcpp::CallbackGroup::SharedPtr handling_queue_timer = nullptr;
-    } call_group_{};
-
-    struct Timers {
-        rclcpp::TimerBase::SharedPtr camera_soft_trigger = nullptr;
-        std::vector<rclcpp::TimerBase::SharedPtr> camera_handle_queue_timer;
-    } timer_{};
 };
-
 }  // namespace handy::camera
