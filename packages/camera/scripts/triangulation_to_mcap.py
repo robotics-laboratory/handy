@@ -19,6 +19,15 @@ MCS_MULTIPLIER = 10**3
 NANO_MULTIPLIER = 1
 TABLE_LENGTH = 2.74
 TABLE_WIDTH = 1.525
+FPS_LATENCY_MS = 15
+
+last_marker_id = 0
+
+
+def get_new_marker_id():
+    global last_marker_id
+    last_marker_id += 1
+    return last_marker_id
 
 
 class CameraParameters:
@@ -132,6 +141,13 @@ def init_writer(export_file):
     )
     writer.create_topic(
         rosbag2_py.TopicMetadata(
+            name="/triangulation/trajectory",
+            type="visualization_msgs/msg/Marker",
+            serialization_format="cdr",
+        )
+    )
+    writer.create_topic(
+        rosbag2_py.TopicMetadata(
             name="/triangulation/table_plane",
             type="visualization_msgs/msg/Marker",
             serialization_format="cdr",
@@ -192,6 +208,10 @@ def init_parser():
     )
     parser.add_argument(
         "--detection-result", help="yaml with the result of detection", required=True
+    )
+    parser.add_argument(
+        "--predictions",
+        help="yaml with predicted trajectory points and covariance matrix",
     )
     parser.add_argument("--export", help="some_file.mcap", required=True)
     parser.add_argument(
@@ -265,7 +285,16 @@ def init_detection_center_marker(marker_id, current_time, position, camera_id, t
     return msg
 
 
-def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics, R, T):
+def simulate(
+    writer,
+    mask_sources,
+    rgb_sources,
+    filename_to_info,
+    trajectory_predictions,
+    intrinsics,
+    R,
+    T,
+):
     filenames_to_publish = sorted(filename_to_info.keys())
     cv_bridge_instance = CvBridge()
 
@@ -299,7 +328,7 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics, R,
             intrinsics[camera_idx].publish_transform(writer, current_simulation_time)
 
             center_detection = init_detection_center_marker(
-                10**6 + i,
+                get_new_marker_id(),
                 current_simulation_time,
                 filename_to_info[filename]["image_points"][camera_idx],
                 camera_idx + 1,
@@ -315,11 +344,11 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics, R,
             filename_to_info[filename]["triangulated_point"], dtype=float
         ).reshape((3, 1))
         ball_marker = init_ball_marker(
-            i,
+            get_new_marker_id(),
             current_simulation_time,
             (R @ current_point - T).flatten().tolist(),
             current_point.flatten().tolist(),
-            ttl=20,
+            ttl=FPS_LATENCY_MS,
         )
         ball_marker.header.frame_id = "table"
         writer.write(
@@ -327,7 +356,60 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics, R,
             serialize_message(ball_marker),
             current_simulation_time,
         )
-        current_simulation_time += 15 * MS_MULTIPLIER  # 15 ms between the frames
+        if trajectory_predictions:
+            publish_predicted_trajectory(
+                writer, trajectory_predictions, filename, current_simulation_time
+            )
+        current_simulation_time += (
+            FPS_LATENCY_MS * MS_MULTIPLIER
+        )  # 15 ms between the frames
+
+
+def publish_predicted_trajectory(
+    writer, trajectory_dict, filename, current_simulation_time
+):
+    if filename not in trajectory_dict.keys():
+        return
+    # print("publishing trajectory")
+    trajectory_data = trajectory_dict[filename]
+    if len(trajectory_data["pred"]) != len(trajectory_data["var"]):
+        print(
+            f"number of trajectory points and covarience matrices does not match: {len(trajectory_data['pred'])} != {len(trajectory_data['var'])}"
+        )
+
+    for i in range(len(trajectory_data["pred"])):
+        eigenvalues, _ = np.linalg.eigh(
+            np.array(trajectory_data["var"][i], dtype=float)
+        )
+        eigenvalues = np.sqrt(eigenvalues)
+
+        msg = Marker()
+        msg.header.frame_id = f"table"
+        msg.id = get_new_marker_id()
+        msg.type = Marker.SPHERE
+        msg.action = Marker.ADD
+        msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = trajectory_data[
+            "pred"
+        ][i]
+
+        msg.pose.orientation.x = 0.0
+        msg.pose.orientation.y = 0.0
+        msg.pose.orientation.z = 0.0
+        msg.pose.orientation.w = 1.0
+
+        msg.scale.x, msg.scale.y, msg.scale.z = eigenvalues.tolist()
+
+        msg.color.r = 1.0
+        msg.color.g = 1.0
+        msg.color.b = 1.0
+        msg.color.a = 0.8
+
+        msg.lifetime.nanosec = FPS_LATENCY_MS * 10**6
+        writer.write(
+            "/triangulation/trajectory",
+            serialize_message(msg),
+            current_simulation_time,
+        )
 
 
 def init_camera_info(writer, params_path, camera_ids=[1, 2]):
@@ -366,9 +448,10 @@ def init_camera_info(writer, params_path, camera_ids=[1, 2]):
 
 
 def publish_table_plain(writer, normal):
+    # publish blue table plain
     marker = Marker()
     marker.header.frame_id = "table"
-    marker.id = 0
+    marker.id = get_new_marker_id()
     marker.type = marker.CUBE
     marker.action = marker.ADD
     marker.scale.x = TABLE_LENGTH
@@ -393,8 +476,9 @@ def publish_table_plain(writer, normal):
     )
     writer.write("/triangulation/table_plane", serialize_message(marker), 0)
 
+    # publish white border
     marker = Marker()
-    marker.id = 1
+    marker.id = get_new_marker_id()
     marker.header.frame_id = "table"
     marker.type = marker.LINE_STRIP
     marker.action = marker.ADD
@@ -420,6 +504,40 @@ def publish_table_plain(writer, normal):
         (TABLE_WIDTH / 2, TABLE_LENGTH * 3 / 4),
         (TABLE_WIDTH / 2, -TABLE_LENGTH / 4),
         (-TABLE_WIDTH / 2, -TABLE_LENGTH / 4),
+    ]
+
+    for cur_y, cur_x in coords:
+        new_point = Point()
+        new_point.x = cur_x
+        new_point.y = cur_y
+        marker.points.append(new_point)
+
+    writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+
+    # publish length line
+    marker.id = get_new_marker_id()
+    marker.points = []
+
+    coords = [
+        (0.0, -TABLE_LENGTH / 4),
+        (0.0, TABLE_LENGTH * 3 / 4),
+    ]
+
+    for cur_y, cur_x in coords:
+        new_point = Point()
+        new_point.x = cur_x
+        new_point.y = cur_y
+        marker.points.append(new_point)
+
+    writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+
+    # publish width line
+    marker.id = get_new_marker_id()
+    marker.points = []
+
+    coords = [
+        (-TABLE_WIDTH / 2, TABLE_LENGTH / 4),
+        (TABLE_WIDTH / 2, TABLE_LENGTH / 4),
     ]
 
     for cur_y, cur_x in coords:
@@ -519,6 +637,11 @@ if __name__ == "__main__":
     with open(args.detection_result, mode="r", encoding="utf-8") as file:
         data = json.load(file)
 
+    trajectory_predictions = None
+    if args.predictions:
+        with open(args.predictions, mode="r", encoding="utf-8") as file:
+            trajectory_predictions = json.load(file)
+
     # marker_1 = init_ball_marker(67812, 0, data["table_orientation_points"][0], 1, ttl=0)
     # writer.write("/triangulation/ball_marker", serialize_message(marker_1), 0)
     # marker_2 = init_ball_marker(67813, 0, data["table_orientation_points"][1], 1, ttl=0)
@@ -535,6 +658,7 @@ if __name__ == "__main__":
         args.mask_sources,
         args.rgb_sources,
         data["triangulated_points"],
+        trajectory_predictions,
         intrinsics,
         R2table,
         T2table,
