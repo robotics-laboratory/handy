@@ -3,7 +3,7 @@ import os
 
 import cv2
 import numpy as np
-import yaml
+import json
 
 
 def get_bbox(mask):
@@ -25,18 +25,19 @@ def read_and_convert(sources, output_file, width=1920, height=1200):
         common_filenames.intersection_update(os.listdir(source))
     common_filenames = sorted(common_filenames)
 
-    yaml_data = {}
-    for source in sources:
-        res_data = []
+    for i in range(len(sources)):
+        source = sources[i]
+        json_data = {}
         for filename in common_filenames:
             path_to_file = os.path.join(source, filename)
             image = cv2.imread(path_to_file, cv2.IMREAD_GRAYSCALE)
-            res_data.append(get_bbox(image))
-
-        yaml_data[source] = {"filenames": common_filenames, "bounding_boxes": res_data}
-
-    with open(output_file, mode="w", encoding="utf-8") as file:
-        yaml.dump(yaml_data, file, default_flow_style=None)
+            bbox = get_bbox(image)
+            centroid_x = (bbox[0] + bbox[2]) / 2
+            centroid_y = (bbox[1] + bbox[3]) / 2
+            json_data[filename] = {}
+            json_data[filename]["centroid"] = [centroid_x, centroid_y]
+        with open(f"{output_file}_{i + 1}.json", mode="w", encoding="utf-8") as file:
+            json.dump(json_data, file)
 
 
 def init_parser():
@@ -49,7 +50,7 @@ def init_parser():
         "--height", help="height of a single frame", type=int, default=1200
     )
     parser.add_argument("--sources", help="folder with masks", required=True, nargs="*")
-    parser.add_argument("--export", help="some_file.yaml", required=True)
+    parser.add_argument("--export", help="just_filename_no_extension", required=True)
 
     return parser
 

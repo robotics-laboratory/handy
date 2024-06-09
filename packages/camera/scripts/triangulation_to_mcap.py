@@ -6,7 +6,7 @@ import numpy as np
 import rosbag2_py
 import yaml
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Quaternion, TransformStamped
+from geometry_msgs.msg import Quaternion, TransformStamped, Point
 from rclpy.serialization import serialize_message
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo
@@ -17,22 +17,8 @@ SEC_MULTIPLIER = 10**9
 MS_MULTIPLIER = 10**6
 MCS_MULTIPLIER = 10**3
 NANO_MULTIPLIER = 1
-
-
-def euler_to_quaternion(roll, pitch, yaw):
-    qx = np.sin(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) - np.cos(
-        roll / 2
-    ) * np.sin(pitch / 2) * np.sin(yaw / 2)
-    qy = np.cos(roll / 2) * np.sin(pitch / 2) * np.cos(yaw / 2) + np.sin(
-        roll / 2
-    ) * np.cos(pitch / 2) * np.sin(yaw / 2)
-    qz = np.cos(roll / 2) * np.cos(pitch / 2) * np.sin(yaw / 2) - np.sin(
-        roll / 2
-    ) * np.sin(pitch / 2) * np.cos(yaw / 2)
-    qw = np.cos(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) + np.sin(
-        roll / 2
-    ) * np.sin(pitch / 2) * np.sin(yaw / 2)
-    return qx, qy, qz, qw
+TABLE_LENGTH = 2.74
+TABLE_WIDTH = 1.525
 
 
 class CameraParameters:
@@ -233,16 +219,16 @@ def init_ball_marker(marker_id, current_time, position, camera_id, ttl=100):
     msg.pose.orientation.z = 0.0
     msg.pose.orientation.w = 1.0
 
-    msg.scale.x = 0.1  # size of the ball (1m diameter)
-    msg.scale.y = 0.1
-    msg.scale.z = 0.1
+    msg.scale.x = 0.02
+    msg.scale.y = 0.02
+    msg.scale.z = 0.02
 
-    msg.color.r = 1.0  # orange color
+    msg.color.r = 1.0
     msg.color.g = 0.5
     msg.color.b = 0.0
-    msg.color.a = 1.0  # alpha (1.0 = opaque, 0.0 = transparent)
+    msg.color.a = 1.0
 
-    msg.lifetime.nanosec = ttl * 10**6  # ttl = 10ms
+    msg.lifetime.nanosec = ttl * 10**6  # ttl in milliseconds
 
     return msg
 
@@ -289,30 +275,8 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics, R,
         for camera_idx in range(2):
             # load and segmentate image
             image = cv2.imread(os.path.join(rgb_sources[camera_idx], filename))
-            # mask = cv2.imread(
-            #     os.path.join(mask_sources[camera_idx], filename), cv2.IMREAD_GRAYSCALE
-            # )
-            # if image is None or mask is None:
-            #     print(os.path.join(rgb_sources[camera_idx], filename))
-            #     print(os.path.join(mask_sources[camera_idx], filename))
-            #     quit()
-            # assert image.shape[:2] == mask.shape
-            # segmentated_image = image
-            # segmentated_image[:, :, 0] = image[:, :, 0] * mask
-            # segmentated_image[:, :, 1] = segmentated_image[:, :, 1] * mask
-            # segmentated_image[:, :, 2] = segmentated_image[:, :, 2] * mask
-            # Highlight color and intensity
 
             image = intrinsics[camera_idx].undistort(image)
-
-            # highlight_color = [0, 255, 255]  # Yellow color
-            # alpha = 0.3  # Intensity of highlight
-            # Create an image with highlight color
-            # highlight = np.full(image.shape, highlight_color, dtype=np.uint8)
-            # Bitwise-AND mask and original image
-            # highlighted_area = cv2.bitwise_and(highlight, highlight, mask=mask)
-            # Alpha blend highlighted_area and original image
-            # image = cv2.addWeighted(image, 1, highlighted_area, alpha, 0)
 
             # prepare CompressedImages
             camera_feed_msg = cv_bridge_instance.cv2_to_compressed_imgmsg(
@@ -355,7 +319,7 @@ def simulate(writer, mask_sources, rgb_sources, filename_to_info, intrinsics, R,
             current_simulation_time,
             (R @ current_point - T).flatten().tolist(),
             current_point.flatten().tolist(),
-            1,
+            ttl=20,
         )
         ball_marker.header.frame_id = "table"
         writer.write(
@@ -397,29 +361,73 @@ def init_camera_info(writer, params_path, camera_ids=[1, 2]):
         complanar_aruco_points[:10] - centroid, full_matrices=False
     )
     print("normal is", VT[-1, :])
-    return intrinsics, VT[-1, :], centroid
+    return intrinsics, VT[-1, :]
     # return intrinsics, None, None
 
 
-def publish_table_plain(writer, normal, centroid):
-    # normal = np.array([0, -1, 0.5])
+def publish_table_plain(writer, normal):
     marker = Marker()
-    marker.header.frame_id = "world"
+    marker.header.frame_id = "table"
+    marker.id = 0
     marker.type = marker.CUBE
     marker.action = marker.ADD
-    marker.scale.x = 100.0  # Adjust as needed
-    marker.scale.y = 100.0  # Adjust as needed
-    marker.scale.z = 0.01  # Thin along the z-axis
-    marker.color.a = 1.0  # Don't forget to set the alpha!
+    marker.scale.x = TABLE_LENGTH
+    marker.scale.y = TABLE_WIDTH
+    marker.scale.z = 0.01
+
     marker.color.r = 0.0
     marker.color.g = 0.0
     marker.color.b = 0.8
-    marker.pose.position.x = centroid[0]
-    marker.pose.position.y = centroid[1]
-    marker.pose.position.z = centroid[2]
-    # You'll need to convert the normal vector to a quaternion for the pose orientation
-    # This is a bit involved - you might want to use a helper function
-    marker.pose.orientation = normal_to_quaternion(normal)
+    marker.color.a = 0.3
+
+    marker.pose.position.x = 0.0
+    marker.pose.position.y = TABLE_LENGTH / 4
+    marker.pose.position.z = 0.0
+    (
+        marker.pose.orientation.x,
+        marker.pose.orientation.y,
+        marker.pose.orientation.z,
+        marker.pose.orientation.w,
+    ) = (
+        Rotation.from_euler("xyz", [0, 0, 90], degrees=True).as_quat().tolist()
+    )
+    writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+
+    marker = Marker()
+    marker.id = 1
+    marker.header.frame_id = "table"
+    marker.type = marker.LINE_STRIP
+    marker.action = marker.ADD
+    marker.scale.x = 0.01
+
+    marker.color.r = 1.0
+    marker.color.g = 1.0
+    marker.color.b = 1.0
+    marker.color.a = 0.9
+
+    (
+        marker.pose.orientation.x,
+        marker.pose.orientation.y,
+        marker.pose.orientation.z,
+        marker.pose.orientation.w,
+    ) = (
+        Rotation.from_euler("xyz", [0, 0, 90], degrees=True).as_quat().tolist()
+    )
+
+    coords = [
+        (-TABLE_WIDTH / 2, -TABLE_LENGTH / 4),
+        (-TABLE_WIDTH / 2, TABLE_LENGTH * 3 / 4),
+        (TABLE_WIDTH / 2, TABLE_LENGTH * 3 / 4),
+        (TABLE_WIDTH / 2, -TABLE_LENGTH / 4),
+        (-TABLE_WIDTH / 2, -TABLE_LENGTH / 4),
+    ]
+
+    for cur_y, cur_x in coords:
+        new_point = Point()
+        new_point.x = cur_x
+        new_point.y = cur_y
+        marker.points.append(new_point)
+
     writer.write("/triangulation/table_plane", serialize_message(marker), 0)
 
 
@@ -448,12 +456,10 @@ def normal_to_quaternion(vector):
     return quat
 
 
-def get_cam2world_transform(
-    table_plane_normal, table_plane_centroid, table_orientation_points
-):
-    x_vector = -np.array(table_orientation_points[0], dtype=float) + np.array(
-        table_orientation_points[1], dtype=float
-    )
+def get_cam2world_transform(table_plane_normal, table_orientation_points):
+    edge_table_orient_point = np.array(table_orientation_points[0], dtype=float)
+    middle_table_orient_point = np.array(table_orientation_points[1], dtype=float)
+    x_vector = middle_table_orient_point - edge_table_orient_point
     z_vector = (
         table_plane_normal
         - (table_plane_normal.dot(x_vector) / np.linalg.norm(x_vector, ord=2))
@@ -470,37 +476,15 @@ def get_cam2world_transform(
         (y_vector.reshape((3, 1)), x_vector.reshape((3, 1)), z_vector.reshape((3, 1))),
         axis=1,
     )
-    T = table_plane_centroid.reshape((3, 1))
+    table_line_middle = (edge_table_orient_point + middle_table_orient_point) / 2
+    T = table_line_middle.reshape((3, 1))
     R_inv = np.linalg.inv(R)
 
-    return R, T, R_inv, R_inv @ T
+    return R, T, R_inv, R_inv @ T, table_line_middle
     # return R, T
 
 
-if __name__ == "__main__":
-    # init all modules
-    parser = init_parser()
-    args = parser.parse_args()
-    writer = init_writer(args.export)
-
-    # read and publish camera info
-    intrinsics, table_plane_normal, table_plane_centroid = init_camera_info(
-        writer, args.intrinsic_params, [1, 2]
-    )
-    publish_table_plain(writer, table_plane_normal, table_plane_centroid)
-
-    with open(args.detection_result, mode="r", encoding="utf-8") as file:
-        data = json.load(file)
-
-    # marker_1 = init_ball_marker(67812, 0, data["table_orientation_points"][0], 1, ttl=0)
-    # writer.write("/triangulation/ball_marker", serialize_message(marker_1), 0)
-    # marker_2 = init_ball_marker(67813, 0, data["table_orientation_points"][1], 1, ttl=0)
-    # writer.write("/triangulation/ball_marker", serialize_message(marker_2), 0)
-
-    R, T, R2table, T2table = get_cam2world_transform(
-        table_plane_normal, table_plane_centroid, data["table_orientation_points"]
-    )
-
+def publish_cam2table_transform(writer, R, T):
     static_transformation = TransformStamped()
     static_transformation.child_frame_id = "table"
     static_transformation.header.frame_id = "world"
@@ -517,7 +501,34 @@ if __name__ == "__main__":
     static_transformation.transform.rotation.y = qy
     static_transformation.transform.rotation.z = qz
     static_transformation.transform.rotation.w = qw
+
     writer.write("/tf", serialize_message(static_transformation), 0)
+
+
+if __name__ == "__main__":
+    # init all modules
+    parser = init_parser()
+    args = parser.parse_args()
+    writer = init_writer(args.export)
+
+    # read and publish camera info
+    intrinsics, table_plane_normal = init_camera_info(
+        writer, args.intrinsic_params, [1, 2]
+    )
+
+    with open(args.detection_result, mode="r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    # marker_1 = init_ball_marker(67812, 0, data["table_orientation_points"][0], 1, ttl=0)
+    # writer.write("/triangulation/ball_marker", serialize_message(marker_1), 0)
+    # marker_2 = init_ball_marker(67813, 0, data["table_orientation_points"][1], 1, ttl=0)
+    # writer.write("/triangulation/ball_marker", serialize_message(marker_2), 0)
+
+    R, T, R2table, T2table, table_center = get_cam2world_transform(
+        table_plane_normal, data["table_orientation_points"]
+    )
+    publish_table_plain(writer, table_plane_normal)
+    publish_cam2table_transform(writer, R, T)
 
     simulate(
         writer,
@@ -541,5 +552,7 @@ if __name__ == "__main__":
         data["triangulated_points"][filename][
             "triangulated_point"
         ] = table_point.flatten().tolist()
-    with open(args.detection_result, mode="w", encoding="utf-8") as file:
+
+    new_detection_filepath = args.detection_result[:-5] + "_table.json"
+    with open(new_detection_filepath, mode="w", encoding="utf-8") as file:
         json.dump(data, file)
