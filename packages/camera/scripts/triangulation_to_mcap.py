@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 
 import cv2
@@ -6,12 +7,11 @@ import numpy as np
 import rosbag2_py
 import yaml
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Quaternion, TransformStamped, Point
+from geometry_msgs.msg import Point, Quaternion, TransformStamped
 from rclpy.serialization import serialize_message
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo
-from visualization_msgs.msg import Marker, ImageMarker
-import json
+from visualization_msgs.msg import ImageMarker, Marker
 
 SEC_MULTIPLIER = 10**9
 MS_MULTIPLIER = 10**6
@@ -71,21 +71,6 @@ class CameraParameters:
             "angles are",
             Rotation.from_matrix(self.rotation_matrix).as_euler("zyx") / 3.14 * 180,
         )
-        # mat = np.hstack((self.rotation_matrix, self.translation_vector.reshape((3, 1))))
-
-        # # yaw,pitch,Take out roll
-        # (_, _, _, _, _, _, eulerAngles) = cv2.decomposeProjectionMatrix(mat)
-        # yaw = eulerAngles[1][0]
-        # pitch = eulerAngles[0][0]
-        # roll = eulerAngles[2][0]
-        # print("yaw:", yaw)
-        # print("pitch:", pitch)
-        # print("roll:", roll)
-        # qx, qy, qz, qw = (
-        #     Rotation.from_euler("zyx", [pitch, roll, yaw], degrees=True)
-        #     .as_quat()
-        #     .tolist()
-        # )
 
         self.static_transformation.transform.rotation.x = qx
         self.static_transformation.transform.rotation.y = qy
@@ -107,8 +92,7 @@ class CameraParameters:
         camera_info_msg.d = self.dist_coefs.flatten().tolist()
 
         camera_info_msg.k = self.camera_matrix.flatten().tolist()
-
-        camera_info_msg.p = (self.camera_matrix).flatten().tolist()
+        camera_info_msg.p = self.camera_matrix.flatten().tolist()
 
         writer.write(
             f"/camera_{self.camera_id}/info",
@@ -135,6 +119,13 @@ def init_writer(export_file):
     writer.create_topic(
         rosbag2_py.TopicMetadata(
             name="/triangulation/ball_marker",
+            type="visualization_msgs/msg/Marker",
+            serialization_format="cdr",
+        )
+    )
+    writer.create_topic(
+        rosbag2_py.TopicMetadata(
+            name="/triangulation/ball_table_projection",
             type="visualization_msgs/msg/Marker",
             serialization_format="cdr",
         )
@@ -216,7 +207,8 @@ def init_parser():
     parser.add_argument("--export", help="some_file.mcap", required=True)
     parser.add_argument(
         "--transform-cam-to-world",
-        help="boolean flag whether to write and transform points from to table coordinate frame",
+        help="boolean flag whether to write and transform points "
+        + "from to table coordinate frame",
         action="store_true",
     )
 
@@ -239,9 +231,9 @@ def init_ball_marker(marker_id, current_time, position, camera_id, ttl=100):
     msg.pose.orientation.z = 0.0
     msg.pose.orientation.w = 1.0
 
-    msg.scale.x = 0.02
-    msg.scale.y = 0.02
-    msg.scale.z = 0.02
+    msg.scale.x = 0.04
+    msg.scale.y = 0.04
+    msg.scale.z = 0.04
 
     msg.color.r = 1.0
     msg.color.g = 0.5
@@ -356,6 +348,18 @@ def simulate(
             serialize_message(ball_marker),
             current_simulation_time,
         )
+
+        projection_marker = ball_marker
+        projection_marker.id = get_new_marker_id()
+        projection_marker.scale.z = 0.001
+        projection_marker.pose.position.z = 0.0
+        projection_marker.color.r = 1.0
+        writer.write(
+            "/triangulation/ball_table_projection",
+            serialize_message(projection_marker),
+            current_simulation_time,
+        )
+
         if trajectory_predictions:
             publish_predicted_trajectory(
                 writer, trajectory_predictions, filename, current_simulation_time
@@ -374,7 +378,8 @@ def publish_predicted_trajectory(
     trajectory_data = trajectory_dict[filename]
     if len(trajectory_data["pred"]) != len(trajectory_data["var"]):
         print(
-            f"number of trajectory points and covarience matrices does not match: {len(trajectory_data['pred'])} != {len(trajectory_data['var'])}"
+            "number of trajectory points and covarience matrices does not match: "
+            + "{len(trajectory_data['pred'])} != {len(trajectory_data['var'])}"
         )
 
     for i in range(len(trajectory_data["pred"])):
@@ -384,7 +389,7 @@ def publish_predicted_trajectory(
         eigenvalues = np.sqrt(eigenvalues)
 
         msg = Marker()
-        msg.header.frame_id = f"table"
+        msg.header.frame_id = "table"
         msg.id = get_new_marker_id()
         msg.type = Marker.SPHERE
         msg.action = Marker.ADD
@@ -402,7 +407,7 @@ def publish_predicted_trajectory(
         msg.color.r = 1.0
         msg.color.g = 1.0
         msg.color.b = 1.0
-        msg.color.a = 0.8
+        msg.color.a = 0.6
 
         msg.lifetime.nanosec = FPS_LATENCY_MS * 10**6
         writer.write(
@@ -471,9 +476,7 @@ def publish_table_plain(writer, normal):
         marker.pose.orientation.y,
         marker.pose.orientation.z,
         marker.pose.orientation.w,
-    ) = (
-        Rotation.from_euler("xyz", [0, 0, 90], degrees=True).as_quat().tolist()
-    )
+    ) = Rotation.from_euler("xyz", [0, 0, 90], degrees=True).as_quat().tolist()
     writer.write("/triangulation/table_plane", serialize_message(marker), 0)
 
     # publish white border
@@ -494,9 +497,7 @@ def publish_table_plain(writer, normal):
         marker.pose.orientation.y,
         marker.pose.orientation.z,
         marker.pose.orientation.w,
-    ) = (
-        Rotation.from_euler("xyz", [0, 0, 90], degrees=True).as_quat().tolist()
-    )
+    ) = Rotation.from_euler("xyz", [0, 0, 90], degrees=True).as_quat().tolist()
 
     coords = [
         (-TABLE_WIDTH / 2, -TABLE_LENGTH / 4),
@@ -641,11 +642,6 @@ if __name__ == "__main__":
     if args.predictions:
         with open(args.predictions, mode="r", encoding="utf-8") as file:
             trajectory_predictions = json.load(file)
-
-    # marker_1 = init_ball_marker(67812, 0, data["table_orientation_points"][0], 1, ttl=0)
-    # writer.write("/triangulation/ball_marker", serialize_message(marker_1), 0)
-    # marker_2 = init_ball_marker(67813, 0, data["table_orientation_points"][1], 1, ttl=0)
-    # writer.write("/triangulation/ball_marker", serialize_message(marker_2), 0)
 
     R, T, R2table, T2table, table_center = get_cam2world_transform(
         table_plane_normal, data["table_orientation_points"]
