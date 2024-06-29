@@ -1,12 +1,13 @@
 import argparse
+import json
 import os
+from typing import List
 
 import cv2
 import numpy as np
-import json
 
 
-def get_bbox(mask):
+def get_bbox(mask: np.ndarray) -> List[float]:
     # x_min, y_min, x_max, y_max
     horizontal_indicies = np.where(np.any(mask, axis=0))[0]
     vertical_indicies = np.where(np.any(mask, axis=1))[0]
@@ -16,7 +17,7 @@ def get_bbox(mask):
     return bbox
 
 
-def read_and_convert(sources, output_file, width=1920, height=1200):
+def read_and_convert(sources: str, output_file: str, width=1920, height=1200) -> None:
     if not all([os.path.exists(source) for source in sources]):
         raise ValueError
 
@@ -40,7 +41,7 @@ def read_and_convert(sources, output_file, width=1920, height=1200):
             json.dump(json_data, file)
 
 
-def init_parser():
+def init_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
