@@ -1,13 +1,14 @@
 import argparse
 import json
 import os
+from typing import Dict, List, Tuple
 
 import cv2
 import numpy as np
 import rosbag2_py
 import yaml
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Point, Quaternion, TransformStamped
+from geometry_msgs.msg import Point, TransformStamped
 from rclpy.serialization import serialize_message
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo
@@ -24,7 +25,7 @@ FPS_LATENCY_MS = 15
 last_marker_id = 0
 
 
-def get_new_marker_id():
+def get_new_marker_id() -> int:
     global last_marker_id
     last_marker_id += 1
     return last_marker_id
@@ -77,10 +78,12 @@ class CameraParameters:
         self.static_transformation.transform.rotation.z = qz
         self.static_transformation.transform.rotation.w = qw
 
-    def undistort(self, image):
+    def undistort(self, image: cv2.Mat) -> cv2.Mat:
         return cv2.remap(image, self.mapx, self.mapy, cv2.INTER_NEAREST)
 
-    def publish_camera_info(self, writer, current_time):
+    def publish_camera_info(
+        self, writer: rosbag2_py.SequentialWriter, current_time: int
+    ) -> None:
         camera_info_msg = CameraInfo()
         camera_info_msg.header.frame_id = f"camera_{self.camera_id}"
         camera_info_msg.header.stamp.sec = current_time % SEC_MULTIPLIER
@@ -100,14 +103,16 @@ class CameraParameters:
             current_time,
         )
 
-    def publish_transform(self, writer, current_time):
+    def publish_transform(
+        self, writer: rosbag2_py.SequentialWriter, current_time: int
+    ) -> None:
         self.static_transformation.header.stamp.sec = current_time % SEC_MULTIPLIER
         self.static_transformation.header.stamp.nanosec = current_time // SEC_MULTIPLIER
 
         writer.write("/tf", serialize_message(self.static_transformation), current_time)
 
 
-def init_writer(export_file):
+def init_writer(export_file: str) -> rosbag2_py.SequentialWriter:
     writer = rosbag2_py.SequentialWriter()
     writer.open(
         rosbag2_py.StorageOptions(uri=export_file, storage_id="mcap"),
@@ -167,13 +172,6 @@ def init_writer(export_file):
                 serialization_format="cdr",
             )
         )
-        # writer.create_topic(
-        #     rosbag2_py.TopicMetadata(
-        #         name=f"/camera_{i + 1}/detected_ball_arrow",
-        #         type="visualization_msgs/msg/Marker",
-        #         serialization_format="cdr",
-        #     )
-        # )
         writer.create_topic(
             rosbag2_py.TopicMetadata(
                 name=f"/camera_{i + 1}/info",
@@ -185,14 +183,14 @@ def init_writer(export_file):
     return writer
 
 
-def init_parser():
+def init_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--mask-sources", help="folder with masks", required=True, nargs="*"
-    )
-    parser.add_argument(
-        "--rgb-sources", help="folder with masks", required=True, nargs="*"
+        "--rgb-sources",
+        help="folder with RGB or raw Bayer images",
+        required=True,
+        nargs="*",
     )
     parser.add_argument(
         "--intrinsic-params", help="yaml file with intrinsic parameters", required=True
@@ -215,7 +213,9 @@ def init_parser():
     return parser
 
 
-def init_ball_marker(marker_id, current_time, position, camera_id, ttl=100):
+def init_ball_marker(
+    marker_id: int, current_time: int, position: List[int], camera_id: int, ttl=100
+) -> Marker:
     msg = Marker()
     msg.header.frame_id = f"camera_{camera_id}"
     msg.header.stamp.sec = current_time // SEC_MULTIPLIER
@@ -245,7 +245,9 @@ def init_ball_marker(marker_id, current_time, position, camera_id, ttl=100):
     return msg
 
 
-def init_detection_center_marker(marker_id, current_time, position, camera_id, ttl=100):
+def init_detection_center_marker(
+    marker_id: int, current_time: int, position: List[int], camera_id: int, ttl=100
+) -> ImageMarker:
     msg = ImageMarker()
     msg.header.frame_id = f"camera_{camera_id}"
     msg.header.stamp.sec = current_time // SEC_MULTIPLIER
@@ -278,15 +280,14 @@ def init_detection_center_marker(marker_id, current_time, position, camera_id, t
 
 
 def simulate(
-    writer,
-    mask_sources,
+    writer: rosbag2_py.SequentialWriter,
     rgb_sources,
     filename_to_info,
     trajectory_predictions,
     intrinsics,
-    R,
-    T,
-):
+    R: np.ndarray,
+    T: np.ndarray,
+) -> None:
     filenames_to_publish = sorted(filename_to_info.keys())
     cv_bridge_instance = CvBridge()
 
@@ -370,8 +371,11 @@ def simulate(
 
 
 def publish_predicted_trajectory(
-    writer, trajectory_dict, filename, current_simulation_time
-):
+    writer: rosbag2_py.SequentialWriter,
+    trajectory_dict: Dict[str, Dict[str, List]],
+    filename: str,
+    current_simulation_time: int,
+) -> None:
     if filename not in trajectory_dict.keys():
         return
     # print("publishing trajectory")
@@ -417,7 +421,9 @@ def publish_predicted_trajectory(
         )
 
 
-def init_camera_info(writer, params_path, camera_ids=[1, 2]):
+def init_camera_info(
+    writer: rosbag2_py.SequentialWriter, params_path: str, camera_ids=[1, 2]
+) -> Tuple[List[CameraParameters], np.ndarray]:
     intrinsics = []
     for camera_id in camera_ids:
         with open(params_path, mode="r", encoding="utf-8") as file:
@@ -435,24 +441,16 @@ def init_camera_info(writer, params_path, camera_ids=[1, 2]):
     complanar_aruco_points = np.array(
         data["triangulated_common_points"], dtype=np.float64
     )
-    # for i in range(complanar_aruco_points.shape[0]):
-    #     marker = init_ball_marker(
-    #         10**6 - i, i, complanar_aruco_points[i, :].tolist(), 1, ttl=0
-    #     )
-    #     marker.color.g = 1.0
-    #     writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+
     centroid = np.mean(complanar_aruco_points, axis=0)
-    # print(np.var(complanar_aruco_points, axis=0))
-    # print("centroid is", centroid)
     _, _, VT = np.linalg.svd(
         complanar_aruco_points[:10] - centroid, full_matrices=False
     )
     print("normal is", VT[-1, :])
     return intrinsics, VT[-1, :]
-    # return intrinsics, None, None
 
 
-def publish_table_plain(writer, normal):
+def publish_table_plain(writer: rosbag2_py.SequentialWriter) -> None:
     # publish blue table plain
     marker = Marker()
     marker.header.frame_id = "table"
@@ -550,32 +548,9 @@ def publish_table_plain(writer, normal):
     writer.write("/triangulation/table_plane", serialize_message(marker), 0)
 
 
-def normal_to_quaternion(vector):
-    # Ensure the normal is a unit vector
-    normal = vector / np.linalg.norm(vector, ord=2)
-
-    # Compute the angle between the normal and the z-axis
-    angle = np.arccos(np.dot(normal, [0, 0, 1]))
-
-    # Compute the axis of rotation
-    axis = np.cross(normal, [0, 0, 1])
-    axis = axis / np.linalg.norm(axis, ord=2)
-
-    # Use scipy to create a rotation and convert it to a quaternion
-    rotation_vector = angle * axis
-    print("++++++++++++++")
-    print(rotation_vector)
-
-    rotation_matrix = cv2.Rodrigues(rotation_vector)[0]
-    quat = Quaternion()
-    rotation = Rotation.from_matrix(rotation_matrix) * Rotation.from_euler(
-        "zyx", [0, 0, 90], degrees=True
-    )
-    quat.x, quat.y, quat.z, quat.w = rotation.as_quat().tolist()
-    return quat
-
-
-def get_cam2world_transform(table_plane_normal, table_orientation_points):
+def get_cam2world_transform(
+    table_plane_normal: np.ndarray, table_orientation_points: List[List[float]]
+) -> Tuple[np.ndarray]:
     edge_table_orient_point = np.array(table_orientation_points[0], dtype=float)
     middle_table_orient_point = np.array(table_orientation_points[1], dtype=float)
     x_vector = middle_table_orient_point - edge_table_orient_point
@@ -600,10 +575,11 @@ def get_cam2world_transform(table_plane_normal, table_orientation_points):
     R_inv = np.linalg.inv(R)
 
     return R, T, R_inv, R_inv @ T, table_line_middle
-    # return R, T
 
 
-def publish_cam2table_transform(writer, R, T):
+def publish_cam2table_transform(
+    writer: rosbag2_py.SequentialWriter, R: np.ndarray, T: np.ndarray
+) -> None:
     static_transformation = TransformStamped()
     static_transformation.child_frame_id = "table"
     static_transformation.header.frame_id = "world"
@@ -646,12 +622,11 @@ if __name__ == "__main__":
     R, T, R2table, T2table, table_center = get_cam2world_transform(
         table_plane_normal, data["table_orientation_points"]
     )
-    publish_table_plain(writer, table_plane_normal)
+    publish_table_plain(writer)
     publish_cam2table_transform(writer, R, T)
 
     simulate(
         writer,
-        args.mask_sources,
         args.rgb_sources,
         data["triangulated_points"],
         trajectory_predictions,
