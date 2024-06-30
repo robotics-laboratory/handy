@@ -1,5 +1,6 @@
 import argparse
 import os
+from typing import List
 
 import cv2
 import numpy as np
@@ -11,7 +12,9 @@ RAW_UNDISTORT_PATH = "raw_image_undistort"
 
 
 class Intrinsics:
-    def __init__(self, camera_matrix, dist_coefs, image_size):
+    def __init__(
+        self, camera_matrix: np.ndarray, dist_coefs: np.ndarray, image_size: List[int]
+    ) -> None:
         self.camera_matrix = camera_matrix
         self.dist_coefs = dist_coefs
         self.image_size = image_size
@@ -24,7 +27,7 @@ class Intrinsics:
             5,
         )
 
-    def undistort_image(self, image):
+    def undistort_image(self, image: np.ndarray) -> np.ndarray:
         cur_image_size = image.shape[:2]
         assert self.image_size == cur_image_size, (
             "Images of different sizes were provided: "
@@ -34,7 +37,7 @@ class Intrinsics:
         return cv2.remap(image, self.mapx, self.mapy, cv2.INTER_NEAREST)
 
     @staticmethod
-    def create_from_yaml(path_to_file):
+    def create_from_yaml(path_to_file: str) -> Intrinsics:
         if not os.path.isfile(path_to_file):
             raise FileNotFoundError
         with open(path_to_file, "r") as stream:
@@ -48,7 +51,7 @@ class Intrinsics:
             return Intrinsics(camera_matrix, dist_coefs, image_size)
 
 
-def init_parser():
+def init_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--source", help="Directory with raw distorted images")
@@ -63,7 +66,7 @@ def init_parser():
     return parser
 
 
-def main():
+def main() -> None:
     intrinsic_params = None
     parser = init_parser()
     args = parser.parse_args()

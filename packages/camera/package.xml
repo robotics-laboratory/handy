@@ -9,19 +9,9 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>cv_bridge</depend>
   <depend>OpenCV</depend>
-  <depend>rclcpp</depend>
-  <depend>sensor_msgs</depend>
-  <depend>std_msgs</depend>
-  <depend>std_srvs</depend>
-  <depend>visuallization_msgs</depend>
-  <depend>foxglove_msgs</depend>
-  <depend>geometry_msgs</depend>
   <depend>yaml_cpp_vendor</depend>
   <depend>Boost</depend>
-  <depend>camera_srvs</depend>
-  <depend>common</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
