@@ -7,6 +7,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 # find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
+find_package(ament_cmake REQUIRED)
 find_package(Boost REQUIRED)
 
 add_library(mvsdk SHARED IMPORTED)
