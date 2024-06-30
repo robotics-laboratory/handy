@@ -1,13 +1,14 @@
 #include "triangulation.h"
 
-#include <iostream>
-#include <yaml-cpp/yaml.h>
-#include <opencv2/calib3d.hpp>
 #include <algorithm>
 #include <fstream>
+#include <iostream>
 #include <nlohmann/json.hpp>
+#include <opencv2/calib3d.hpp>
+#include <yaml-cpp/yaml.h>
 
-using json = nlohmann::json;
+// linter override to preserve json as a type and as a namespace
+using json = nlohmann::json;  // NOLINT
 
 namespace handy {
 TriangulationNode::TriangulationNode(std::string& params_file_path, std::vector<int> camera_ids) {
@@ -26,13 +27,13 @@ TriangulationNode::TriangulationNode(std::string& params_file_path, std::vector<
             param_.camera_stereo_params.back().translation_vector,
             camera_ids[i]);
         cv::Rodrigues(rotation_vector, param_.camera_stereo_params.back().rotation_matrix);
-        cv::Mat Rt;
+        cv::Mat rot_trans;  // [R|t] matrix
         cv::hconcat(
             param_.camera_stereo_params[i].rotation_matrix,
             param_.camera_stereo_params[i].translation_vector,
-            Rt);  // [R|t] matrix
+            rot_trans);  // [R|t] matrix
         param_.projection_matrices.push_back(
-            param_.cameras_intrinsics[i].camera_matrix * Rt);  // Projection matrix
+            param_.cameras_intrinsics[i].camera_matrix * rot_trans);  // Projection matrix
     }
 }
 
@@ -46,11 +47,9 @@ cv::Point2f normalize(const cv::Point2f& point, const cv::Mat& camera_matrix) {
 }
 
 cv::Point3f TriangulationNode::triangulatePosition(std::vector<cv::Point2f> image_points) {
-    std::vector<cv::Point2f> point_1 = {image_points[0]};
-    std::vector<cv::Point2f> point_2 = {image_points[1]};
-
-    std::vector<cv::Point2f> undistorted_point_1 = point_1;
-    std::vector<cv::Point2f> undistorted_point_2 = point_2;
+    // in case image points were detected on a distorted image, call cv::undistortPoints
+    std::vector<cv::Point2f> undistorted_point_1 = {image_points[0]};
+    std::vector<cv::Point2f> undistorted_point_2 = {image_points[1]};
 
     cv::Mat res_point_homogen;
     cv::triangulatePoints(
