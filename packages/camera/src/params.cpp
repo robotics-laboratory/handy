@@ -161,13 +161,6 @@ void CameraIntrinsicParameters::loadStereoCalibration(
     translation_vectors = translation_vectors.reshape(0, {3, 1});
 }
 
-cv::Point2f CameraIntrinsicParameters::toImageCoord(cv::Point2f image_point) {
-        printf("%f %f\n", (image_point.x - camera_matrix.at<double>(0, 2)) / camera_matrix.at<double>(0, 0), (image_point.y - camera_matrix.at<double>(1, 2)) / camera_matrix.at<double>(1, 1));
-    return {
-        (image_point.x - camera_matrix.at<double>(0, 2)) / camera_matrix.at<double>(0, 0),
-        (image_point.y - camera_matrix.at<double>(1, 2)) / camera_matrix.at<double>(1, 1)};
-}
-
 cv::Mat CameraIntrinsicParameters::undistortImage(cv::Mat& src) {
     cv::remap(
         src,

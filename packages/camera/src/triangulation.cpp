@@ -1,17 +1,14 @@
 #include "triangulation.h"
 
-#include <iostream>
-#include <yaml-cpp/yaml.h>
-#include <opencv2/calib3d.hpp>
-// #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <fstream>
+#include <iostream>
 #include <nlohmann/json.hpp>
+#include <opencv2/calib3d.hpp>
+#include <yaml-cpp/yaml.h>
 
-// for convenience
-// #include <opencv2/sfm/projection.hpp>
-
-using json = nlohmann::json;
+// linter override to preserve json as a type and as a namespace
+using json = nlohmann::json;  // NOLINT
 
 namespace handy {
 TriangulationNode::TriangulationNode(std::string& params_file_path, std::vector<int> camera_ids) {
@@ -30,13 +27,13 @@ TriangulationNode::TriangulationNode(std::string& params_file_path, std::vector<
             param_.camera_stereo_params.back().translation_vector,
             camera_ids[i]);
         cv::Rodrigues(rotation_vector, param_.camera_stereo_params.back().rotation_matrix);
-        cv::Mat Rt;
+        cv::Mat rot_trans;  // [R|t] matrix
         cv::hconcat(
             param_.camera_stereo_params[i].rotation_matrix,
             param_.camera_stereo_params[i].translation_vector,
-            Rt);  // [R|t] matrix
+            rot_trans);  // [R|t] matrix
         param_.projection_matrices.push_back(
-            param_.cameras_intrinsics[i].camera_matrix * Rt);  // Projection matrix
+            param_.cameras_intrinsics[i].camera_matrix * rot_trans);  // Projection matrix
     }
 }
 
@@ -50,96 +47,9 @@ cv::Point2f normalize(const cv::Point2f& point, const cv::Mat& camera_matrix) {
 }
 
 cv::Point3f TriangulationNode::triangulatePosition(std::vector<cv::Point2f> image_points) {
-    // https://en.wikipedia.org/wiki/Triangulation_(computer_vision)
-    // std::vector<cv::Point2f> point_1 = {image_points[0]};
-    // std::vector<cv::Point2f> point_2 = {image_points[1]};
-    // std::vector<cv::Point2f> undistorted_point_1;
-    // std::vector<cv::Point2f> undistorted_point_2;
-    // cv::undistortPoints(
-    //     point_1,
-    //     undistorted_point_1,
-    //     param_.cameras_intrinsics[0].camera_matrix,
-    //     param_.cameras_intrinsics[0].dist_coefs,
-    //     cv::noArray(),
-    //     param_.cameras_intrinsics[0].camera_matrix);
-    // cv::undistortPoints(
-    //     point_2,
-    //     undistorted_point_2,
-    //     param_.cameras_intrinsics[1].camera_matrix,
-    //     param_.cameras_intrinsics[1].dist_coefs,
-    //     cv::noArray(),
-    //     param_.cameras_intrinsics[1].camera_matrix);
-
-    // undistorted_point_1[0] =
-    //     normalize(undistorted_point_1[0], param_.cameras_intrinsics[0].camera_matrix);
-    // undistorted_point_2[0] =
-    //     normalize(undistorted_point_2[0], param_.cameras_intrinsics[1].camera_matrix);
-
-    // // std::vector<cv::Point2f> undistorted_point_1 = point_1;
-    // // std::vector<cv::Point2f> undistorted_point_2 = point_2;
-
-    // // cv::undistortPoints(
-    // //     point_1,
-    // //     undistorted_point_1,
-    // //     param_.cameras_intrinsics[0].camera_matrix,
-    // //     param_.cameras_intrinsics[0].dist_coefs,
-    // //     cv::noArray(),
-    // //     param_.projection_matrices[0]);
-    // // printf(
-    // //     "%f %f %f %f\n",
-    // //     point_1[0].x,
-    // //     point_1[0].y,
-    // //     undistorted_point_1[0].x,
-    // //     undistorted_point_1[0].y);
-
-    // // cv::undistortPoints(
-    // //     point_2,
-    // //     undistorted_point_2,
-    // //     param_.cameras_intrinsics[1].camera_matrix,
-    // //     param_.cameras_intrinsics[1].dist_coefs,
-    // //     cv::noArray(),
-    // //     param_.projection_matrices[1]);
-
-    // float up = (param_.camera_stereo_params[1].rotation_matrix.row(0) -
-    //             undistorted_point_2[0].x * param_.camera_stereo_params[1].rotation_matrix.row(2))
-    //                .dot(param_.camera_stereo_params[1].translation_vector.t());
-    // // printf("up: %f\n", up);
-    // float down =
-    //     (param_.camera_stereo_params[1].rotation_matrix.row(0) -
-    //      undistorted_point_2[0].x * param_.camera_stereo_params[1].rotation_matrix.row(2))
-    //         .dot(
-    //             (cv::Mat_<double>(1, 3) << undistorted_point_1[0].x,
-    //             undistorted_point_1[0].y, 1.));
-    // // printf("down: %f\n", down);
-
-    // float x_3 = up / down;
-    // cv::Point3f result_point{undistorted_point_1[0].x * x_3, undistorted_point_1[0].y * x_3,
-    // x_3}; return result_point;
-
-    ////////////////////////////////////////////////////
-    // std::vector<cv::Point2f> point_1 =
-    // {param_.cameras_intrinsics[0].toImageCoord(image_points[0])}; std::vector<cv::Point2f>
-    // point_2 = {param_.cameras_intrinsics[1].toImageCoord(image_points[1])};
-
-    std::vector<cv::Point2f> point_1 = {image_points[0]};
-    std::vector<cv::Point2f> point_2 = {image_points[1]};
-
-    std::vector<cv::Point2f> undistorted_point_1 = point_1;
-    std::vector<cv::Point2f> undistorted_point_2 = point_2;
-    // cv::undistortPoints(
-    //     point_1,
-    //     undistorted_point_1,
-    //     param_.cameras_intrinsics[0].camera_matrix,
-    //     param_.cameras_intrinsics[0].dist_coefs,
-    //     cv::noArray(),
-    //     param_.projection_matrices[0]);
-    // cv::undistortPoints(
-    //     point_2,
-    //     undistorted_point_2,
-    //     param_.cameras_intrinsics[1].camera_matrix,
-    //     param_.cameras_intrinsics[1].dist_coefs,
-    //     cv::noArray(),
-    //     param_.projection_matrices[1]);
+    // in case image points were detected on a distorted image, call cv::undistortPoints
+    std::vector<cv::Point2f> undistorted_point_1 = {image_points[0]};
+    std::vector<cv::Point2f> undistorted_point_2 = {image_points[1]};
 
     cv::Mat res_point_homogen;
     cv::triangulatePoints(
@@ -148,18 +58,10 @@ cv::Point3f TriangulationNode::triangulatePosition(std::vector<cv::Point2f> imag
         undistorted_point_1,
         undistorted_point_2,
         res_point_homogen);
-    float x = res_point_homogen.at<float>(0);
-    float y = res_point_homogen.at<float>(1);
-    float z = res_point_homogen.at<float>(2);
-    float w = res_point_homogen.at<float>(3);
-    printf("%f %f %f %f\n", x, y, z, w);
-    printf("%f %f %f\n", x / w, y / w, z / w);
-    printf(
-        "%f %f %f %f\n\n",
-        image_points[0].x,
-        image_points[0].y,
-        image_points[1].x,
-        image_points[1].y);
+    auto x = res_point_homogen.at<float>(0);
+    auto y = res_point_homogen.at<float>(1);
+    auto z = res_point_homogen.at<float>(2);
+    auto w = res_point_homogen.at<float>(3);
     return {x / w, y / w, z / w};
 }
 
