@@ -18,11 +18,13 @@ SEC_MULTIPLIER = 10**9
 MS_MULTIPLIER = 10**6
 MCS_MULTIPLIER = 10**3
 NANO_MULTIPLIER = 1
+
 TABLE_LENGTH = 2.74
 TABLE_WIDTH = 1.525
 FPS_LATENCY_MS = 15
 
 last_marker_id = 0
+last_table_marker_id = None
 
 
 def get_new_marker_id() -> int:
@@ -138,6 +140,13 @@ def init_writer(export_file: str) -> rosbag2_py.SequentialWriter:
     writer.create_topic(
         rosbag2_py.TopicMetadata(
             name="/triangulation/trajectory",
+            type="visualization_msgs/msg/Marker",
+            serialization_format="cdr",
+        )
+    )
+    writer.create_topic(
+        rosbag2_py.TopicMetadata(
+            name="/triangulation/intersection_points",
             type="visualization_msgs/msg/Marker",
             serialization_format="cdr",
         )
@@ -293,6 +302,8 @@ def simulate(
 
     current_simulation_time = 0  # in nanoseconds
     for i in range(len(filenames_to_publish)):
+        if i % 10 == 0:
+            publish_table_plain(writer, current_simulation_time)
         filename = filenames_to_publish[i]
         for camera_idx in range(2):
             # load and segmentate image
@@ -386,7 +397,9 @@ def publish_predicted_trajectory(
             + "{len(trajectory_data['pred'])} != {len(trajectory_data['var'])}"
         )
 
+    prev_point = None
     for i in range(len(trajectory_data["pred"])):
+        current_point = np.array(trajectory_data["pred"][i], dtype=float)
         eigenvalues, _ = np.linalg.eigh(
             np.array(trajectory_data["var"][i], dtype=float)
         )
@@ -397,9 +410,11 @@ def publish_predicted_trajectory(
         msg.id = get_new_marker_id()
         msg.type = Marker.SPHERE
         msg.action = Marker.ADD
-        msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = trajectory_data[
-            "pred"
-        ][i]
+        (
+            msg.pose.position.x,
+            msg.pose.position.y,
+            msg.pose.position.z,
+        ) = current_point.tolist()
 
         msg.pose.orientation.x = 0.0
         msg.pose.orientation.y = 0.0
@@ -419,6 +434,55 @@ def publish_predicted_trajectory(
             serialize_message(msg),
             current_simulation_time,
         )
+
+        # if both z coordintes are above the table
+        if prev_point is None or current_point[2] * prev_point[2] > 0:
+            prev_point = current_point
+            continue
+
+        # notation based on https://math.stackexchange.com/a/3584405
+        q_1, q_2 = np.array([1, 0, 0], dtype=float), np.array([0, 1, 0], dtype=float)
+        direction_vector = current_point - prev_point
+        A = np.column_stack([q_1, q_2, -direction_vector])
+        b = prev_point - q_1
+        coef = np.linalg.solve(A, b)[2]
+        intersection_point = prev_point + coef * direction_vector
+
+        intersect_marker = Marker()
+        intersect_marker.header.frame_id = "table"
+        intersect_marker.id = get_new_marker_id()
+        intersect_marker.type = Marker.SPHERE
+        intersect_marker.action = Marker.ADD
+        (
+            intersect_marker.pose.position.x,
+            intersect_marker.pose.position.y,
+            intersect_marker.pose.position.z,
+        ) = intersection_point.tolist()
+
+        intersect_marker.pose.orientation.x = 0.0
+        intersect_marker.pose.orientation.y = 0.0
+        intersect_marker.pose.orientation.z = 0.0
+        intersect_marker.pose.orientation.w = 1.0
+
+        intersect_marker.scale.x, intersect_marker.scale.y, intersect_marker.scale.z = (
+            0.04,
+            0.04,
+            0.001,
+        )
+
+        intersect_marker.color.r = 1.0
+        intersect_marker.color.g = 0.0
+        intersect_marker.color.b = 0.0
+        intersect_marker.color.a = 1.0
+
+        intersect_marker.lifetime.nanosec = FPS_LATENCY_MS * 10**6
+        writer.write(
+            "/triangulation/intersection_points",
+            serialize_message(intersect_marker),
+            current_simulation_time,
+        )
+
+        prev_point = current_point
 
 
 def init_camera_info(
@@ -450,11 +514,23 @@ def init_camera_info(
     return intrinsics, VT[-1, :]
 
 
-def publish_table_plain(writer: rosbag2_py.SequentialWriter) -> None:
+def publish_table_plain(
+    writer: rosbag2_py.SequentialWriter, simulation_time: int
+) -> None:
+    global last_table_marker_id
+    if last_table_marker_id:
+        marker = Marker()
+        marker.id = last_table_marker_id
+        marker.action = 2  # DELETE
+        writer.write(
+            "/triangulation/table_plane", serialize_message(marker), simulation_time
+        )
+
     # publish blue table plain
     marker = Marker()
     marker.header.frame_id = "table"
     marker.id = get_new_marker_id()
+    last_table_marker_id = marker.id
     marker.type = marker.CUBE
     marker.action = marker.ADD
     marker.scale.x = TABLE_LENGTH
@@ -475,7 +551,9 @@ def publish_table_plain(writer: rosbag2_py.SequentialWriter) -> None:
         marker.pose.orientation.z,
         marker.pose.orientation.w,
     ) = Rotation.from_euler("xyz", [0, 0, 90], degrees=True).as_quat().tolist()
-    writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+    writer.write(
+        "/triangulation/table_plane", serialize_message(marker), simulation_time
+    )
 
     # publish white border
     marker = Marker()
@@ -511,7 +589,9 @@ def publish_table_plain(writer: rosbag2_py.SequentialWriter) -> None:
         new_point.y = cur_y
         marker.points.append(new_point)
 
-    writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+    writer.write(
+        "/triangulation/table_plane", serialize_message(marker), simulation_time
+    )
 
     # publish length line
     marker.id = get_new_marker_id()
@@ -528,7 +608,9 @@ def publish_table_plain(writer: rosbag2_py.SequentialWriter) -> None:
         new_point.y = cur_y
         marker.points.append(new_point)
 
-    writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+    writer.write(
+        "/triangulation/table_plane", serialize_message(marker), simulation_time
+    )
 
     # publish width line
     marker.id = get_new_marker_id()
@@ -545,7 +627,9 @@ def publish_table_plain(writer: rosbag2_py.SequentialWriter) -> None:
         new_point.y = cur_y
         marker.points.append(new_point)
 
-    writer.write("/triangulation/table_plane", serialize_message(marker), 0)
+    writer.write(
+        "/triangulation/table_plane", serialize_message(marker), simulation_time
+    )
 
 
 def get_cam2world_transform(
@@ -622,7 +706,7 @@ if __name__ == "__main__":
     R, T, R2table, T2table, table_center = get_cam2world_transform(
         table_plane_normal, data["table_orientation_points"]
     )
-    publish_table_plain(writer)
+    publish_table_plain(writer, 0)
     publish_cam2table_transform(writer, R, T)
 
     simulate(
