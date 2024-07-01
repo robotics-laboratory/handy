@@ -11,11 +11,11 @@
 namespace handy {
 
 CameraIntrinsicParameters::CameraIntrinsicParameters(
-    cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs, const int cam_id)
-    : image_size(size)
-    , camera_matrix(std::move(camera_matr))
-    , dist_coefs(distort_coefs)
-    , camera_id(cam_id) {}
+    cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs, const int cam_id) :
+    image_size(size),
+    camera_matrix(std::move(camera_matr)),
+    dist_coefs(distort_coefs),
+    camera_id(cam_id) {}
 
 void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     const std::string camera_id_str = std::to_string(camera_id);
@@ -60,8 +60,8 @@ void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
 bool CameraIntrinsicParameters::saveStereoCalibration(
     const std::string& yaml_path, cv::Mat& rotation_vector, cv::Mat& translation_vector,
     std::vector<std::vector<cv::Point2f>>& common_detections, int camera_id) {
-    if (rotation_vector.cols * rotation_vector.rows != 3 ||
-        translation_vector.cols * translation_vector.rows != 3) {
+    if (rotation_vector.cols * rotation_vector.rows != 3
+        || translation_vector.cols * translation_vector.rows != 3) {
         return false;
     }
     YAML::Node config;

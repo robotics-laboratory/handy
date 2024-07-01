@@ -7,7 +7,8 @@ add_library(${PROJECT_NAME} INTERFACE)
 target_include_directories(
   ${PROJECT_NAME}
   INTERFACE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-            "$<INSTALL_INTERFACE:include>")
+            "$<INSTALL_INTERFACE:include>"
+)
 
 install(
   TARGETS ${PROJECT_NAME}
@@ -16,7 +17,8 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
   INCLUDES
-  DESTINATION include)
+  DESTINATION include
+)
 
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 

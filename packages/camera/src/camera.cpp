@@ -100,8 +100,8 @@ Writer::Writer(const char* param_file, const char* output_filename) {
     for (int trigger_cnt = 0; trigger_cnt < param_.frames_to_take; ++trigger_cnt) {
         timer.wait();
         for (int i = 0; i < state_.camera_num; ++i) {
-            if (!param_.use_hardware_triger ||
-                state_.camera_handles[i] == param_.master_camera_id) {
+            if (!param_.use_hardware_triger
+                || state_.camera_handles[i] == param_.master_camera_id) {
                 CameraSoftTrigger(state_.camera_handles[i]);
             }
         }
@@ -124,8 +124,8 @@ Writer::Writer(const char* param_file, const char* output_filename) {
             "camera " + std::to_string(i) + " uninit", CameraUnInit(state_.camera_handles[i]));
 
         int64_t page_size = sysconf(_SC_PAGE_SIZE);
-        int64_t size = state_.frame_sizes[i].area() * param_.frames_to_take / page_size * page_size +
-                    page_size;
+        int64_t size = state_.frame_sizes[i].area() * param_.frames_to_take / page_size * page_size
+                       + page_size;
         if (msync(state_.alligned_buffers[i], size, MS_SYNC) == -1) {
             perror("Could not sync the file to disk");
         }
@@ -149,8 +149,9 @@ void Writer::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* f
     size_t buffer_idx = state_.current_buffer_idx[camera_idx].fetch_add(1);
     printf("%d buffer id %ld\n", handle, buffer_idx);
 
-    std::memcpy(static_cast<uint8_t*>(state_.alligned_buffers[camera_idx]) +
-            state_.frame_sizes[camera_idx].area() * buffer_idx,
+    std::memcpy(
+        static_cast<uint8_t*>(state_.alligned_buffers[camera_idx])
+            + state_.frame_sizes[camera_idx].area() * buffer_idx,
         raw_buffer,
         frame_info->iWidth * frame_info->iHeight);
 
@@ -197,9 +198,10 @@ void Writer::applyParamsToCamera(int handle) {
 
         if (ftruncate(
                 state_.files[camera_idx],
-                state_.frame_sizes[camera_idx].area() * param_.frames_to_take / page_size *
-                        page_size +
-                    page_size) == -1) {
+                state_.frame_sizes[camera_idx].area() * param_.frames_to_take / page_size
+                        * page_size
+                    + page_size)
+            == -1) {
             close(state_.files[camera_idx]);
             perror("Error resizing the file");
             exit(1);
@@ -207,8 +209,8 @@ void Writer::applyParamsToCamera(int handle) {
 
         state_.alligned_buffers[camera_idx] = mmap(
             nullptr,
-            state_.frame_sizes[camera_idx].area() * param_.frames_to_take / page_size * page_size +
-                page_size,
+            state_.frame_sizes[camera_idx].area() * param_.frames_to_take / page_size * page_size
+                + page_size,
             PROT_WRITE,
             MAP_SHARED,
             state_.files[camera_idx],
