@@ -40,8 +40,8 @@ double getIou(const Polygon& first, const Polygon& second) {
     }
     if (!inter_poly.empty()) {
         double inter_area = boost::geometry::area(inter_poly.front());
-        iou = inter_area /
-              (boost::geometry::area(first) + boost::geometry::area(second) - inter_area);
+        iou = inter_area
+              / (boost::geometry::area(first) + boost::geometry::area(second) - inter_area);
     }
     return iou;
 }
@@ -141,8 +141,8 @@ int CalibrationNode::getImageCoverage(int camera_idx) const {
         boost::geometry::union_(current_coverage, new_poly, tmp_poly);
         current_coverage = tmp_poly;
     }
-    float ratio = boost::geometry::area(current_coverage) /
-                  (state_.frame_size->height * state_.frame_size->width);
+    float ratio = boost::geometry::area(current_coverage)
+                  / (state_.frame_size->height * state_.frame_size->width);
     return static_cast<int>(ratio * 100);
 }
 

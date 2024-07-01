@@ -40,8 +40,8 @@ class LockFreeQueue {
                 return false;
             }
 
-            if (data_[snap % data_.size()].generation < snap ||
-                !tail_.compare_exchange_weak(snap, snap + 1)) {
+            if (data_[snap % data_.size()].generation < snap
+                || !tail_.compare_exchange_weak(snap, snap + 1)) {
                 // desired cell in buffer was already used by another thread
                 // let's try again
                 continue;

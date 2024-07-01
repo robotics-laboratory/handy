@@ -14,12 +14,11 @@ repos:
       - id: trailing-whitespace
 
   # YAML linter
-  - repo: https://github.com/adrienverge/yamllint.git
+  - repo: https://github.com/adrienverge/yamllint
     rev: v1.35.1
     hooks:
       - id: yamllint
         exclude: ^.clang-tidy$
-        # TODO: Discuss yamllint settings (e.g. line-length)
         args: [--strict, -d, ".yamllint-config.yaml"]
 
   # CMake linter and formatter
@@ -42,4 +41,4 @@ repos:
     rev: v17.0.6
     hooks:
       - id: clang-format
-        types: [c, c++]
+        types_or: [c, c++]
