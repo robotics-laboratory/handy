@@ -1,7 +1,9 @@
 import argparse
 import os
+from typing import List
 
 import cv2
+import numpy as np  # for type honts
 import rosbag2_py
 from cv_bridge import CvBridge
 from rclpy.serialization import deserialize_message
@@ -10,21 +12,21 @@ from rosidl_runtime_py.utilities import get_message
 FRAME_SIZE = (1024, 1280)
 
 
-def get_type_by_topic(bag_topics):
+def get_type_by_topic(bag_topics: List[rosbag2_py.TopicMetadata]) -> str:
     type_by_topic = {}
     for topic in bag_topics:
         type_by_topic[topic.name] = topic.type
     return type_by_topic
 
 
-def topic_to_dir(name):
+def topic_to_dir(name: str) -> str:
     dir_name = name.replace("/", "_")
     if dir_name[0] == "_":
         dir_name = dir_name[1:]
     return dir_name
 
 
-def create_dirs(save_dir, topics, equalise=False):
+def create_dirs(save_dir: str, topics: List[str], equalise=False) -> None:
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
 
@@ -39,7 +41,7 @@ def create_dirs(save_dir, topics, equalise=False):
                 os.mkdir(full_dir)
 
 
-def equalise_hist(img):
+def equalise_hist(img: np.ndarray) -> np.ndarray:
     if len(img.shape) == 3:
         for i in range(3):
             img[:, :, i] = cv2.equalizeHist(img[:, :, i])
@@ -51,7 +53,7 @@ def equalise_hist(img):
     return img
 
 
-def init_parser():
+def init_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--topics", nargs="*")
     parser.add_argument("--from-bag")
@@ -61,7 +63,7 @@ def init_parser():
     return parser
 
 
-def main():
+def main() -> None:
     parser = init_parser()
     args = parser.parse_args()
 

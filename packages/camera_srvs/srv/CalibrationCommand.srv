@@ -1,7 +1,0 @@
-# code defintions
-uint8 START=1
-uint8 CALIBRATE=2
-uint8 RESET=3
-
-uint8 cmd
----
