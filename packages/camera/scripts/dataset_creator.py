@@ -37,7 +37,7 @@ class Intrinsics:
         return cv2.remap(image, self.mapx, self.mapy, cv2.INTER_NEAREST)
 
     @staticmethod
-    def create_from_yaml(path_to_file: str) -> Intrinsics:
+    def create_from_yaml(path_to_file: str):
         if not os.path.isfile(path_to_file):
             raise FileNotFoundError
         with open(path_to_file, "r") as stream:
