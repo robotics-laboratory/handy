@@ -10,7 +10,7 @@ ENV CUDA_HOME="/usr/local/cuda"
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
 
-ENV FLAGS="-O3 -ffast-math -Wall -march=armv8.2-a+simd+crypto+predres -mtune=cortex-a57"
+ENV FLAGS="-O3 -Wall -march=armv8.2-a+simd+crypto+predres -mtune=cortex-a57"
 
 RUN apt-get update -q \
     && apt-get install -yq --no-install-recommends \
@@ -29,7 +29,7 @@ RUN apt-get update -q \
 
 FROM --platform=linux/amd64 ubuntu:20.04 AS handy-base-amd64
 
-ENV FLAGS="-O3 -ffast-math -Wall"
+ENV FLAGS="-O3 -Wall"
 
 FROM handy-base-${TARGETARCH} AS handy-common
 
@@ -352,7 +352,12 @@ RUN printf "export CC='${CC}'\n" >> ${HOME}/.bashrc \
     && printf "export CXXFLAGS='${CXXFLAGS}'\n" >> ${HOME}/.bashrc \
     && printf "export RCUTILS_LOGGING_BUFFERED_STREAM=1\n" >> ${HOME}/.bashrc \
     && printf "export RCUTILS_CONSOLE_OUTPUT_FORMAT='[{severity}:{time}] {message}'\n" >> ${HOME}/.bashrc \
+    && printf "source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash\n" >> ${HOME}/.bashrc \
+    && printf "source /usr/share/bash-completion/completions/git\n" >> ${HOME}/.bashrc \
     && ln -sf /usr/bin/clang-format-${CLANG_VERSION} /usr/bin/clang-format
+
+
+### SETUP ENTRYPOINT
 
 WORKDIR /handy
 ENTRYPOINT ["/bin/bash", "-l", "-c"]
