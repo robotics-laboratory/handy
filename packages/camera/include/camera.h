@@ -13,12 +13,37 @@ using namespace std::chrono_literals;
 
 namespace handy::camera {
 
+class CameraRecorder;
+
+struct Size {
+    size_t area() const { return static_cast<size_t>(width * height); };
+
+    int width;
+    int height;
+
+    bool operator==(const Size& other) { return width == other.width && height == other.height; }
+
+    bool operator!=(const Size& other) { return !(*this == other); }
+};
+
+struct BufferPair {
+    uint8_t* first;
+    uint8_t* second;
+};
+
 struct StampedImageBuffer {
     uint8_t* raw_buffer = nullptr;
     uint8_t* bgr_buffer = nullptr;
     tSdkFrameHead frame_info{};
     int camera_idx;
+    int frame_id;
     uint32_t timestamp;
+};
+
+struct SynchronizedFrameBuffers {
+    std::vector<BufferPair> images;
+    std::vector<Size> image_sizes;
+    uint32_t timestamp;  // in 0.1 milliseconds
 };
 
 struct CameraPool {
@@ -56,26 +81,6 @@ class CameraRecorder {
     static int getCameraId(int camera_handle);
     void applyParamsToCamera(int handle);
 
-    struct Size {
-        size_t area() const { return static_cast<size_t>(width * height); };
-
-        int width;
-        int height;
-
-        bool operator==(const Size& other) {
-            return width == other.width && height == other.height;
-        }
-
-        bool operator!=(const Size& other) {
-            return !(*this == other);
-        }
-    };
-
-    struct BufferPair {
-        uint8_t* first;
-        uint8_t* second;
-    };
-
     struct Params {
         std::chrono::duration<double> latency{50.0};  // in milliseconds
         std::string param_file;
@@ -89,14 +94,11 @@ class CameraRecorder {
     struct State {
         std::array<std::unique_ptr<boost::lockfree::queue<StampedImageBuffer>>, kMaxCameraNum>
             camera_images;
-        std::array<
-            std::unique_ptr<boost::lockfree::queue<BufferPair>>,
-            kMaxCameraNum>
-            free_buffers;
+        std::array<std::unique_ptr<boost::lockfree::queue<BufferPair>>, kMaxCameraNum> free_buffers;
 
         std::atomic<bool> running = true;
-        std::vector<std::thread> threads; // trigger thread, queue handler thread
-        std::vector<std::atomic<int>> counters;
+        std::vector<std::thread> threads;  // trigger thread, queue handler thread
+        std::vector<std::atomic<int>> frame_ids;
         std::vector<std::atomic<size_t>> current_buffer_idx;
         int camera_num = 2;
         std::vector<int> files;
