@@ -22,7 +22,6 @@ struct Size {
     int height;
 
     bool operator==(const Size& other) { return width == other.width && height == other.height; }
-
     bool operator!=(const Size& other) { return !(*this == other); }
 };
 
@@ -68,8 +67,12 @@ struct CameraPool {
 
 class CameraRecorder {
   public:
-    CameraRecorder(const char* param_file, const char* output_filename);
+    using CameraSubscriberCallback = std::function<void(std::shared_ptr<SynchronizedFrameBuffers>)>;
+
+    CameraRecorder(const char* param_file, const char* output_filename, bool save_to_file = false);
     ~CameraRecorder();
+    void registerSubscriberCallback(CameraSubscriberCallback callback);
+    void stopInstance();
 
     constexpr static int kMaxCameraNum = 4;
     constexpr static int kQueueCapacity = 5;
@@ -80,6 +83,7 @@ class CameraRecorder {
     void synchronizeQueues();
     static int getCameraId(int camera_handle);
     void applyParamsToCamera(int handle);
+    void saveSynchronizedBuffers(std::shared_ptr<SynchronizedFrameBuffers> images);
 
     struct Params {
         std::chrono::duration<double> latency{50.0};  // in milliseconds
@@ -107,6 +111,7 @@ class CameraRecorder {
         std::vector<std::mutex> file_mutexes;
         std::vector<int> camera_handles;
         std::vector<void*> alligned_buffers;
+        std::vector<CameraSubscriberCallback> registered_callbacks;
         CameraPool buffers;
     } state_{};
 };

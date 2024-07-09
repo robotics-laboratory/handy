@@ -12,7 +12,7 @@ using namespace std::chrono_literals;
 namespace {
 
 template<typename T>
-T getUnsignedDifference(T a, T b) {
+T getUnsignedDifference(T& a, T& b) {
     return (a > b) ? (a - b) : (b - a);
 }
 
@@ -44,9 +44,18 @@ void abortIfNot(std::string_view msg, int camera_idx, int status) {
     }
 }
 
-CameraRecorder::CameraRecorder(const char* param_file, const char* output_filename) {
+CameraRecorder::CameraRecorder(
+    const char* param_file, const char* output_filename, bool save_to_file) {
     param_.param_file = {param_file};
     param_.output_filename = {output_filename};
+
+    if (save_to_file) {
+        // if needed register saveCallbackLauncher as a callback when images are syncronized
+        auto saveCallbackLauncher = [this](std::shared_ptr<SynchronizedFrameBuffers> images) {
+            this->saveSynchronizedBuffers(images);
+        };
+        registerSubscriberCallback(saveCallbackLauncher);
+    }
 
     abortIfNot("camera init", CameraSdkInit(0));
     tSdkCameraDevInfo cameras_list[10];
@@ -191,10 +200,12 @@ void CameraRecorder::synchronizeQueues() {
             }
             int recieved_buffers_idx = new_recieved_buffer.frame_id % num_of_sync_buffers;
             recieved_buffers[recieved_buffers_idx].push_back(new_recieved_buffer);
+            // if there are enough frames in the bucket
             if (recieved_buffers[recieved_buffers_idx].size() == state_.camera_num) {
                 // make single structure as a shared ptr
+                // deleter is meant to push buffers back to the queue and then free the structure
                 auto custom_deleter = [this](SynchronizedFrameBuffers* sync_buffers_ptr) {
-                    for (int i = 0; i < sync_buffers_ptr->images.size(); ++i) {
+                    for (size_t i = 0; i < sync_buffers_ptr->images.size(); ++i) {
                         while (!this->state_.free_buffers[i]->push(sync_buffers_ptr->images[i])) {
                         }
                     }
@@ -212,12 +223,13 @@ void CameraRecorder::synchronizeQueues() {
                     sync_buffers->images[current_recieved_buffer.camera_idx] = BufferPair{
                         current_recieved_buffer.raw_buffer, current_recieved_buffer.bgr_buffer};
 
+                    // logical AND of conditions "timestamp difference is within 2 ms"
                     timestamps_are_close &=
                         (getUnsignedDifference(
                              current_recieved_buffer.timestamp, sync_buffers->timestamp)
-                         < 2);
+                         < 20);
                 }
-
+                // casted to special structure, clear the bucket
                 recieved_buffers[recieved_buffers_idx].clear();
                 if (!timestamps_are_close) {
                     printf(
@@ -225,8 +237,10 @@ void CameraRecorder::synchronizeQueues() {
                         state_.camera_num);
                     continue;
                 }
-                // send to either to all registered consumers or to save handler
-                printf("%p\n", sync_buffers.get());
+
+                for (size_t i = 0; i < state_.registered_callbacks.size(); ++i) {
+                    std::thread(state_.registered_callbacks[i], sync_buffers).detach();
+                }
             }
         }
     }
@@ -273,11 +287,19 @@ void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFram
     }
 }
 
+void CameraRecorder::saveSynchronizedBuffers(std::shared_ptr<SynchronizedFrameBuffers> images) {}
+
+void CameraRecorder::registerSubscriberCallback(CameraSubscriberCallback callback) {
+    state_.registered_callbacks.push_back(callback);
+}
+
 int CameraRecorder::getCameraId(int camera_handle) {
     uint8_t camera_id;
     abortIfNot("getting camera id", CameraLoadUserData(camera_handle, 0, &camera_id, 1));
     return static_cast<int>(camera_id);
 }
+
+void CameraRecorder::stopInstance() { state_.running = false; }
 
 void CameraRecorder::applyParamsToCamera(int handle) {
     const int camera_idx = state_.handle_to_idx[handle];
@@ -404,15 +426,3 @@ void CameraRecorder::applyParamsToCamera(int handle) {
     }
 }
 }  // namespace handy::camera
-
-// ./camera_bin <param_file> <output_filename>
-int main(int argc, char* argv[]) {
-    if (argc != 3) {
-        printf("help\n./camera_bin <param_file> <output_filename>\n");
-        return 0;
-    }
-    handy::camera::CameraRecorder writer(argv[1], argv[2]);
-    printf("finished writing to file %s\n", argv[2]);
-
-    return 0;
-}
