@@ -26,6 +26,7 @@ struct CameraIntrinsicParameters {
     int camera_id = 0;
     cv::Size image_size{};
     cv::Mat camera_matrix{};
+    cv::Mat camera_matrix_inv{};
     cv::Vec<double, 5> dist_coefs{};
 
     struct Cached {

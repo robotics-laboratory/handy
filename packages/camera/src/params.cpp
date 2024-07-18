@@ -14,6 +14,7 @@ CameraIntrinsicParameters::CameraIntrinsicParameters(
     cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs, const int cam_id) :
     image_size(size),
     camera_matrix(std::move(camera_matr)),
+    camera_matrix_inv(camera_matrix.inv()),
     dist_coefs(distort_coefs),
     camera_id(cam_id) {}
 
@@ -123,6 +124,7 @@ CameraIntrinsicParameters CameraIntrinsicParameters::loadFromYaml(
         intrinsics[camera_id_str]["camera_matrix"].as<std::vector<double>>();
     result.camera_matrix = cv::Mat(yaml_camera_matrix, true);
     result.camera_matrix = result.camera_matrix.reshape(0, {3, 3});
+    result.camera_matrix_inv = result.camera_matrix.inv();
 
     const auto coefs = intrinsics[camera_id_str]["distortion_coefs"].as<std::vector<float>>();
     result.dist_coefs = cv::Mat(coefs, true);
