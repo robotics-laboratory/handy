@@ -93,6 +93,7 @@ class CameraRecorder {
         int frames_to_take = 1000;
         int master_camera_id = 1;
         bool use_hardware_triger = false;
+        bool save_to_file = false;
     } param_{};
 
     struct State {
@@ -113,6 +114,7 @@ class CameraRecorder {
         std::vector<void*> alligned_buffers;
         std::vector<CameraSubscriberCallback> registered_callbacks;
         CameraPool buffers;
+        uint32_t initial_timestamp_difference = 0;
     } state_{};
 };
 }  // namespace handy::camera

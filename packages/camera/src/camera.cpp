@@ -48,14 +48,15 @@ CameraRecorder::CameraRecorder(
     const char* param_file, const char* output_filename, bool save_to_file) {
     param_.param_file = {param_file};
     param_.output_filename = {output_filename};
+    param_.save_to_file = save_to_file;
 
-    if (save_to_file) {
-        // if needed register saveCallbackLauncher as a callback when images are syncronized
-        auto saveCallbackLauncher = [this](std::shared_ptr<SynchronizedFrameBuffers> images) {
-            this->saveSynchronizedBuffers(images);
-        };
-        registerSubscriberCallback(saveCallbackLauncher);
-    }
+    // if (save_to_file) {
+    //     // if needed register saveCallbackLauncher as a callback when images are syncronized
+    //     auto saveCallbackLauncher = [this](std::shared_ptr<SynchronizedFrameBuffers> images) {
+    //         this->saveSynchronizedBuffers(images);
+    //     };
+    //     registerSubscriberCallback(saveCallbackLauncher);
+    // }
 
     abortIfNot("camera init", CameraSdkInit(0));
     tSdkCameraDevInfo cameras_list[10];
@@ -84,6 +85,11 @@ CameraRecorder::CameraRecorder(
     // set up each camera
     printf("camera number: %d\n", state_.camera_num);
     for (int i = 0; i < state_.camera_num; ++i) {
+        state_.camera_images[i] =
+            std::make_unique<boost::lockfree::queue<StampedImageBuffer>>(kQueueCapacity);
+        state_.free_buffers[i] =
+            std::make_unique<boost::lockfree::queue<BufferPair>>(kQueueCapacity);
+
         abortIfNot(
             "camera init " + std::to_string(i),
             CameraInit(&cameras_list[i], -1, -1, &state_.camera_handles[i]));
@@ -91,6 +97,21 @@ CameraRecorder::CameraRecorder(
 
         abortIfNot(
             "set icp", i, CameraSetIspOutFormat(state_.camera_handles[i], CAMERA_MEDIA_TYPE_BGR8));
+
+        std::string path_to_file = output_filename;
+        path_to_file += std::to_string(i);
+        if (save_to_file) {
+            abortIfNot(
+                "init recording",
+                i,
+                CameraInitRecord(
+                    state_.camera_handles[i],
+                    1,
+                    const_cast<char*>(path_to_file.c_str()),
+                    false,
+                    100,
+                    100));
+        }
 
         // if node is launch in soft trigger mode
         if (!param_.use_hardware_triger || state_.camera_handles[i] == param_.master_camera_id) {
@@ -107,10 +128,7 @@ CameraRecorder::CameraRecorder(
                 ->handleFrame(idx, raw_buffer, frame_info);
         };
         CameraSetCallbackFunction(state_.camera_handles[i], std::move(func), this, nullptr);
-
         applyParamsToCamera(state_.camera_handles[i]);
-        abortIfNot("start", CameraPlay(state_.camera_handles[i]));
-        printf("inited API and started camera handle = %d\n", state_.camera_handles[i]);
     }
 
     // determine the largest frame_size, allocate pool and push all free buffers
@@ -119,17 +137,27 @@ CameraRecorder::CameraRecorder(
             return first.area() < second.area();
         });
 
+    // TODO: fix signedness
     state_.buffers =
         CameraPool(max_frame_size.height, max_frame_size.width, kQueueCapacity * kMaxCameraNum);
-    printf("%d pools initialised", kQueueCapacity * kMaxCameraNum);
+    printf("%d pools initialised\n", kQueueCapacity * kMaxCameraNum);
 
     // init queues and push pointers to buffers
     for (int i = 0; i < state_.camera_num; ++i) {
-        for (size_t j = 0; j < kQueueCapacity; ++j) {
+        for (int j = 0; j < kQueueCapacity; ++j) {
             state_.free_buffers[i]->push(
                 {state_.buffers.getRawFrame(i * kQueueCapacity + j),
                  state_.buffers.getBgrFrame(i * kQueueCapacity + j)});
         }
+    }
+
+    for (size_t i = 0; i < state_.camera_num; ++i) {
+        abortIfNot("reset timestamp", i, CameraRstTimeStamp(state_.camera_handles[i]));
+    }
+    for (size_t i = 0; i < state_.camera_num; ++i) {
+        abortIfNot("start", CameraPlay(state_.camera_handles[i]));
+        abortIfNot("reset timestamp", i, CameraRstTimeStamp(state_.camera_handles[i]));
+        printf("inited API and started camera handle = %d\n", state_.camera_handles[i]);
     }
 
     // start trigger in a separate thread
@@ -143,33 +171,38 @@ CameraRecorder::~CameraRecorder() {
     // waiting for all threads to stop by flag state_.running
     for (auto iter = state_.threads.begin(); iter != state_.threads.end(); ++iter) {
         iter->join();
+        printf("joined\n");
     }
-
     // printf(
     //     "Got and written from cameras: %d %d\n",
     //     state_.counters[0].load(),
     //     state_.counters[1].load());
 
     for (int i = 0; i < state_.camera_num; ++i) {
+        abortIfNot(
+            "camera " + std::to_string(i) + " stop recording",
+            CameraStopRecord(state_.camera_handles[i]));
         abortIfNot("camera " + std::to_string(i) + " stop", CameraStop(state_.camera_handles[i]));
         abortIfNot(
             "camera " + std::to_string(i) + " uninit", CameraUnInit(state_.camera_handles[i]));
 
-        int64_t page_size = sysconf(_SC_PAGE_SIZE);
-        int64_t size = state_.frame_sizes[i].area() * param_.frames_to_take / page_size * page_size
-                       + page_size;
-        if (msync(state_.alligned_buffers[i], size, MS_SYNC) == -1) {
-            perror("Could not sync the file to disk");
-        }
-        // free the mmapped memory
-        if (munmap(state_.alligned_buffers[i], size) == -1) {
-            close(state_.files[i]);
-            perror("Error un-mmapping the file");
-            exit(1);
-        }
+        // int64_t page_size = sysconf(_SC_PAGE_SIZE);
+        // int64_t size = state_.frame_sizes[i].area() * param_.frames_to_take / page_size *
+        // page_size
+        //                + page_size;
+        // if (msync(state_.alligned_buffers[i], size, MS_SYNC) == -1) {
+        //     perror("Could not sync the file to disk");
+        // }
+        // // free the mmapped memory
+        // if (munmap(state_.alligned_buffers[i], size) == -1) {
+        //     close(state_.files[i]);
+        //     perror("Error un-mmapping the file");
+        //     exit(1);
+        // }
 
-        close(state_.files[i]);
+        // close(state_.files[i]);
     }
+    printf("finished destructor for recorder\n");
 }
 
 void CameraRecorder::triggerCamera() {
@@ -194,59 +227,88 @@ void CameraRecorder::synchronizeQueues() {
     constexpr int num_of_sync_buffers = 20;
     std::vector<std::vector<StampedImageBuffer>> recieved_buffers(num_of_sync_buffers);
     while (state_.running) {
+        // printf("synchronizing queues\n");
         for (int i = 0; i < state_.camera_num; ++i) {
             StampedImageBuffer new_recieved_buffer;
             while (!state_.camera_images[i]->pop(new_recieved_buffer)) {
             }
+            // printf("got new_recieved_buffer\n");
             int recieved_buffers_idx = new_recieved_buffer.frame_id % num_of_sync_buffers;
             recieved_buffers[recieved_buffers_idx].push_back(new_recieved_buffer);
+            // printf("pushed to bucket, now: %ld\n",
+            // recieved_buffers[recieved_buffers_idx].size());
+            if (recieved_buffers[recieved_buffers_idx].size() != state_.camera_num) {
+                continue;
+            }
+            // printf("enough images\n");
             // if there are enough frames in the bucket
-            if (recieved_buffers[recieved_buffers_idx].size() == state_.camera_num) {
-                // make single structure as a shared ptr
-                // deleter is meant to push buffers back to the queue and then free the structure
-                auto custom_deleter = [this](SynchronizedFrameBuffers* sync_buffers_ptr) {
-                    for (size_t i = 0; i < sync_buffers_ptr->images.size(); ++i) {
-                        while (!this->state_.free_buffers[i]->push(sync_buffers_ptr->images[i])) {
-                        }
+
+            // make single structure as a shared ptr
+            // deleter is meant to push buffers back to the queue and then free the structure
+            auto custom_deleter = [this](SynchronizedFrameBuffers* sync_buffers_ptr) {
+                for (size_t i = 0; i < sync_buffers_ptr->images.size(); ++i) {
+                    while (!this->state_.free_buffers[i]->push(sync_buffers_ptr->images[i])) {
                     }
-                    printf("deleter: pushed all ptr back to free queue\n");
-                    free(sync_buffers_ptr);
-                };
-                std::shared_ptr<SynchronizedFrameBuffers> sync_buffers(
-                    new SynchronizedFrameBuffers, custom_deleter);
-                sync_buffers->image_sizes.resize(state_.camera_num);
-                sync_buffers->timestamp = recieved_buffers[recieved_buffers_idx][0].timestamp;
-                bool timestamps_are_close = true;
-                for (int i = 0; i < state_.camera_num; ++i) {
-                    StampedImageBuffer& current_recieved_buffer =
-                        recieved_buffers[recieved_buffers_idx][i];
-                    sync_buffers->images[current_recieved_buffer.camera_idx] = BufferPair{
-                        current_recieved_buffer.raw_buffer, current_recieved_buffer.bgr_buffer};
+                }
+                // printf("deleter: pushed all ptr back to free queue\n");
+                free(sync_buffers_ptr);
+            };
+            // printf("creating custom shared_ptr\n");
+            std::shared_ptr<SynchronizedFrameBuffers> sync_buffers(
+                new SynchronizedFrameBuffers, custom_deleter);
+            sync_buffers->images.resize(state_.camera_num);
+            sync_buffers->image_sizes.resize(state_.camera_num);
+            sync_buffers->timestamp = recieved_buffers[recieved_buffers_idx][0].timestamp;
+            bool timestamps_are_close = true;
+            uint32_t max_timestamp_difference = 0;
+            for (int i = 0; i < state_.camera_num; ++i) {
+                StampedImageBuffer& current_recieved_buffer =
+                    recieved_buffers[recieved_buffers_idx][i];
+                sync_buffers->images[current_recieved_buffer.camera_idx] = BufferPair{
+                    current_recieved_buffer.raw_buffer, current_recieved_buffer.bgr_buffer};
+                sync_buffers->image_sizes[current_recieved_buffer.camera_idx] = Size{
+                    current_recieved_buffer.frame_info.iWidth,
+                    current_recieved_buffer.frame_info.iHeight};
 
-                    // logical AND of conditions "timestamp difference is within 2 ms"
-                    timestamps_are_close &=
-                        (getUnsignedDifference(
-                             current_recieved_buffer.timestamp, sync_buffers->timestamp)
-                         < 20);
-                }
-                // casted to special structure, clear the bucket
-                recieved_buffers[recieved_buffers_idx].clear();
-                if (!timestamps_are_close) {
-                    printf(
-                        "failed check for close timestamps inside the vector of %u\n",
-                        state_.camera_num);
-                    continue;
-                }
+                // logical AND of conditions "timestamp difference is within 2 ms"
+                uint32_t timestamp_diff = getUnsignedDifference(
+                    current_recieved_buffer.timestamp, sync_buffers->timestamp);
+                max_timestamp_difference = std::max(max_timestamp_difference, timestamp_diff);
+                timestamps_are_close &=
+                    (max_timestamp_difference < 20 + state_.initial_timestamp_difference);
+            }
+            if (recieved_buffers[recieved_buffers_idx][0].frame_id == 0) {
+                timestamps_are_close = true;
+                state_.initial_timestamp_difference = max_timestamp_difference;
+            }
+            // TODO: delete
+            // printf(
+            //     "%u %u %u %u\n",
+            //     state_.initial_timestamp_difference,
+            //     getUnsignedDifference(
+            //         recieved_buffers[recieved_buffers_idx][0].timestamp,
+            //         recieved_buffers[recieved_buffers_idx][1].timestamp),
+            //     recieved_buffers[recieved_buffers_idx][0].timestamp,
+            //     recieved_buffers[recieved_buffers_idx][1].timestamp);
 
-                for (size_t i = 0; i < state_.registered_callbacks.size(); ++i) {
-                    std::thread(state_.registered_callbacks[i], sync_buffers).detach();
-                }
+            // casted to special structure, clear the bucket
+            recieved_buffers[recieved_buffers_idx].clear();
+            if (!timestamps_are_close) {
+                printf(
+                    "failed check for close timestamps inside the vector of %u\n",
+                    state_.camera_num);
+                continue;
+            }
+
+            for (size_t i = 0; i < state_.registered_callbacks.size(); ++i) {
+                std::thread(state_.registered_callbacks[i], sync_buffers).detach();
             }
         }
     }
 }
 
 void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
+    printf("id=%d: handling frame\n", handle);
     // TODO: delete elapsed time?
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -265,6 +327,14 @@ void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFram
     BufferPair free_buffers;
     while (!state_.free_buffers[state_.handle_to_idx[handle]]->pop(free_buffers)) {
     }
+
+    abortIfNot("get bgr", CameraImageProcess(handle, raw_buffer, free_buffers.second, frame_info));
+    abortIfNot("send frame to recording", CameraPushFrame(handle, free_buffers.second, frame_info));
+    if (state_.registered_callbacks.empty()) {
+        return;
+    }
+
+    printf("id=%d: got free BufferPair\n", handle);
     std::memcpy(free_buffers.first, raw_buffer, frame_size_px);
     StampedImageBuffer stamped_buffer_to_add{
         free_buffers.first,   // raw buffer
@@ -273,10 +343,13 @@ void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFram
         state_.handle_to_idx[handle],
         state_.frame_ids[state_.handle_to_idx[handle]].fetch_add(1),
         frame_info->uiTimeStamp};
+    printf("id=%d: copied and created StampedImageBuffer\n", handle);
     if (!state_.camera_images[state_.handle_to_idx[handle]]->push(stamped_buffer_to_add)) {
         printf("unable to fit into queue! exiting");
         exit(EXIT_FAILURE);
     }
+    printf("id=%d: pushed to camera_images\n", handle);
+
     CameraReleaseImageBuffer(handle, raw_buffer);
 
     // TODO: delete elapsed time?
@@ -287,7 +360,9 @@ void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFram
     }
 }
 
-void CameraRecorder::saveSynchronizedBuffers(std::shared_ptr<SynchronizedFrameBuffers> images) {}
+void CameraRecorder::saveSynchronizedBuffers(std::shared_ptr<SynchronizedFrameBuffers> images) {
+    printf("callback to save at %u\n", images->timestamp);
+}
 
 void CameraRecorder::registerSubscriberCallback(CameraSubscriberCallback callback) {
     state_.registered_callbacks.push_back(callback);
