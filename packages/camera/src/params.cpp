@@ -11,12 +11,12 @@
 namespace handy {
 
 CameraIntrinsicParameters::CameraIntrinsicParameters(
-    cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs, const int cam_id)
-    : image_size(size)
-    , camera_matrix(std::move(camera_matr))
-    , camera_matrix_inv(camera_matrix.inv())
-    , dist_coefs(distort_coefs)
-    , camera_id(cam_id) {}
+    cv::Size size, cv::Mat camera_matr, const cv::Vec<double, 5>& distort_coefs, const int cam_id) :
+    image_size(size),
+    camera_matrix(std::move(camera_matr)),
+    camera_matrix_inv(camera_matrix.inv()),
+    dist_coefs(distort_coefs),
+    camera_id(cam_id) {}
 
 void CameraIntrinsicParameters::storeYaml(const std::string& yaml_path) const {
     const std::string camera_id_str = std::to_string(camera_id);

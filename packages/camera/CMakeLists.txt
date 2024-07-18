@@ -4,7 +4,6 @@ project(camera)
 add_compile_options(-Wall -Wextra -Werror=unused-variable -Wpedantic)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 
-# find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
 find_package(ament_cmake REQUIRED)
@@ -26,23 +25,22 @@ target_include_directories(
 
 target_include_directories(
   calibration PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                    "/usr/include"
+                     "/usr/include"
 )
 target_include_directories(
   triangulation PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
-                    "/usr/include")
+                       "/usr/include"
+)
 
 ament_target_dependencies(camera yaml_cpp_vendor)
 ament_target_dependencies(calibration yaml_cpp_vendor Boost OpenCV)
-
-ament_target_dependencies(
-  triangulation
-  OpenCV
-  yaml_cpp_vendor)
+ament_target_dependencies(triangulation OpenCV yaml_cpp_vendor)
 
 target_link_libraries(camera mvsdk)
 
-install(TARGETS camera calibration triangulation DESTINATION lib/${PROJECT_NAME})
+install(TARGETS camera calibration triangulation
+        DESTINATION lib/${PROJECT_NAME}
+)
 
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/params")
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/params")

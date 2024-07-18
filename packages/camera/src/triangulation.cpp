@@ -16,7 +16,7 @@ TriangulationNode::TriangulationNode(std::string& params_file_path, std::vector<
         printf("only 2 cameras are supported\n");
         exit(EXIT_FAILURE);
     }
-    for (int i = 0; i < camera_ids.size(); ++i) {
+    for (size_t i = 0; i < camera_ids.size(); ++i) {
         param_.cameras_intrinsics.push_back(
             CameraIntrinsicParameters::loadFromYaml(params_file_path, camera_ids[i]));
         param_.camera_stereo_params.emplace_back();
@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
     }
     std::sort(filenames.begin(), filenames.end());
 
-    printf("%d\n", filenames.size());
+    printf("%ld\n", filenames.size());
 
     std::string path_file_param(argv[1]);
     handy::TriangulationNode triangulation_node(path_file_param, {1, 2});
@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
     json triangulation_json;
     triangulation_json["triangulated_points"] = {};
 
-    for (int i = 0; i < filenames.size(); ++i) {
+    for (size_t i = 0; i < filenames.size(); ++i) {
         std::string current_filename = filenames[i];
         cv::Point2f first_image_point{
             detections_1_json[current_filename]["centroid"][0],
