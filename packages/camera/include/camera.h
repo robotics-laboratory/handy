@@ -6,8 +6,12 @@
 #include <vector>
 #include <map>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <cstdint>
 
 #include <boost/lockfree/queue.hpp>
+#include "mcap_vendor/mcap/writer.hpp"
 
 using namespace std::chrono_literals;
 
@@ -25,14 +29,8 @@ struct Size {
     bool operator!=(const Size& other) { return !(*this == other); }
 };
 
-struct BufferPair {
-    uint8_t* first;
-    uint8_t* second;
-};
-
 struct StampedImageBuffer {
     uint8_t* raw_buffer = nullptr;
-    uint8_t* bgr_buffer = nullptr;
     tSdkFrameHead frame_info{};
     int camera_idx;
     int frame_id;
@@ -40,9 +38,9 @@ struct StampedImageBuffer {
 };
 
 struct SynchronizedFrameBuffers {
-    std::vector<BufferPair> images;
+    std::vector<uint8_t*> images;
     std::vector<Size> image_sizes;
-    uint32_t timestamp;  // in 0.1 milliseconds
+    uint32_t timestamp = 0;  // in 0.1 milliseconds
 };
 
 struct CameraPool {
@@ -89,8 +87,6 @@ class CameraRecorder {
         std::chrono::duration<double> latency{50.0};  // in milliseconds
         std::string param_file;
         std::string output_filename;
-        int fps = 20;
-        int frames_to_take = 1000;
         int master_camera_id = 1;
         bool use_hardware_triger = false;
         bool save_to_file = false;
@@ -99,22 +95,25 @@ class CameraRecorder {
     struct State {
         std::array<std::unique_ptr<boost::lockfree::queue<StampedImageBuffer>>, kMaxCameraNum>
             camera_images;
-        std::array<std::unique_ptr<boost::lockfree::queue<BufferPair>>, kMaxCameraNum> free_buffers;
+        std::array<std::unique_ptr<boost::lockfree::queue<uint8_t*>>, kMaxCameraNum> free_buffers;
 
         std::atomic<bool> running = true;
         std::vector<std::thread> threads;  // trigger thread, queue handler thread
         std::vector<std::atomic<int>> frame_ids;
         std::vector<std::atomic<size_t>> current_buffer_idx;
         int camera_num = 2;
-        std::vector<int> files;
         std::map<int, int> handle_to_idx;
         std::vector<Size> frame_sizes;
-        std::vector<std::mutex> file_mutexes;
         std::vector<int> camera_handles;
-        std::vector<void*> alligned_buffers;
         std::vector<CameraSubscriberCallback> registered_callbacks;
         CameraPool buffers;
-        uint32_t initial_timestamp_difference = 0;
+        std::vector<mcap::ChannelId> mcap_channels_ids_;
+        mcap::SchemaId bayer_schema_id;
+
+        std::condition_variable synchronizer_condvar;
+        std::mutex synchronizer_mutex;
     } state_{};
+
+    mcap::McapWriter mcap_writer_;
 };
 }  // namespace handy::camera
