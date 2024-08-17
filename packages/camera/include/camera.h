@@ -21,7 +21,7 @@ class CameraRecorder;
 
 class MappedFileManager final : public mcap::IWritable {
   public:
-    MappedFileManager() = default;
+    MappedFileManager();
     ~MappedFileManager() override{};
 
     void init(
@@ -32,7 +32,7 @@ class MappedFileManager final : public mcap::IWritable {
     void end() override;
     uint64_t size() const override;
 
-    const uint64_t kMmapLargeConstant = 5 * 1024 * 1024 * 1024;
+    uint64_t kMmapLargeConstant = 7 * 1024 * 1024 * 1024;
 
   private:
     int file_ = 0;
