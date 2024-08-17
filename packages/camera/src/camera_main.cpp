@@ -14,6 +14,7 @@ struct GlobalCameraRecorderInfo {
 
 void handleSignal(int signum) {
     global_recorder_info.camera_recorder_ptr->stopInstance();
+    sleep(3);
     global_recorder_info.ready_to_exit = true;
     global_recorder_info.condvar.notify_one();
 }

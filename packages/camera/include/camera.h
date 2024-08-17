@@ -19,11 +19,36 @@ namespace handy::camera {
 
 class CameraRecorder;
 
+class MappedFileManager final : public mcap::IWritable {
+  public:
+    MappedFileManager() = default;
+    ~MappedFileManager() override{};
+
+    void init(
+        CameraRecorder* recorder_instance, std::string filepath, size_t bytes_per_second_estim);
+    void write(const std::byte* data, uint64_t size);
+    void handleWrite(const std::byte* data, uint64_t size) override;
+    void doubleFileSize();
+    void end() override;
+    uint64_t size() const override;
+
+    const uint64_t kMmapLargeConstant = 5 * 1024 * 1024 * 1024;
+
+  private:
+    int file_ = 0;
+    void* mmaped_ptr_ = nullptr;
+    CameraRecorder* recorder_instance_ = nullptr;  // to be able to call stopInstance()
+    uint64_t size_ = 0;
+    uint64_t internal_file_size_ = 0;
+    // uint64_t file_capacity_in_seconds_ = 20; // how long can written to the file
+    size_t counter = 0;
+};
+
 struct Size {
     size_t area() const { return static_cast<size_t>(width * height); };
 
-    int width;
-    int height;
+    int width = 0;
+    int height = 0;
 
     bool operator==(const Size& other) { return width == other.width && height == other.height; }
     bool operator!=(const Size& other) { return !(*this == other); }
@@ -32,9 +57,9 @@ struct Size {
 struct StampedImageBuffer {
     uint8_t* raw_buffer = nullptr;
     tSdkFrameHead frame_info{};
-    int camera_idx;
-    int frame_id;
-    uint32_t timestamp;
+    int camera_idx = -1;
+    int frame_id = -1;
+    uint32_t timestamp = 0;
 };
 
 struct SynchronizedFrameBuffers {
@@ -72,8 +97,8 @@ class CameraRecorder {
     void registerSubscriberCallback(CameraSubscriberCallback callback);
     void stopInstance();
 
-    constexpr static int kMaxCameraNum = 4;
-    constexpr static int kQueueCapacity = 5;
+    constexpr static int kMaxCameraNum = 2;
+    constexpr static int kQueueCapacity = 80;
 
   private:
     void handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info);
@@ -115,5 +140,6 @@ class CameraRecorder {
     } state_{};
 
     mcap::McapWriter mcap_writer_;
+    MappedFileManager file_manager_;
 };
 }  // namespace handy::camera
