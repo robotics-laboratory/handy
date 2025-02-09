@@ -14,6 +14,9 @@ from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo
 from visualization_msgs.msg import ImageMarker, Marker
 
+from scipy.ndimage import center_of_mass
+from typing import Tuple, List
+
 SEC_MULTIPLIER = 10**9
 MS_MULTIPLIER = 10**6
 MCS_MULTIPLIER = 10**3
@@ -42,6 +45,7 @@ class CameraParameters:
         camera_id,
         rotation_vector,
         translation_vector,
+        yaw_pitch_roll_order=False,
     ):
         self.camera_matrix = np.array(camera_matrix, dtype=float).reshape((3, 3))
         self.dist_coefs = np.array(dist_coefs, dtype=float)
@@ -59,11 +63,17 @@ class CameraParameters:
 
         self.rotation_vector = np.array(rotation_vector, dtype=float)
         self.translation_vector = np.array(translation_vector, dtype=float)
-        self.rotation_matrix = cv2.Rodrigues(self.rotation_vector.reshape((3, 1)))[0]
+        if yaw_pitch_roll_order:
+            self.rotation_matrix = Rotation.from_euler(
+                "xyz", rotation_vector, degrees=True
+            ).as_matrix()
+        else:
+            self.rotation_matrix = cv2.Rodrigues(self.rotation_vector.reshape((3, 1)))[0]
+
 
         self.static_transformation = TransformStamped()
         self.static_transformation.child_frame_id = f"camera_{self.camera_id}"
-        self.static_transformation.header.frame_id = "table"
+        self.static_transformation.header.frame_id = "world"
 
         self.static_transformation.transform.translation.x = self.translation_vector[0]
         self.static_transformation.transform.translation.y = self.translation_vector[1]
@@ -188,7 +198,9 @@ def init_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--params-file", help="yaml file with intrinsic parameters and cameras' positions", required=True
+        "--params-file",
+        help="yaml file with intrinsic parameters and cameras' positions",
+        required=True,
     )
     parser.add_argument("--export", help="some_file.mcap", required=True)
 
@@ -259,93 +271,6 @@ def init_detection_center_marker(
     msg.lifetime.nanosec = ttl * 10**6  # ttl = 10ms
 
     return msg
-
-
-def simulate(
-    writer: rosbag2_py.SequentialWriter,
-    rgb_sources,
-    filename_to_info,
-    trajectory_predictions,
-    intrinsics,
-    R: np.ndarray,
-    T: np.ndarray,
-) -> None:
-    filenames_to_publish = sorted(filename_to_info.keys())
-    cv_bridge_instance = CvBridge()
-
-    current_simulation_time = 0  # in nanoseconds
-    for i in range(len(filenames_to_publish)):
-        if i % 10 == 0:
-            publish_table_plain(writer, current_simulation_time)
-        filename = filenames_to_publish[i]
-        for camera_idx in range(2):
-            # load and segmentate image
-            image = cv2.imread(os.path.join(rgb_sources[camera_idx], filename))
-
-            image = intrinsics[camera_idx].undistort(image)
-
-            # prepare CompressedImages
-            camera_feed_msg = cv_bridge_instance.cv2_to_compressed_imgmsg(image, dst_format="jpeg")
-            camera_feed_msg.header.frame_id = f"camera_{camera_idx + 1}"
-            camera_feed_msg.header.stamp.sec = current_simulation_time // SEC_MULTIPLIER
-            camera_feed_msg.header.stamp.nanosec = current_simulation_time % SEC_MULTIPLIER
-
-            # publish images
-            writer.write(
-                f"/camera_{camera_idx + 1}/image",
-                serialize_message(camera_feed_msg),
-                current_simulation_time,
-            )
-            # publish camera info and transformations
-            intrinsics[camera_idx].publish_camera_info(writer, current_simulation_time)
-            intrinsics[camera_idx].publish_transform(writer, current_simulation_time)
-
-            center_detection = init_detection_center_marker(
-                get_new_marker_id(),
-                current_simulation_time,
-                filename_to_info[filename]["image_points"][camera_idx],
-                camera_idx + 1,
-                ttl=50,
-            )
-            writer.write(
-                f"/camera_{camera_idx + 1}/ball_center",
-                serialize_message(center_detection),
-                current_simulation_time,
-            )
-
-        current_point = np.array(
-            filename_to_info[filename]["triangulated_point"], dtype=float
-        ).reshape((3, 1))
-        ball_marker = init_ball_marker(
-            get_new_marker_id(),
-            current_simulation_time,
-            (R @ current_point - T).flatten().tolist(),
-            current_point.flatten().tolist(),
-            ttl=FPS_LATENCY_MS,
-        )
-        ball_marker.header.frame_id = "table"
-        writer.write(
-            "/triangulation/ball_marker",
-            serialize_message(ball_marker),
-            current_simulation_time,
-        )
-
-        projection_marker = ball_marker
-        projection_marker.id = get_new_marker_id()
-        projection_marker.scale.z = 0.001
-        projection_marker.pose.position.z = 0.0
-        projection_marker.color.r = 1.0
-        writer.write(
-            "/triangulation/ball_table_projection",
-            serialize_message(projection_marker),
-            current_simulation_time,
-        )
-
-        if trajectory_predictions:
-            publish_predicted_trajectory(
-                writer, trajectory_predictions, filename, current_simulation_time
-            )
-        current_simulation_time += FPS_LATENCY_MS * MS_MULTIPLIER  # 15 ms between the frames
 
 
 def init_camera_info(
@@ -530,6 +455,233 @@ def publish_cam2table_transform(
     writer.write("/tf", serialize_message(static_transformation), 0)
 
 
+from typing import Any
+
+
+class Transformation:
+    def __init__(self, R, t):
+        self.R = R
+        self.t = t.reshape((3, 1))
+        self.R_inv = np.linalg.inv(self.R)
+
+    def __call__(self, point):
+        return self.R @ point + self.t
+
+    def __mul__(self, other):
+        return Transformation(self.R @ other.R, self.R @ other.t + self.t)
+
+    def transform(self, point):
+        return self(point)
+
+    def inverse_transform(self, point):
+        return self.R_inv @ (point - self.t)
+
+    # right transformation is applied first
+    def __mult__(self, other):
+        return Transformation(self.R @ other.R, self.t + other.t)
+
+
+class Image:
+    def __init__(
+        self, camera_matrix, camera_transformation, distortion_coefs, image_size=(1200, 1920)
+    ):
+        self.camera_matrix = camera_matrix
+        self.camera_transformation = camera_transformation
+        self.distortion_coefs = distortion_coefs
+        self.image_size = image_size
+
+    def normilise_image_point(self, point):
+        x_normalised = (point[0] - self.camera_matrix[0, 2]) / self.camera_matrix[0, 0]
+        y_normalised = (point[1] - self.camera_matrix[1, 2]) / self.camera_matrix[1, 1]
+        return np.array([x_normalised, y_normalised, 1]).reshape(3, 1)
+
+    # in world coordinates
+    def project_point_to_image(self, point):
+        if point.shape != (3, 1):
+            point = point.reshape((3, 1))
+        return self.camera_matrix @ self.camera_transformation(point)
+
+        # transformed_point = self.camera_transformation(point)
+        # # transformed_point = transformed_point / transformed_point[2]
+        # projected_point = self.camera_matrix @ transformed_point
+        # return projected_point
+
+    def project_points_to_image(self, points):
+        return np.array([self.project_point_to_image(point) for point in points])
+
+    def normilize_image_point(self, image_point):
+        x_normalised = (image_point[0] - self.camera_matrix[0, 2]) / self.camera_matrix[0, 0]
+        y_normalised = (image_point[1] - self.camera_matrix[1, 2]) / self.camera_matrix[1, 1]
+        return np.array([x_normalised, y_normalised, 1]).reshape(3, 1)
+
+    def project_ball_to_image(self, center, radius: float) -> np.ndarray:
+        def valid_coords(x, y):
+            return x >= 0 and x < self.image_size[1] and y >= 0 and y < self.image_size[0]
+
+        center = center.reshape((3, 1))
+        camera_matrix_inv = np.linalg.inv(self.camera_matrix)
+
+        transformed_center = self.camera_transformation(center)
+        projected_center = self.camera_matrix @ transformed_center
+        projected_center /= projected_center[2]
+
+        if (
+            np.linalg.norm(
+                projected_center.flatten()
+                - np.array([self.image_size[1] / 2, self.image_size[0] / 2, 1])
+            )
+            > 2000
+        ):
+            return np.zeros(self.image_size)
+
+        image = np.zeros(self.image_size)
+        checked_pixels = set()
+
+        pixels_to_check = {(int(projected_center[0][0]), int(projected_center[1][0]))}
+        while pixels_to_check:
+            x, y = pixels_to_check.pop()
+
+            image_point_camera_ray = camera_matrix_inv @ np.array([x, y, 1]).reshape((3, 1))
+            image_point_world_ray = self.camera_transformation.inverse_transform(
+                image_point_camera_ray
+            ) - self.camera_transformation.inverse_transform(np.array([0, 0, 0]).reshape((3, 1)))
+            ball_center_world_ray = center - self.camera_transformation.inverse_transform(
+                np.array([0, 0, 0]).reshape((3, 1))
+            )
+
+            distance = np.linalg.norm(
+                np.cross(ball_center_world_ray.flatten(), image_point_world_ray.flatten()), ord=2
+            ) / np.linalg.norm(image_point_world_ray, ord=2)
+            if distance <= radius:
+                if valid_coords(x, y):
+                    image[y, x] = 1
+                # adding all 8 neighbours to the queue
+                for dx in range(-1, 2):
+                    for dy in range(-1, 2):
+                        if (x + dx, y + dy) not in checked_pixels:
+                            pixels_to_check.add((x + dx, y + dy))
+                            checked_pixels.add((x + dx, y + dy))
+
+        return image
+
+
+def get_bbox(mask: np.ndarray) -> List[float]:
+    if not np.any(mask):
+        return [0.0, 0.0, 0.0, 0.0]
+    # x_min, y_min, x_max, y_max
+    horizontal_indicies = np.where(np.any(mask, axis=0))[0]
+    vertical_indicies = np.where(np.any(mask, axis=1))[0]
+    x1, x2 = horizontal_indicies[[0, -1]]
+    y1, y2 = vertical_indicies[[0, -1]]
+    bbox = list(map(float, [x1, y1, x2, y2]))
+    return bbox
+
+
+def get_mask_center(mask):
+    bbox = get_bbox(mask)
+    centroid_x = (bbox[0] + bbox[2]) / 2
+    centroid_y = (bbox[1] + bbox[3]) / 2
+    return np.array([centroid_x, centroid_y])
+
+
+def get_mask_centroid(mask):
+    return np.array(center_of_mass(mask))
+
+
+class StereoScene:
+    def __init__(self, left_camera: Image, right_camera: Image, table_middle_normal):
+        self.left_camera = left_camera
+        self.right_camera = right_camera
+        self.table_middle_normal = table_middle_normal
+        self.last_n_clicks = 0
+
+    def project_ball_to_images(self, center, radius):
+        left_image = self.left_camera.project_ball_to_image(center, radius)
+        right_image = self.right_camera.project_ball_to_image(center, radius)
+        return left_image, right_image
+
+    def triangulate_position(self, points_by_view_1, points_by_view_2, world2cam, cam2cam):
+        print("triangulating")
+        # print(points_by_view)
+        world2cam_Rt = np.column_stack((world2cam.R, world2cam.t))
+        world2second_cam = cam2cam * world2cam
+        world2second_cam_Rt = np.column_stack((world2second_cam.R, world2second_cam.t))
+        proj_1 = self.left_camera.camera_matrix @ world2cam_Rt
+        proj_2 = self.right_camera.camera_matrix @ world2second_cam_Rt
+
+        res = cv2.triangulatePoints(proj_1, proj_2, points_by_view_1, points_by_view_2)
+        res /= res[3, :]  # normalizing
+
+        # TODO preserve 4D points?
+        return res[:3, :]
+
+
+def evaluate_camera_position(
+    world2master: Transformation,
+    master2second: Transformation,
+    center_extractor,
+    camera_params_1: CameraParameters,
+    camera_params_2: CameraParameters,
+    simulation_time
+):
+    NUMBER_OF_SPHERES = 6
+    image_1 = Image(camera_params_1.camera_matrix, world2master, camera_params_1.dist_coefs)
+    image_2 = Image(
+        camera_params_2.camera_matrix, master2second * world2master, camera_params_2.dist_coefs
+    )
+    stereo_scene = StereoScene(image_1, image_2, None)
+
+    sphere_centers = []
+    for y in np.linspace(-TABLE_LENGTH / 2, TABLE_LENGTH / 2, NUMBER_OF_SPHERES):
+        for x in np.linspace(-TABLE_WIDTH / 2, TABLE_WIDTH / 2, NUMBER_OF_SPHERES):
+            for z in np.linspace(0, 1, NUMBER_OF_SPHERES):
+                sphere_centers.append((x, y, z))
+
+    sphere_centers = np.array(sphere_centers).T
+    points_1 = []
+    points_2 = []
+    valid_sphere_centers = []
+    # world2second = master2second * world2master
+
+
+    for i in range(sphere_centers.shape[1]):
+        mask_1, mask_2 = stereo_scene.project_ball_to_images(sphere_centers[:, i : (i + 1)], 0.02)
+        ball_marker = init_ball_marker(get_new_marker_id(), simulation_time, sphere_centers[:, i : (i + 1)].flatten(), 1, ttl=SEC_MULTIPLIER)
+        ball_marker.header.frame_id = "table"
+        writer.write(
+            "/triangulation/ball_marker",
+            serialize_message(ball_marker),
+            simulation_time,
+        )
+
+        if np.sum(mask_1) == 0 or np.sum(mask_2) == 0:
+            continue
+
+        points_1.append(center_extractor(mask_1))
+        points_2.append(center_extractor(mask_2))
+        valid_sphere_centers.append(sphere_centers[:, i])
+
+    points_1 = np.array(points_1).T
+    points_2 = np.array(points_2).T
+    sphere_centers = np.array(valid_sphere_centers).T
+
+    triangulated_points = stereo_scene.triangulate_position(
+        points_1, points_2, world2master, master2second
+    )
+
+    # Calculate the Euclidean distance between the true and triangulated points
+    distances = np.linalg.norm(sphere_centers - triangulated_points, axis=0)
+
+    # Calculate mean and standard deviation of the distances
+    mean_distance = np.mean(distances)
+    std_distance = np.std(distances)
+
+    print(f"Mean distance error: {mean_distance}")
+    print(f"Standard deviation of distance error: {std_distance}")
+    print("evalution complete")
+    print()
+
+
 if __name__ == "__main__":
     # init all modules
     parser = init_parser()
@@ -539,48 +691,68 @@ if __name__ == "__main__":
     table_plane_normal = np.array([0, 0, 1])
     publish_table_plain(writer, 100)
 
-
     with open(args.params_file, mode="r", encoding="utf-8") as yaml_params_file:
         params = yaml.safe_load(yaml_params_file)
     yaml_intrinsics_dics = params["intrinsics"]
-    
+    publish_cam2table_transform(writer, np.eye(3), np.zeros((3, 1)))
 
     for position_idx in params["camera_positions"].keys():
-        R_1, T_1 = params["camera_positions"][position_idx][1]["rotation"], params["camera_positions"][position_idx][1]["translation"]
-        R_1 = np.array(R_1) / 180 * np.pi
+        print(position_idx)
+        R_1, T_1 = (
+            params["camera_positions"][position_idx][1]["rotation"],
+            params["camera_positions"][position_idx][1]["translation"],
+        )
+        R_1 = np.array(R_1)
         T_1 = np.array(T_1)
 
-        R_2, T_2 = params["camera_positions"][position_idx][2]["rotation"], params["camera_positions"][position_idx][2]["translation"]
-        R_2 = np.array(R_2) / 180 * np.pi
+        R_2, T_2 = (
+            params["camera_positions"][position_idx][2]["rotation"],
+            params["camera_positions"][position_idx][2]["translation"],
+        )
+        R_2 = np.array(R_2)
         T_2 = np.array(T_2)
 
-        intrinsics = [CameraParameters(yaml_intrinsics_dics["image_size"], yaml_intrinsics_dics[1]["camera_matrix"], yaml_intrinsics_dics[1]["distortion_coefs"], 1, R_1, T_1),
-                      CameraParameters(yaml_intrinsics_dics["image_size"], yaml_intrinsics_dics[2]["camera_matrix"], yaml_intrinsics_dics[2]["distortion_coefs"], 2, R_2, T_2)]
+        intrinsics = [
+            CameraParameters(
+                yaml_intrinsics_dics["image_size"],
+                yaml_intrinsics_dics[1]["camera_matrix"],
+                yaml_intrinsics_dics[1]["distortion_coefs"],
+                1,
+                R_1,
+                T_1,
+                yaw_pitch_roll_order=True,
+            ),
+            CameraParameters(
+                yaml_intrinsics_dics["image_size"],
+                yaml_intrinsics_dics[2]["camera_matrix"],
+                yaml_intrinsics_dics[2]["distortion_coefs"],
+                2,
+                R_2,
+                T_2,
+                yaw_pitch_roll_order=True,
+            ),
+        ]
         for cam_params in intrinsics:
-            cam_params.publish_camera_info(writer, 10000 * position_idx)
+            cam_params.publish_transform(writer, SEC_MULTIPLIER * position_idx)
+            cam_params.publish_camera_info(writer, SEC_MULTIPLIER * position_idx)
+            publish_table_plain(writer, SEC_MULTIPLIER * position_idx)
+
+            world2master = Transformation(
+                intrinsics[0].rotation_matrix, intrinsics[1].translation_vector
+            )
+            rotation_master2slave = world2master.R_inv @ world2master.R
+            translation_master2slave = intrinsics[1].translation_vector
+            # print(rotation_master2slave.shape)
+            master2slave = Transformation(rotation_master2slave, translation_master2slave)
+
+            evaluate_camera_position(
+                world2master,
+                master2slave,
+                get_mask_center,
+                intrinsics[0],
+                intrinsics[1],
+                SEC_MULTIPLIER * position_idx
+            )
 
 
-        
-
-
-
-    # intrinsics, table_plane_normal = init_camera_info(
-    #     writer, args.intrinsic_params, [1, 2]
-    # )
-
-    # R, T, R2table, T2table, table_center = get_cam2world_transform(
-    #     table_plane_normal, data["table_orientation_points"]
-    # )
-    # publish_cam2table_transform(writer, R, T)
-    # publish_cam2table_transform(writer, np.eye(3), np.zeros((3, 1)))
-
-    # simulate(
-    #     writer,
-    #     args.rgb_sources,
-    #     data["triangulated_points"],
-    #     trajectory_predictions,
-    #     intrinsics,
-    #     R2table,
-    #     T2table,
-    # )
     del writer
