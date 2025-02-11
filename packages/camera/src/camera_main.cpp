@@ -19,18 +19,19 @@ void handleSignal(int signum) {
     global_recorder_info.condvar.notify_one();
 }
 
-// ./camera_bin <param_file> <output_filename>
+// ./camera <param_launch_file> <output_mcap_filename>
 int main(int argc, char* argv[]) {
     if (argc != 3) {
-        printf("help\n./camera_bin <param_file> <output_filename>\n");
+        printf("help\n./camera <param_launch_file> <output_mcap_filename>\n");
         return 0;
     }
     handy::camera::CameraRecorder writer(argv[1], argv[2], true);
     global_recorder_info.camera_recorder_ptr = &writer;
-    signal(SIGINT, handleSignal);
+    // assign signal handler
+    signal(SIGINT, handleSignal);  // Ctrl + C
 
     std::unique_lock<std::mutex> lock(global_recorder_info.mutex);
-    while (!global_recorder_info.ready_to_exit) {
+    while (!global_recorder_info.ready_to_exit) {  // check to handle spurious wakeups
         global_recorder_info.condvar.wait(lock);
     }
 

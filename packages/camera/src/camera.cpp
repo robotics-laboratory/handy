@@ -61,6 +61,8 @@ void abortIfNot(std::string_view msg, int camera_idx, int status) {
 }
 
 MappedFileManager::MappedFileManager() {
+    std::cout << "MAX_SIZE INIT " << kMmapLargeConstant << '\n';
+    printf("MAX_SIZE INIT %l\n", kMmapLargeConstant);
     int64_t page_size = sysconf(_SC_PAGE_SIZE);
     kMmapLargeConstant = kMmapLargeConstant / page_size * page_size + page_size;
 }
@@ -71,15 +73,58 @@ void MappedFileManager::init(
     if (!file_) {
         perror("file open");
     }
+    printf("MAX_SIZE INIT %l\n", kMmapLargeConstant);
+    if (ftruncate(file_, kMmapLargeConstant)) {
+        perror("file resize");
+    }
 
-    int64_t page_size = sysconf(_SC_PAGE_SIZE);
-    internal_file_size_ = 10 * bytes_per_second_estim / page_size * page_size + page_size;
-    if (ftruncate(file_, internal_file_size_) == -1) {
-        perror("error resizing the file");
+    internal_mapping_size_ = kMmapLargeConstant;
+    printf("MAX_SIZE INIT %l\n", kMmapLargeConstant);
+
+    mmaped_ptr_ =
+        mmap(nullptr, internal_mapping_size_, PROT_READ | PROT_WRITE, MAP_SHARED, file_, 0);
+    if (mmaped_ptr_ == MAP_FAILED) {
+        printf("errorno=%d\n", errno);
+        perror("mmap");
+        exit(EXIT_FAILURE);
+    }
+    printf("allocated on %p\n", mmaped_ptr_);
+    std::vector<uint8_t> tmp_data(10, 0);
+    std::memcpy(mmaped_ptr_, static_cast<void*>(tmp_data.data()), 10);
+    printf("memcpy from %p on %d successful\n", mmaped_ptr_, 10);
+}
+
+void MappedFileManager::write(const std::byte* data, uint64_t size) { handleWrite(data, size); }
+
+void MappedFileManager::handleWrite(const std::byte* data, uint64_t size) {
+    if (this->size() + size > internal_mapping_size_) {
+        doubleMappingSize();
+    }
+    uint8_t* current_data_ptr = static_cast<uint8_t*>(mmaped_ptr_) + this->size();
+    // printf(
+    //     "trying to copy to %p of the size %lu, max is %lu\n",
+    //     current_data_ptr,
+    //     size,
+    //     internal_mapping_size_);
+    std::memcpy(static_cast<void*>(current_data_ptr), reinterpret_cast<const void*>(data), size);
+    size_ += size;
+}
+
+void MappedFileManager::doubleMappingSize() {
+    if (msync(mmaped_ptr_, internal_mapping_size_, MS_SYNC) == -1) {
+        perror("Could not sync the file to disk");
+        exit(EXIT_FAILURE);
+    }
+    // free the mmapped memory
+    if (munmap(mmaped_ptr_, internal_mapping_size_) == -1) {
+        perror("Error un-mmapping the file");
         exit(EXIT_FAILURE);
     }
 
-    mmaped_ptr_ = mmap(nullptr, kMmapLargeConstant, PROT_NONE, MAP_SHARED, file_, 0);
+    internal_mapping_size_ *= 2;
+
+    mmaped_ptr_ =
+        mmap(nullptr, internal_mapping_size_, PROT_READ | PROT_WRITE, MAP_SHARED, file_, 0);
     if (mmaped_ptr_ == MAP_FAILED) {
         printf("errorno=%d\n", errno);
         perror("mmap");
@@ -87,46 +132,24 @@ void MappedFileManager::init(
     }
 }
 
-void MappedFileManager::write(const std::byte* data, uint64_t size) { handleWrite(data, size); }
-
-void MappedFileManager::handleWrite(const std::byte* data, uint64_t size) {
-    if (this->size() + size > internal_file_size_) {
-        doubleFileSize();
-    }
-    uint8_t* current_data_ptr = static_cast<uint8_t*>(mmaped_ptr_) + this->size();
-    std::memcpy(static_cast<void*>(current_data_ptr), reinterpret_cast<const void*>(data), size);
-    size_ += size;
-}
-
-void MappedFileManager::doubleFileSize() {
-    if (ftruncate(file_, internal_file_size_ * 2) == -1) {
-        perror("error resizing the file");
-        exit(EXIT_FAILURE);
-    }
-    internal_file_size_ *= 2;
-}
-
 void MappedFileManager::end() {
-    // shrink to the real content size
-    int64_t page_size = sysconf(_SC_PAGE_SIZE);
-    size_t alligned_fact_size = size_ / page_size * page_size + page_size;
-    if (ftruncate(file_, alligned_fact_size) == -1) {
-        perror("error resizing the file");
-        exit(EXIT_FAILURE);
-    }
-    if (msync(mmaped_ptr_, alligned_fact_size, MS_SYNC) == -1) {
+    if (msync(mmaped_ptr_, internal_mapping_size_, MS_SYNC) == -1) {
         perror("Could not sync the file to disk");
         exit(EXIT_FAILURE);
     }
     // free the mmapped memory
-    if (munmap(mmaped_ptr_, kMmapLargeConstant) == -1) {
+    if (munmap(mmaped_ptr_, internal_mapping_size_) == -1) {
         perror("Error un-mmapping the file");
         exit(EXIT_FAILURE);
     }
-    if (ftruncate(file_, size_) == -1) {
+    // shrink to the real content size
+    int64_t page_size = sysconf(_SC_PAGE_SIZE);
+    size_t aligned_fact_size = size_ / page_size * page_size + page_size;
+    if (ftruncate(file_, aligned_fact_size) == -1) {
         perror("error resizing the file");
         exit(EXIT_FAILURE);
     }
+    close(file_);
 }
 
 uint64_t MappedFileManager::size() const { return size_; }
@@ -142,7 +165,7 @@ CameraRecorder::CameraRecorder(
         mcap::McapWriterOptions options("");
         options.noChunking = true;
 
-        options.noMessageIndex = true;
+        options.noMessageIndex = false;
         options.noAttachmentCRC = true;
         options.noAttachmentIndex = true;
         options.noMetadataIndex = true;
@@ -299,6 +322,7 @@ void CameraRecorder::synchronizeQueues() {
             // delete the last element
             camera_images[i].erase(--camera_images[i].end());
         }
+        // if all cameras have at least one frame
         if (std::any_of(
                 camera_images.begin(),
                 camera_images.end(),
@@ -316,6 +340,7 @@ void CameraRecorder::synchronizeQueues() {
             sizes.begin(),
             [](const std::vector<StampedImageBuffer>& v) { return v.size(); });
 
+        // next vector of indices
         auto next = [&]() {
             for (size_t i = 0; i < indices.size(); ++i) {
                 if (++indices[i] < sizes[i]) {
@@ -360,6 +385,7 @@ void CameraRecorder::synchronizeQueues() {
                 camera_images[i].erase(camera_images[i].begin() + indices[i]);
                 --sizes[i];
             }
+            // invoke saving buffers in a detached thread as other callbacks?
             if (param_.save_to_file) {
                 saveSynchronizedBuffers(sync_buffers);
             }
@@ -370,7 +396,8 @@ void CameraRecorder::synchronizeQueues() {
 
             // creating new structure
             sync_buffers = std::shared_ptr<SynchronizedFrameBuffers>(
-                new SynchronizedFrameBuffers, custom_deleter);
+                new SynchronizedFrameBuffers,
+                custom_deleter);  // custom deleter adds buffer pointer back to the queue
             sync_buffers->images.resize(state_.camera_num);
             sync_buffers->image_sizes.resize(state_.camera_num);
         } while (next());
@@ -378,7 +405,7 @@ void CameraRecorder::synchronizeQueues() {
 }
 
 void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
-    // TODO: delete elapsed time?
+    // TODO: delete elapsed time
     auto start = std::chrono::high_resolution_clock::now();
 
     Size size{frame_info->iWidth, frame_info->iHeight};

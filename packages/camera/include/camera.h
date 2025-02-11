@@ -28,18 +28,18 @@ class MappedFileManager final : public mcap::IWritable {
         CameraRecorder* recorder_instance, std::string filepath, size_t bytes_per_second_estim);
     void write(const std::byte* data, uint64_t size);
     void handleWrite(const std::byte* data, uint64_t size) override;
-    void doubleFileSize();
+    void doubleMappingSize();
     void end() override;
     uint64_t size() const override;
 
-    uint64_t kMmapLargeConstant = 7 * 1024 * 1024 * 1024;
+    uint64_t kMmapLargeConstant = 8ULL * 1024 * 1024 * 1024; // 8 GB
 
   private:
     int file_ = 0;
     void* mmaped_ptr_ = nullptr;
     CameraRecorder* recorder_instance_ = nullptr;  // to be able to call stopInstance()
     uint64_t size_ = 0;
-    uint64_t internal_file_size_ = 0;
+    uint64_t internal_mapping_size_ = 0;
     // uint64_t file_capacity_in_seconds_ = 20; // how long can written to the file
     size_t counter = 0;
 };

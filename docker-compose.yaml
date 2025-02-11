@@ -9,6 +9,12 @@ services:
     volumes:
       - "/home/bakind/handy:/handy"
       - "/dev:/dev"
+    deploy:
+      resources:
+        limits:
+          memory: 40gb
+        reservations:
+          memory: 20gb
 
     build:
       dockerfile: Dockerfile
