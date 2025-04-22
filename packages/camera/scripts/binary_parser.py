@@ -7,16 +7,12 @@ import numpy as np
 from tqdm import tqdm
 
 
-def save_image(
-    i: int, img_data: bytes, output_folder: str, width: int, height: int
-) -> None:
+def save_image(i, img_data, output_folder, width, height):
     img = np.frombuffer(img_data, dtype=np.uint8).reshape((height, width))
     cv2.imwrite(os.path.join(output_folder, f"image_{str(i).rjust(4, '0')}.png"), img)
 
 
-def read_and_convert(
-    file_path: str, output_folder: str, width=1920, height=1200
-) -> None:
+def read_and_convert(file_path, output_folder, width=1920, height=1200):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
@@ -31,10 +27,9 @@ def read_and_convert(
         for i in tqdm(range(num_images)):
             img_data = f.read(width * height)
             executor.submit(save_image, i, img_data, output_folder, width, height)
-            # save_image(i, img_data, output_folder, width, height)
 
 
-def init_parser() -> argparse.ArgumentParser:
+def init_parser():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
