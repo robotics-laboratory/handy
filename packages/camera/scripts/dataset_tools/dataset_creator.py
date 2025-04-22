@@ -1,7 +1,8 @@
+import argparse
+import os
+
 import cv2
 import numpy as np
-import os
-import argparse
 import yaml
 
 BGR_UNDISTORT_PATH = "bgr_image_undistort"
@@ -20,7 +21,8 @@ class Intrinsics:
         cur_image_size = image.shape[:2]
         if self.image_size != cur_image_size:
             raise ValueError(
-                f"Images of different sizes were provided: {self.image_size} != {cur_image_size}"
+                "Images of different sizes were provided: "
+                f"{self.image_size} != {cur_image_size}"
             )
 
         if self.mapx is None or self.mapy is None:

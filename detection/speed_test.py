@@ -1,23 +1,28 @@
-import argparse 
-import torch
+import argparse
+
 import cv2
 import numpy as np
-
+import torch
 from model import get_model
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--backbone', type=str)
-    parser.add_argument('--size', type=int)
-    parser.add_argument('--checkpoint', type=str)
-    parser.add_argument('--img_path', type=str)
+    parser.add_argument("--backbone", type=str)
+    parser.add_argument("--size", type=int)
+    parser.add_argument("--checkpoint", type=str)
+    parser.add_argument("--img_path", type=str)
 
     args = parser.parse_args()
     model = get_model(backbone_name=args.backbone, size=args.size)
 
-    checkpoint = torch.load(args.checkpoint, map_location=torch.device('cpu'))
-    model.load_state_dict({k[6:]: v for k, v in checkpoint["state_dict"].items() if k.startswith("model.")})
+    checkpoint = torch.load(args.checkpoint, map_location=torch.device("cpu"))
+    model.load_state_dict(
+        {
+            k[6:]: v
+            for k, v in checkpoint["state_dict"].items()
+            if k.startswith("model.")
+        }
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.eval().to(device)
@@ -32,10 +37,13 @@ if __name__ == "__main__":
     dummy_input = image_input.to(device)
 
     # INIT LOGGERS
-    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    starter, ender = (
+        torch.cuda.Event(enable_timing=True),
+        torch.cuda.Event(enable_timing=True),
+    )
     repetitions = 300
-    timings=np.zeros((repetitions,1))
-    #GPU-WARM-UP
+    timings = np.zeros((repetitions, 1))
+    # GPU-WARM-UP
     for _ in range(10):
         _ = model(dummy_input)
     # MEASURE PERFORMANCE
@@ -53,4 +61,3 @@ if __name__ == "__main__":
     std_syn = np.std(timings)
     print(f"Mean time is {mean_syn}ms with std of {std_syn}")
     print(f"FPS is {1/(mean_syn/1000)}")
-

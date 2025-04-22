@@ -1,5 +1,6 @@
-import os
 import json
+import os
+
 import cv2
 import numpy as np
 from tqdm import tqdm
@@ -7,13 +8,15 @@ from tqdm import tqdm
 
 def generate_bounding_boxes(directory_path, output_path):
     """
-    Generate bounding boxes for the masks in the given directory and save them to the output file.
+    Generate bounding boxes for the masks in the given directory
+        and save them to the output file.
 
     Args:
         directory_path (str): The path to the directory containing the mask images.
-        output_path (str): The path to the output file where the bounding boxes will be saved.
+        output_path (str): The path to the output file
+                                where the bounding boxes will be saved.
     """
-    mask_files = [f for f in os.listdir(directory_path) if f.endswith('.png')]
+    mask_files = [f for f in os.listdir(directory_path) if f.endswith(".png")]
 
     bounding_boxes = {}
 
@@ -33,11 +36,11 @@ def generate_bounding_boxes(directory_path, output_path):
         x, y, w, h = cv2.boundingRect(contour)
 
         bounding_boxes[mask_file] = {
-            'xmin': int(x),
-            'ymin': int(y),
-            'xmax': int(x) + int(w),
-            'ymax': int(y) + int(h)
+            "xmin": int(x),
+            "ymin": int(y),
+            "xmax": int(x) + int(w),
+            "ymax": int(y) + int(h),
         }
-        
-    with open(output_path, 'w') as file:
+
+    with open(output_path, "w") as file:
         json.dump(bounding_boxes, file)

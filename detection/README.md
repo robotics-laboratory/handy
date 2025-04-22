@@ -30,7 +30,7 @@ python detection/tdatasets.py --image_dir path/to/images --annot_file path/to/an
 Annotaion should be in the following format:
 
 ``` json
-{"image_name.png": 
+{"image_name.png":
     {"xmin": ... , "ymin": ... , "xmax": ... , "ymax": ... },
     ...
 }

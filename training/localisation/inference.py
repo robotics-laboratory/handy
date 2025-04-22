@@ -1,37 +1,44 @@
-import argparse 
-import torch
+import argparse
+import json
 import os
+
+import albumentations as A
 import cv2
 import numpy as np
-import json
-import albumentations as A
-
+import torch
+from model import BallLocalisation, TTNetWithProb
 from tqdm import tqdm
-from model import TTNetWithProb, BallLocalisation
 from train import get_predicted_ball_pos
 
 norm = A.Normalize(mean=(0.077, 0.092, 0.142), std=(0.068, 0.079, 0.108))
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str)
-    parser.add_argument('--result_dir', type=str)
-    parser.add_argument('--result_file', type=str)
-    parser.add_argument('--checkpoint', type=str)
+    parser.add_argument("--data_dir", type=str)
+    parser.add_argument("--result_dir", type=str)
+    parser.add_argument("--result_file", type=str)
+    parser.add_argument("--checkpoint", type=str)
 
     n_last = 5
-
 
     args = parser.parse_args()
     model = TTNetWithProb(BallLocalisation())
 
-    checkpoint = torch.load(args.checkpoint, map_location=torch.device('cpu'))
-    model.load_state_dict({k[6:]: v for k, v in checkpoint["state_dict"].items() if k.startswith("model.")})
+    checkpoint = torch.load(args.checkpoint, map_location=torch.device("cpu"))
+    model.load_state_dict(
+        {
+            k[6:]: v
+            for k, v in checkpoint["state_dict"].items()
+            if k.startswith("model.")
+        }
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     all_files = os.listdir(args.data_dir)
-    image_files = [file for file in all_files if file.endswith(('.png', '.jpg', '.jpeg'))]
+    image_files = [
+        file for file in all_files if file.endswith((".png", ".jpg", ".jpeg"))
+    ]
 
     selected_images = sorted(image_files)
 
@@ -48,12 +55,11 @@ if __name__ == "__main__":
         resized_images = []
 
         for j in range(image_num, image_num - n_last, -1):
-
             if j < 0:
                 image_name_l = f"{image_prefix}{str(0).rjust(4, '0')}.png"
             else:
-                image_name_l= f"{image_prefix}{str(j).rjust(4, '0')}.png"
-            
+                image_name_l = f"{image_prefix}{str(j).rjust(4, '0')}.png"
+
             image_path_l = os.path.join(args.data_dir, image_name_l)
 
             image = cv2.imread(image_path_l)
@@ -72,7 +78,6 @@ if __name__ == "__main__":
 
         image_input = image_input.to(device)
 
-
         with torch.no_grad():
             logit, cls = model(image_input)
 
@@ -80,13 +85,12 @@ if __name__ == "__main__":
         orig_image = cv2.imread(image_path)
 
         if cls[0].argmax().item() == 1:
-
             coord = get_predicted_ball_pos(logit, 320)
 
             coord_x = coord[0][0].item()
             coord_y = coord[0][1].item()
 
-            x, y =  coord_x * 1920 / 320, coord_y * 1200 / 192
+            x, y = coord_x * 1920 / 320, coord_y * 1200 / 192
             x, y = int(x), int(y)
 
             bbox_centers[image_name] = (x, y)
@@ -110,5 +114,5 @@ if __name__ == "__main__":
 
         cv2.imwrite(os.path.join(args.result_dir, selected_images[i]), orig_image)
 
-    with open(args.result_file, 'w') as f:
+    with open(args.result_file, "w") as f:
         json.dump(bbox_centers, f)

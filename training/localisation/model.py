@@ -1,5 +1,5 @@
-import torch
 import torch.nn as nn
+
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
@@ -8,7 +8,7 @@ class ConvBlock(nn.Module):
         self.bn = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU()
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-    
+
     def forward(self, x):
         x = self.conv(x)
         x = self.bn(x)
@@ -16,11 +16,13 @@ class ConvBlock(nn.Module):
         x = self.maxpool(x)
         return x
 
+
 class BallLocalisation(nn.Module):
     """
     Ball localisation model
     input : tensor shape of (batch_size, n_last*3, 320, 192)
     """
+
     def __init__(self, n_last=5, dropout_p=0):
         self.width = 320
         self.height = 192
@@ -36,12 +38,12 @@ class BallLocalisation(nn.Module):
         self.conv_block5 = ConvBlock(128, 256)
         self.conv_block6 = ConvBlock(256, 256)
 
-        self.fc1 = nn.Linear(256*5*3, 2048)
+        self.fc1 = nn.Linear(256 * 5 * 3, 2048)
         self.fc2 = nn.Linear(2048, 1024)
         self.fc3 = nn.Linear(1024, 512)
         self.dropout1d = nn.Dropout(p=dropout_p)
         self.sigmoid = nn.Sigmoid()
-    
+
     def forward(self, x):
         x = self.conv1(x)
         x = self.norm(x)
@@ -66,10 +68,11 @@ class BallLocalisation(nn.Module):
 
         return self.sigmoid(x)
 
+
 class TTNetWithProb(nn.Module):
     def __init__(self, local_model):
         super(TTNetWithProb, self).__init__()
-        
+
         self.backbone = nn.Sequential(
             local_model.conv1,
             local_model.norm,
@@ -82,30 +85,29 @@ class TTNetWithProb(nn.Module):
             local_model.dropout2d,
             local_model.conv_block5,
             local_model.conv_block6,
-            local_model.dropout2d
+            local_model.dropout2d,
         )
 
         self.head = nn.Sequential(
             local_model.fc1,
-            local_model.relu, 
+            local_model.relu,
             local_model.dropout1d,
             local_model.fc2,
-            local_model.relu, 
+            local_model.relu,
             local_model.dropout1d,
             local_model.fc3,
-            local_model.sigmoid
+            local_model.sigmoid,
         )
-        
+
         self.fc_cls = nn.Sequential(
-            nn.Linear(256*5*3, 1024),
+            nn.Linear(256 * 5 * 3, 1024),
             nn.ReLU(),
             nn.Linear(1024, 128),
             nn.ReLU(),
-            nn.Linear(128, 2)
+            nn.Linear(128, 2),
         )
-    
-    def forward(self, x):
 
+    def forward(self, x):
         features = self.backbone(x)
         features = features.view(x.size(0), -1)
 
@@ -113,4 +115,3 @@ class TTNetWithProb(nn.Module):
         cls = self.fc_cls(features)
 
         return logit, cls
-
