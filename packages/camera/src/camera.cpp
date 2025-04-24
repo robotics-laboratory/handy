@@ -66,8 +66,7 @@ MappedFileManager::MappedFileManager() {
     kMmapLargeConstant = kMmapLargeConstant / page_size * page_size + page_size;
 }
 
-void MappedFileManager::init(
-    CameraRecorder* recorder_instance, const std::string& filepath) {
+void MappedFileManager::init(CameraRecorder* recorder_instance, const std::string& filepath) {
     recorder_instance_ = recorder_instance;
 
     file_ = open(filepath.c_str(), O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);

@@ -24,8 +24,7 @@ class MappedFileManager final : public mcap::IWritable {
     MappedFileManager();
     ~MappedFileManager() override{};
 
-    void init(
-        CameraRecorder* recorder_instance, const std::string& filepath);
+    void init(CameraRecorder* recorder_instance, const std::string& filepath);
     void write(const std::byte* data, uint64_t size);
     void handleWrite(const std::byte* data, uint64_t size) override;
     void doubleMappingSize();
@@ -50,7 +49,9 @@ struct Size {
     int width = 0;
     int height = 0;
 
-    bool operator==(const Size& other) const { return width == other.width && height == other.height; }
+    bool operator==(const Size& other) const {
+        return width == other.width && height == other.height;
+    }
     bool operator!=(const Size& other) const { return !(*this == other); }
 };
 
