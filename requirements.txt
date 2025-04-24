@@ -4,3 +4,4 @@ PyYAML
 tqdm
 pytorch-lightning
 scikit-learn
+mcap

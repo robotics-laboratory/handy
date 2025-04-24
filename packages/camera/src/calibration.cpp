@@ -163,7 +163,7 @@ void CalibrationNode::clearLastDetection(int camera_idx) {
 void CalibrationNode::fillImageObjectPoints(
     std::vector<std::vector<cv::Point2f>>& image_points,
     std::vector<std::vector<cv::Point3f>>& obj_points, int camera_idx) {
-    for (int i = 0; i < state_.marker_corners_all[camera_idx].size(); ++i) {
+    for (size_t i = 0; i < state_.marker_corners_all[camera_idx].size(); ++i) {
         image_points.emplace_back();
         obj_points.emplace_back();
         param_.aruco_board.matchImagePoints(
