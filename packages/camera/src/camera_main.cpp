@@ -1,9 +1,9 @@
 #include "camera.h"
 
-#include <iostream>
-#include <signal.h>
-#include <mutex>
 #include <condition_variable>
+#include <csignal>
+#include <iostream>
+#include <mutex>
 
 struct GlobalCameraRecorderInfo {
     std::mutex mutex;
@@ -12,7 +12,7 @@ struct GlobalCameraRecorderInfo {
     bool ready_to_exit = false;
 } global_recorder_info;
 
-void handleSignal(int signum) {
+void handleSignal(int /*signum*/) {
     global_recorder_info.camera_recorder_ptr->stopInstance();
     sleep(3);
     global_recorder_info.ready_to_exit = true;

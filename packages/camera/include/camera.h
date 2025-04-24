@@ -25,7 +25,7 @@ class MappedFileManager final : public mcap::IWritable {
     ~MappedFileManager() override{};
 
     void init(
-        CameraRecorder* recorder_instance, std::string filepath, size_t bytes_per_second_estim);
+        CameraRecorder* recorder_instance, const std::string& filepath);
     void write(const std::byte* data, uint64_t size);
     void handleWrite(const std::byte* data, uint64_t size) override;
     void doubleMappingSize();
@@ -50,8 +50,8 @@ struct Size {
     int width = 0;
     int height = 0;
 
-    bool operator==(const Size& other) { return width == other.width && height == other.height; }
-    bool operator!=(const Size& other) { return !(*this == other); }
+    bool operator==(const Size& other) const { return width == other.width && height == other.height; }
+    bool operator!=(const Size& other) const { return !(*this == other); }
 };
 
 struct StampedImageBuffer {
@@ -96,7 +96,7 @@ class CameraRecorder {
 
     CameraRecorder(const char* param_file, const char* output_filename, bool save_to_file = false);
     ~CameraRecorder();
-    void registerSubscriberCallback(CameraSubscriberCallback callback);
+    void registerSubscriberCallback(const CameraSubscriberCallback& callback);
     void stopInstance();
 
     constexpr static int kMaxCameraNum = 2;
@@ -108,6 +108,8 @@ class CameraRecorder {
     void synchronizeQueues();
     static int getCameraId(int camera_handle);
     void applyParamsToCamera(int handle);
+    // no lint to insist on copying shared_ptr and incrementing ref counter
+    // NOLINTNEXTLINE
     void saveSynchronizedBuffers(std::shared_ptr<SynchronizedFrameBuffers> images);
 
     struct Params {

@@ -1,14 +1,13 @@
-#include "camera_status.h"
 #include "camera.h"
+#include "camera_status.h"
 
 #include <boost/asio.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
+#include <cerrno>
+#include <fcntl.h>
 #include <iostream>
 #include <sys/mman.h>
 #include <yaml-cpp/yaml.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <errno.h>
 
 using namespace std::chrono_literals;
 
@@ -62,26 +61,26 @@ void abortIfNot(std::string_view msg, int camera_idx, int status) {
 
 MappedFileManager::MappedFileManager() {
     std::cout << "MAX_SIZE INIT " << kMmapLargeConstant << '\n';
-    printf("MAX_SIZE INIT %l\n", kMmapLargeConstant);
+    printf("MAX_SIZE INIT %ld\n", kMmapLargeConstant);
     int64_t page_size = sysconf(_SC_PAGE_SIZE);
     kMmapLargeConstant = kMmapLargeConstant / page_size * page_size + page_size;
 }
 
 void MappedFileManager::init(
-    CameraRecorder* recorder_instance, std::string filepath, size_t bytes_per_second_estim) {
+    CameraRecorder* recorder_instance, const std::string& filepath) {
     recorder_instance_ = recorder_instance;
 
     file_ = open(filepath.c_str(), O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
     if (!file_) {
         perror("file open");
     }
-    printf("MAX_SIZE INIT %l\n", kMmapLargeConstant);
+    printf("MAX_SIZE INIT %ld\n", kMmapLargeConstant);
     if (ftruncate(file_, kMmapLargeConstant)) {
         perror("file resize");
     }
 
     internal_mapping_size_ = kMmapLargeConstant;
-    printf("MAX_SIZE INIT %l\n", kMmapLargeConstant);
+    printf("MAX_SIZE INIT %ld\n", kMmapLargeConstant);
 
     mmaped_ptr_ = mmap(nullptr, kMmapLargeConstant, PROT_READ | PROT_WRITE, MAP_SHARED, file_, 0);
     if (mmaped_ptr_ == MAP_FAILED) {
@@ -179,8 +178,8 @@ uint64_t MappedFileManager::size() const { return size_; }
 
 CameraRecorder::CameraRecorder(
     const char* param_file, const char* output_filename, bool save_to_file) {
-    param_.param_file = {param_file};
-    param_.output_filename = {output_filename};
+    param_.param_file = param_file;
+    param_.output_filename = output_filename;
     param_.save_to_file = save_to_file;
 
     if (save_to_file) {
@@ -195,7 +194,7 @@ CameraRecorder::CameraRecorder(
         options.noStatistics = true;
 
         std::string filename_str(output_filename);
-        file_manager_.init(this, filename_str, 1920 * 1200 * 100);
+        file_manager_.init(this, filename_str);
         mcap_writer_.open(file_manager_, options);
     }
 
@@ -284,10 +283,10 @@ CameraRecorder::CameraRecorder(
         }
     }
 
-    for (size_t i = 0; i < state_.camera_num; ++i) {
+    for (int i = 0; i < state_.camera_num; ++i) {
         abortIfNot("reset timestamp", i, CameraRstTimeStamp(state_.camera_handles[i]));
     }
-    for (size_t i = 0; i < state_.camera_num; ++i) {
+    for (int i = 0; i < state_.camera_num; ++i) {
         abortIfNot("start", CameraPlay(state_.camera_handles[i]));
         abortIfNot("reset timestamp", i, CameraRstTimeStamp(state_.camera_handles[i]));
         printf("inited API and started camera handle = %d\n", state_.camera_handles[i]);
@@ -339,7 +338,7 @@ void CameraRecorder::synchronizeQueues() {
         state_.synchronizer_condvar.wait_for(lock, std::chrono::milliseconds(100));
 
         // empty all queues
-        for (size_t i = 0; i < state_.camera_num; ++i) {
+        for (int i = 0; i < state_.camera_num; ++i) {
             camera_images[i].emplace_back();
             while (state_.camera_images[i]->pop(camera_images[i].back())) {
                 camera_images[i].emplace_back();
@@ -366,8 +365,7 @@ void CameraRecorder::synchronizeQueues() {
         if (max_size - min_size > 10) {
             for (size_t i = 0; i < camera_images.size(); ++i) {
                 while (camera_images[i].size() > min_size) {
-                    std::vector<StampedImageBuffer>::iterator front_elem_to_erase =
-                        camera_images[i].begin();
+                    auto front_elem_to_erase = camera_images[i].begin();
                     while (!this->state_.free_buffers[i]->push(front_elem_to_erase->raw_buffer)) {
                     }
                     state_.free_buffer_cnts[i]++;
@@ -498,6 +496,8 @@ void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFram
     CameraReleaseImageBuffer(handle, raw_buffer);
 }
 
+// no lint to insist on copying shared_ptr and incrementing ref counter
+// NOLINTNEXTLINE
 void CameraRecorder::saveSynchronizedBuffers(std::shared_ptr<SynchronizedFrameBuffers> images) {
     auto start = std::chrono::high_resolution_clock::now();
     mcap::Timestamp timestamp(static_cast<uint64_t>(images->timestamp) * 100000ul);
@@ -523,7 +523,7 @@ void CameraRecorder::saveSynchronizedBuffers(std::shared_ptr<SynchronizedFrameBu
     }
 }
 
-void CameraRecorder::registerSubscriberCallback(CameraSubscriberCallback callback) {
+void CameraRecorder::registerSubscriberCallback(const CameraSubscriberCallback& callback) {
     state_.registered_callbacks.push_back(callback);
 }
 
