@@ -13,7 +13,7 @@ find_package(mcap_vendor REQUIRED)
 add_library(mvsdk SHARED IMPORTED)
 set_target_properties(mvsdk PROPERTIES IMPORTED_LOCATION "/lib/libMVSDK.so")
 
-add_executable(camera src/camera_main.cpp src/camera.cpp src/camera_status.cpp )
+add_executable(camera src/camera_main.cpp src/camera.cpp src/camera_status.cpp)
 add_executable(
   calibration src/calibration_main.cpp src/calibration.cpp src/params.cpp
 )
