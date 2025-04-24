@@ -69,7 +69,6 @@ MappedFileManager::MappedFileManager() {
 
 void MappedFileManager::init(
     CameraRecorder* recorder_instance, std::string filepath, size_t bytes_per_second_estim) {
-
     recorder_instance_ = recorder_instance;
 
     file_ = open(filepath.c_str(), O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
@@ -84,8 +83,7 @@ void MappedFileManager::init(
     internal_mapping_size_ = kMmapLargeConstant;
     printf("MAX_SIZE INIT %l\n", kMmapLargeConstant);
 
-    mmaped_ptr_ =
-        mmap(nullptr, kMmapLargeConstant, PROT_READ | PROT_WRITE, MAP_SHARED, file_, 0);
+    mmaped_ptr_ = mmap(nullptr, kMmapLargeConstant, PROT_READ | PROT_WRITE, MAP_SHARED, file_, 0);
     if (mmaped_ptr_ == MAP_FAILED) {
         printf("errorno=%d\n", errno);
         perror("mmap");
@@ -97,26 +95,20 @@ void MappedFileManager::init(
     printf("memcpy from %p on %d successful\n", mmaped_ptr_, 10);
 }
 
-void MappedFileManager::write(const std::byte* data, uint64_t size) {
-    // while (busy_writing.exchange(true)) {
-    // }
-    handleWrite(data, size);
-    // busy_writing.exchange(false);
-}
+void MappedFileManager::write(const std::byte* data, uint64_t size) { handleWrite(data, size); }
 
 void MappedFileManager::handleWrite(const std::byte* data, uint64_t size) {
     while (busy_writing.exchange(true)) {
     }
 
     if (this->size() + size - internal_mapping_start_offset_ > kMmapLargeConstant) {
-        std::cout << "attempt to doubling" << std::endl;
         // recorder_instance_->param_.save_to_file = false;
         doubleMappingSize();
         // recorder_instance_->param_.save_to_file = true;
-        std::cout << "attempt to doubling successful" << std::endl;
     }
 
-    uint8_t* current_data_ptr = static_cast<uint8_t*>(mmaped_ptr_) + this->size() - internal_mapping_start_offset_;
+    uint8_t* current_data_ptr =
+        static_cast<uint8_t*>(mmaped_ptr_) + this->size() - internal_mapping_start_offset_;
 
     std::memcpy(static_cast<void*>(current_data_ptr), reinterpret_cast<const void*>(data), size);
     size_ += size;
@@ -125,50 +117,45 @@ void MappedFileManager::handleWrite(const std::byte* data, uint64_t size) {
 }
 
 void MappedFileManager::doubleMappingSize() {
-    // 1) Sync and unmap old region
-    std::cout << "!!! msyncing" << std::endl;
+    // MS_ASYNC -- flag to schedule syncronizing to the disk and not wait
+    // for its completion
     if (msync(mmaped_ptr_, kMmapLargeConstant, MS_ASYNC) == -1) {
         perror("msync");
         exit(1);
     }
-    std::cout << "!!! msynced" << std::endl;
-    std::cout << "!!! munmaping" << std::endl;
     if (munmap(mmaped_ptr_, kMmapLargeConstant) == -1) {
         perror("munmap");
         exit(1);
     }
-    std::cout << "!!! munmapped" << std::endl;
 
-    std::cout << "!!! unmaped" << std::endl;
-
-    // 2) Compute doubled, page-aligned size
     int64_t page_size = sysconf(_SC_PAGE_SIZE);
     internal_mapping_start_offset_ = size_ / page_size * page_size;
     uint64_t new_size = internal_mapping_size_ * 2;
     uint64_t aligned_size = ((new_size + 1024 * 1024 + page_size - 1) / page_size) * page_size;
 
-    std::cout << "!!! ftruncating" << std::endl;
-
     if (ftruncate(file_, aligned_size) == -1) {
         perror("ftruncate");
         exit(1);
     }
-    std::cout << "!!! ftruncated" << std::endl;
 
-    std::cout << "!!! remmaping" << std::endl;
-    // 3) Remap from offset 0 for the full new region
-    void* ptr = mmap(nullptr, kMmapLargeConstant, PROT_READ | PROT_WRITE, MAP_SHARED, file_, internal_mapping_start_offset_);
+    void* ptr = mmap(
+        nullptr,
+        kMmapLargeConstant,
+        PROT_READ | PROT_WRITE,
+        MAP_SHARED,
+        file_,
+        internal_mapping_start_offset_);
     if (ptr == MAP_FAILED) {
         perror("mmap");
         exit(1);
     }
 
-    std::cout << "!!! remmaped" << std::endl;
     mmaped_ptr_ = ptr;
     internal_mapping_size_ = aligned_size;
 }
 
 void MappedFileManager::end() {
+    // MS_SYNC -- flag to sync and wait. No rush because if exiting
     if (msync(mmaped_ptr_, kMmapLargeConstant, MS_SYNC) == -1) {
         perror("Could not sync the file to disk");
         exit(EXIT_FAILURE);
@@ -201,11 +188,11 @@ CameraRecorder::CameraRecorder(
         mcap::McapWriterOptions options("");
         options.noChunking = true;
 
-        // options.noMessageIndex = false;
-        // options.noAttachmentCRC = true;
-        // options.noAttachmentIndex = true;
-        // options.noMetadataIndex = true;
-        // options.noStatistics = true;
+        options.noMessageIndex = false;
+        options.noAttachmentCRC = true;
+        options.noAttachmentIndex = true;
+        options.noMetadataIndex = true;
+        options.noStatistics = true;
 
         std::string filename_str(output_filename);
         file_manager_.init(this, filename_str, 1920 * 1200 * 100);
@@ -368,6 +355,27 @@ void CameraRecorder::synchronizeQueues() {
             continue;
         }
 
+        // balance pools and free impossible to sync buffers
+        size_t max_size = camera_images[0].size();
+        size_t min_size = camera_images[0].size();
+        for (const std::vector<StampedImageBuffer>& v : camera_images) {
+            max_size = std::max(max_size, v.size());
+            min_size = std::min(min_size, v.size());
+        }
+        // if imbalance is significant (let us say 10)
+        if (max_size - min_size > 10) {
+            for (size_t i = 0; i < camera_images.size(); ++i) {
+                while (camera_images[i].size() > min_size) {
+                    std::vector<StampedImageBuffer>::iterator front_elem_to_erase =
+                        camera_images[i].begin();
+                    while (!this->state_.free_buffers[i]->push(front_elem_to_erase->raw_buffer)) {
+                    }
+                    state_.free_buffer_cnts[i]++;
+                    camera_images[i].erase(front_elem_to_erase);
+                }
+            }
+        }
+
         // prepare iterations
         std::vector<size_t> indices(camera_images.size(), 0);
         std::vector<size_t> sizes(camera_images.size());
@@ -376,12 +384,7 @@ void CameraRecorder::synchronizeQueues() {
             camera_images.begin(),
             camera_images.end(),
             sizes.begin(),
-            [](const std::vector<StampedImageBuffer>& v) {
-                // std::cout << v.size() << ' ';
-                return v.size();
-            });
-
-        // std::cout << '\n';
+            [](const std::vector<StampedImageBuffer>& v) { return v.size(); });
 
         // next vector of indices
         auto next = [&]() {
@@ -397,11 +400,6 @@ void CameraRecorder::synchronizeQueues() {
         // make single structure as a shared ptr
         // deleter is expected to push buffers back to the queue and then free the structure
         auto custom_deleter = [this](SynchronizedFrameBuffers* sync_buffers_ptr) {
-            // if (sync_buffers_ptr->timestamp == 0) {
-            //     delete sync_buffers_ptr;
-            //     return;
-            // }
-            // else the structure was indeed filled with valid pointers
             for (size_t i = 0; i < sync_buffers_ptr->images.size(); ++i) {
                 if (!sync_buffers_ptr->images[i]) {
                     continue;
@@ -436,7 +434,6 @@ void CameraRecorder::synchronizeQueues() {
             if (param_.save_to_file) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 std::thread(&CameraRecorder::saveSynchronizedBuffers, this, sync_buffers).detach();
-                // saveSynchronizedBuffers(sync_buffers);
             }
             // invoking all subscribers in detached threads
             for (size_t i = 0; i < state_.registered_callbacks.size(); ++i) {
@@ -454,9 +451,6 @@ void CameraRecorder::synchronizeQueues() {
 }
 
 void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFrameHead* frame_info) {
-    // TODO: delete elapsed time
-    auto start = std::chrono::high_resolution_clock::now();
-
     Size size{frame_info->iWidth, frame_info->iHeight};
     if (size != state_.frame_sizes[state_.handle_to_idx[handle]]) {
         printf(
@@ -473,7 +467,10 @@ void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFram
     int cnt = 0;
     while (!state_.free_buffers[state_.handle_to_idx[handle]]->pop(free_buffer)) {
         int value_to_print = state_.free_buffer_cnts[state_.handle_to_idx[handle]];
-        printf("cant pop free buffer %d %d\n", state_.handle_to_idx[handle], value_to_print);
+        printf(
+            "cant pop free buffer camera_idx=%d remaining_ptrs=%d\n",
+            state_.handle_to_idx[handle],
+            value_to_print);
         cnt++;
         if (cnt > 2) {
             state_.running = false;
@@ -483,15 +480,14 @@ void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFram
     }
     state_.free_buffer_cnts[state_.handle_to_idx[handle]]--;
 
-    int value_to_print = state_.free_buffer_cnts[state_.handle_to_idx[handle]];
-    printf("remaining: %d %d\n", state_.handle_to_idx[handle], value_to_print);
-
     std::memcpy(free_buffer, raw_buffer, frame_size_px);
+
+    int frame_id = state_.frame_ids[state_.handle_to_idx[handle]].fetch_add(1);
     StampedImageBuffer stamped_buffer_to_add{
         free_buffer,  // raw buffer
         *frame_info,
         state_.handle_to_idx[handle],
-        state_.frame_ids[state_.handle_to_idx[handle]].fetch_add(1),
+        frame_id,
         frame_info->uiTimeStamp};
     if (!state_.camera_images[state_.handle_to_idx[handle]]->push(stamped_buffer_to_add)) {
         printf("unable to fit into queue! exiting\n");
@@ -500,12 +496,6 @@ void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFram
     state_.synchronizer_condvar.notify_one();
 
     CameraReleaseImageBuffer(handle, raw_buffer);
-
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> elapsed = end - start;
-    if (elapsed.count() > 10) {
-        std::cout << "WARNING: Function took more than 10 ms " << elapsed.count() << '\n';
-    }
 }
 
 void CameraRecorder::saveSynchronizedBuffers(std::shared_ptr<SynchronizedFrameBuffers> images) {
@@ -528,8 +518,8 @@ void CameraRecorder::saveSynchronizedBuffers(std::shared_ptr<SynchronizedFrameBu
     }
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> elapsed = end - start;
-    if (elapsed.count() > 10) {
-        std::cout << "WARNING: Save function took more than 10 ms " << elapsed.count() << '\n';
+    if (elapsed.count() > 13) {
+        std::cout << "WARNING: Save function took more than 13 ms " << elapsed.count() << '\n';
     }
 }
 

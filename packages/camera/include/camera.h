@@ -32,7 +32,7 @@ class MappedFileManager final : public mcap::IWritable {
     void end() override;
     uint64_t size() const override;
 
-    uint64_t kMmapLargeConstant = 1ULL * 1024 * 1024 * 1024; // 8 GB
+    uint64_t kMmapLargeConstant = 1ULL * 1024 * 1024 * 1024;  // 2 GB
 
   private:
     int file_ = 0;
@@ -42,8 +42,6 @@ class MappedFileManager final : public mcap::IWritable {
     uint64_t internal_mapping_size_ = 0;
     uint64_t internal_mapping_start_offset_ = 0;
     std::atomic<bool> busy_writing = false;
-    // uint64_t file_capacity_in_seconds_ = 20; // how long can written to the file
-    size_t counter = 0;
 };
 
 struct Size {
@@ -91,8 +89,9 @@ struct CameraPool {
 };
 
 class CameraRecorder {
-  friend class MappedFileManager;
   public:
+    // CameraSubscriberCallback is required to be lock-free and finish within param_.latency
+    // millisecond
     using CameraSubscriberCallback = std::function<void(std::shared_ptr<SynchronizedFrameBuffers>)>;
 
     CameraRecorder(const char* param_file, const char* output_filename, bool save_to_file = false);

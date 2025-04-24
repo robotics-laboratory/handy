@@ -1,5 +1,5 @@
 parameters:
-  fps: 10 # 90 is the max fps to handle by experiments
+  fps: 80 # 80 is the max fps to handle by experiments
   duration: 10 # seconds
   hardware_triger: False  # if True only master is sent software trigger signal
   strobe_pulse_width: 500 # in microseconds
