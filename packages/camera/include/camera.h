@@ -32,7 +32,7 @@ class MappedFileManager final : public mcap::IWritable {
     void end() override;
     uint64_t size() const override;
 
-    uint64_t kMmapLargeConstant = 8ULL * 1024 * 1024 * 1024; // 8 GB
+    uint64_t kMmapLargeConstant = 1ULL * 1024 * 1024 * 1024; // 8 GB
 
   private:
     int file_ = 0;
@@ -40,6 +40,8 @@ class MappedFileManager final : public mcap::IWritable {
     CameraRecorder* recorder_instance_ = nullptr;  // to be able to call stopInstance()
     uint64_t size_ = 0;
     uint64_t internal_mapping_size_ = 0;
+    uint64_t internal_mapping_start_offset_ = 0;
+    std::atomic<bool> busy_writing = false;
     // uint64_t file_capacity_in_seconds_ = 20; // how long can written to the file
     size_t counter = 0;
 };
@@ -89,6 +91,7 @@ struct CameraPool {
 };
 
 class CameraRecorder {
+  friend class MappedFileManager;
   public:
     using CameraSubscriberCallback = std::function<void(std::shared_ptr<SynchronizedFrameBuffers>)>;
 
@@ -114,13 +117,14 @@ class CameraRecorder {
         std::string output_filename;
         int master_camera_id = 1;
         bool use_hardware_triger = false;
-        bool save_to_file = false;
+        std::atomic<bool> save_to_file = false;
     } param_{};
 
     struct State {
         std::array<std::unique_ptr<boost::lockfree::queue<StampedImageBuffer>>, kMaxCameraNum>
             camera_images;
         std::array<std::unique_ptr<boost::lockfree::queue<uint8_t*>>, kMaxCameraNum> free_buffers;
+        std::array<std::atomic<int>, kMaxCameraNum> free_buffer_cnts;
 
         std::atomic<bool> running = true;
         std::vector<std::thread> threads;  // trigger thread, queue handler thread

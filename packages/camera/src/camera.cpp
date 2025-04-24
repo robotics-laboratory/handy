@@ -69,6 +69,9 @@ MappedFileManager::MappedFileManager() {
 
 void MappedFileManager::init(
     CameraRecorder* recorder_instance, std::string filepath, size_t bytes_per_second_estim) {
+
+    recorder_instance_ = recorder_instance;
+
     file_ = open(filepath.c_str(), O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
     if (!file_) {
         perror("file open");
@@ -82,7 +85,7 @@ void MappedFileManager::init(
     printf("MAX_SIZE INIT %l\n", kMmapLargeConstant);
 
     mmaped_ptr_ =
-        mmap(nullptr, internal_mapping_size_, PROT_READ | PROT_WRITE, MAP_SHARED, file_, 0);
+        mmap(nullptr, kMmapLargeConstant, PROT_READ | PROT_WRITE, MAP_SHARED, file_, 0);
     if (mmaped_ptr_ == MAP_FAILED) {
         printf("errorno=%d\n", errno);
         perror("mmap");
@@ -94,51 +97,84 @@ void MappedFileManager::init(
     printf("memcpy from %p on %d successful\n", mmaped_ptr_, 10);
 }
 
-void MappedFileManager::write(const std::byte* data, uint64_t size) { handleWrite(data, size); }
+void MappedFileManager::write(const std::byte* data, uint64_t size) {
+    // while (busy_writing.exchange(true)) {
+    // }
+    handleWrite(data, size);
+    // busy_writing.exchange(false);
+}
 
 void MappedFileManager::handleWrite(const std::byte* data, uint64_t size) {
-    if (this->size() + size > internal_mapping_size_) {
-        doubleMappingSize();
+    while (busy_writing.exchange(true)) {
     }
-    uint8_t* current_data_ptr = static_cast<uint8_t*>(mmaped_ptr_) + this->size();
-    // printf(
-    //     "trying to copy to %p of the size %lu, max is %lu\n",
-    //     current_data_ptr,
-    //     size,
-    //     internal_mapping_size_);
+
+    if (this->size() + size - internal_mapping_start_offset_ > kMmapLargeConstant) {
+        std::cout << "attempt to doubling" << std::endl;
+        // recorder_instance_->param_.save_to_file = false;
+        doubleMappingSize();
+        // recorder_instance_->param_.save_to_file = true;
+        std::cout << "attempt to doubling successful" << std::endl;
+    }
+
+    uint8_t* current_data_ptr = static_cast<uint8_t*>(mmaped_ptr_) + this->size() - internal_mapping_start_offset_;
+
     std::memcpy(static_cast<void*>(current_data_ptr), reinterpret_cast<const void*>(data), size);
     size_ += size;
+
+    busy_writing = false;
 }
 
 void MappedFileManager::doubleMappingSize() {
-    if (msync(mmaped_ptr_, internal_mapping_size_, MS_SYNC) == -1) {
-        perror("Could not sync the file to disk");
-        exit(EXIT_FAILURE);
+    // 1) Sync and unmap old region
+    std::cout << "!!! msyncing" << std::endl;
+    if (msync(mmaped_ptr_, kMmapLargeConstant, MS_ASYNC) == -1) {
+        perror("msync");
+        exit(1);
     }
-    // free the mmapped memory
-    if (munmap(mmaped_ptr_, internal_mapping_size_) == -1) {
-        perror("Error un-mmapping the file");
-        exit(EXIT_FAILURE);
+    std::cout << "!!! msynced" << std::endl;
+    std::cout << "!!! munmaping" << std::endl;
+    if (munmap(mmaped_ptr_, kMmapLargeConstant) == -1) {
+        perror("munmap");
+        exit(1);
     }
+    std::cout << "!!! munmapped" << std::endl;
 
-    internal_mapping_size_ *= 2;
+    std::cout << "!!! unmaped" << std::endl;
 
-    mmaped_ptr_ =
-        mmap(nullptr, internal_mapping_size_, PROT_READ | PROT_WRITE, MAP_SHARED, file_, 0);
-    if (mmaped_ptr_ == MAP_FAILED) {
-        printf("errorno=%d\n", errno);
+    // 2) Compute doubled, page-aligned size
+    int64_t page_size = sysconf(_SC_PAGE_SIZE);
+    internal_mapping_start_offset_ = size_ / page_size * page_size;
+    uint64_t new_size = internal_mapping_size_ * 2;
+    uint64_t aligned_size = ((new_size + 1024 * 1024 + page_size - 1) / page_size) * page_size;
+
+    std::cout << "!!! ftruncating" << std::endl;
+
+    if (ftruncate(file_, aligned_size) == -1) {
+        perror("ftruncate");
+        exit(1);
+    }
+    std::cout << "!!! ftruncated" << std::endl;
+
+    std::cout << "!!! remmaping" << std::endl;
+    // 3) Remap from offset 0 for the full new region
+    void* ptr = mmap(nullptr, kMmapLargeConstant, PROT_READ | PROT_WRITE, MAP_SHARED, file_, internal_mapping_start_offset_);
+    if (ptr == MAP_FAILED) {
         perror("mmap");
-        exit(EXIT_FAILURE);
+        exit(1);
     }
+
+    std::cout << "!!! remmaped" << std::endl;
+    mmaped_ptr_ = ptr;
+    internal_mapping_size_ = aligned_size;
 }
 
 void MappedFileManager::end() {
-    if (msync(mmaped_ptr_, internal_mapping_size_, MS_SYNC) == -1) {
+    if (msync(mmaped_ptr_, kMmapLargeConstant, MS_SYNC) == -1) {
         perror("Could not sync the file to disk");
         exit(EXIT_FAILURE);
     }
     // free the mmapped memory
-    if (munmap(mmaped_ptr_, internal_mapping_size_) == -1) {
+    if (munmap(mmaped_ptr_, kMmapLargeConstant) == -1) {
         perror("Error un-mmapping the file");
         exit(EXIT_FAILURE);
     }
@@ -165,11 +201,11 @@ CameraRecorder::CameraRecorder(
         mcap::McapWriterOptions options("");
         options.noChunking = true;
 
-        options.noMessageIndex = false;
-        options.noAttachmentCRC = true;
-        options.noAttachmentIndex = true;
-        options.noMetadataIndex = true;
-        options.noStatistics = true;
+        // options.noMessageIndex = false;
+        // options.noAttachmentCRC = true;
+        // options.noAttachmentIndex = true;
+        // options.noMetadataIndex = true;
+        // options.noStatistics = true;
 
         std::string filename_str(output_filename);
         file_manager_.init(this, filename_str, 1920 * 1200 * 100);
@@ -200,6 +236,7 @@ CameraRecorder::CameraRecorder(
         state_.camera_images[i] =
             std::make_unique<boost::lockfree::queue<StampedImageBuffer>>(kQueueCapacity);
         state_.free_buffers[i] = std::make_unique<boost::lockfree::queue<uint8_t*>>(kQueueCapacity);
+        state_.free_buffer_cnts[i] = 0;
 
         mcap::Schema schema("raw_bayer_scheme", "", "");
         mcap_writer_.addSchema(schema);
@@ -256,6 +293,7 @@ CameraRecorder::CameraRecorder(
     for (int i = 0; i < state_.camera_num; ++i) {
         for (int j = 0; j < kQueueCapacity; ++j) {
             state_.free_buffers[i]->push(state_.buffers.getRawFrame(i * kQueueCapacity + j));
+            state_.free_buffer_cnts[i]++;
         }
     }
 
@@ -338,7 +376,12 @@ void CameraRecorder::synchronizeQueues() {
             camera_images.begin(),
             camera_images.end(),
             sizes.begin(),
-            [](const std::vector<StampedImageBuffer>& v) { return v.size(); });
+            [](const std::vector<StampedImageBuffer>& v) {
+                // std::cout << v.size() << ' ';
+                return v.size();
+            });
+
+        // std::cout << '\n';
 
         // next vector of indices
         auto next = [&]() {
@@ -354,20 +397,24 @@ void CameraRecorder::synchronizeQueues() {
         // make single structure as a shared ptr
         // deleter is expected to push buffers back to the queue and then free the structure
         auto custom_deleter = [this](SynchronizedFrameBuffers* sync_buffers_ptr) {
-            if (sync_buffers_ptr->timestamp == 0) {
-                delete sync_buffers_ptr;
-                return;
-            }
+            // if (sync_buffers_ptr->timestamp == 0) {
+            //     delete sync_buffers_ptr;
+            //     return;
+            // }
             // else the structure was indeed filled with valid pointers
             for (size_t i = 0; i < sync_buffers_ptr->images.size(); ++i) {
+                if (!sync_buffers_ptr->images[i]) {
+                    continue;
+                }
                 while (!this->state_.free_buffers[i]->push(sync_buffers_ptr->images[i])) {
                 }
+                state_.free_buffer_cnts[i]++;
             }
             delete sync_buffers_ptr;
         };
         std::shared_ptr<SynchronizedFrameBuffers> sync_buffers(
             new SynchronizedFrameBuffers, custom_deleter);
-        sync_buffers->images.resize(state_.camera_num);
+        sync_buffers->images.resize(state_.camera_num, nullptr);
         sync_buffers->image_sizes.resize(state_.camera_num);
 
         // iterate through all possible combinations and check for equal ids and timestamps
@@ -387,7 +434,9 @@ void CameraRecorder::synchronizeQueues() {
             }
             // invoke saving buffers in a detached thread as other callbacks?
             if (param_.save_to_file) {
-                saveSynchronizedBuffers(sync_buffers);
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::thread(&CameraRecorder::saveSynchronizedBuffers, this, sync_buffers).detach();
+                // saveSynchronizedBuffers(sync_buffers);
             }
             // invoking all subscribers in detached threads
             for (size_t i = 0; i < state_.registered_callbacks.size(); ++i) {
@@ -398,7 +447,7 @@ void CameraRecorder::synchronizeQueues() {
             sync_buffers = std::shared_ptr<SynchronizedFrameBuffers>(
                 new SynchronizedFrameBuffers,
                 custom_deleter);  // custom deleter adds buffer pointer back to the queue
-            sync_buffers->images.resize(state_.camera_num);
+            sync_buffers->images.resize(state_.camera_num, nullptr);
             sync_buffers->image_sizes.resize(state_.camera_num);
         } while (next());
     }
@@ -421,12 +470,21 @@ void CameraRecorder::handleFrame(CameraHandle handle, BYTE* raw_buffer, tSdkFram
     int frame_size_px = frame_info->iWidth * frame_info->iHeight;
 
     uint8_t* free_buffer;
+    int cnt = 0;
     while (!state_.free_buffers[state_.handle_to_idx[handle]]->pop(free_buffer)) {
-        printf("cant pop free buffer\n");
-        state_.running = false;
-        sleep(1);
-        exit(EXIT_FAILURE);
+        int value_to_print = state_.free_buffer_cnts[state_.handle_to_idx[handle]];
+        printf("cant pop free buffer %d %d\n", state_.handle_to_idx[handle], value_to_print);
+        cnt++;
+        if (cnt > 2) {
+            state_.running = false;
+            sleep(1);
+            exit(EXIT_FAILURE);
+        }
     }
+    state_.free_buffer_cnts[state_.handle_to_idx[handle]]--;
+
+    int value_to_print = state_.free_buffer_cnts[state_.handle_to_idx[handle]];
+    printf("remaining: %d %d\n", state_.handle_to_idx[handle], value_to_print);
 
     std::memcpy(free_buffer, raw_buffer, frame_size_px);
     StampedImageBuffer stamped_buffer_to_add{
