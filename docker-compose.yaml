@@ -7,7 +7,7 @@ services:
     ports:
       - "${FOXGLOVE_PORT:-8765}:8765"
     volumes:
-      - "/home/bakind/handy:/handy"
+      - "${PWD}:/handy"
       - "/dev:/dev"
     deploy:
       resources:
