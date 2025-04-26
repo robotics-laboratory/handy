@@ -78,9 +78,10 @@ class LitSegmentation(L.LightningModule):
 
 
 if __name__ == "__main__":
+    print(torch.cuda.is_available())
+    quit()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_dir", type=str, help="Path to train directory")
-    parser.add_argument("--val_dir", type=str, help="Path to validation directory")
+    parser.add_argument("--dataset_dir", type=str, help="Path to created dataset with generated annotation")
     parser.add_argument("--width", type=int, default=256, help="Image width")
     parser.add_argument("--height", type=int, default=256, help="Image height")
     parser.add_argument("--batch_size", type=int, help="Batch size")
@@ -90,8 +91,7 @@ if __name__ == "__main__":
 
     model = UNet(3, 1, 16)
     dm = SegmentationDataModule(
-        args.train_dir,
-        args.val_dir,
+        args.dataset_dir,
         size=(args.width, args.height),
         batch_size=args.batch_size,
     )

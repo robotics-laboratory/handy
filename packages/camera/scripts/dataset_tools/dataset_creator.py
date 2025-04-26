@@ -84,15 +84,6 @@ def init_parser() -> argparse.ArgumentParser:
     return parser
 
 
-{
-    "imagepath": {
-        "has_ball": "",
-        "bbox": [0, 0, 0, 0],
-        "maskpath": "",
-    }
-}
-
-
 def main() -> None:
     intrinsic_params = None
     parser = init_parser()
@@ -131,13 +122,14 @@ def main() -> None:
     file_annotations = json.load(open(args.annotation))
 
     # proccess all images from source directory
-    for filename in tqdm.tqdm(os.listdir(args.source)[:50]):
+    for filename in tqdm.tqdm(os.listdir(args.source)):
         path_to_file = os.path.join(args.source, filename)
         image = cv2.imread(path_to_file)
         bgr_image = cv2.cvtColor(image[:, :, 0], cv2.COLOR_BayerRGGB2BGR)
         # image_annotation_to_write = {
         image_annotation_to_write = {
             "has_ball": file_annotations[filename],
+            "raw_path": os.path.join(args.export, subdir_name, "images_raw", filename),
             "bbox": [0, 0, 0, 0],
             "maskpath": "",
         }
@@ -150,7 +142,7 @@ def main() -> None:
             image_annotation_to_write["bbox"] = get_bbox_from_mask(mask)
 
         dataset_annotation[
-            os.path.join(args.export, subdir_name, filename)
+            os.path.join(args.export, subdir_name, "images_rgb", filename)
         ] = image_annotation_to_write
 
         if args.undistort:

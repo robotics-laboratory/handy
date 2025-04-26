@@ -3,6 +3,7 @@ import random
 
 import albumentations as A
 import cv2
+import json
 import lightning as L
 import numpy as np
 import torch
@@ -56,19 +57,17 @@ def get_val_transform():
 
 
 class SegmentationDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, size=(256, 256), transform=None):
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
+    def __init__(self, dataset_annotation, size=(256, 256), transform=None):
+        self.dataset_annotation_list = dataset_annotation
         self.size = size
         self.transform = transform
-        self.images = os.listdir(self.mask_dir)
 
     def __len__(self):
-        return len(self.images)
+        return len(self.dataset_annotation_list)
 
     def __getitem__(self, idx):
-        image_path = os.path.join(self.image_dir, self.images[idx])
-        mask_path = os.path.join(self.mask_dir, self.images[idx])
+        image_path = self.dataset_annotation_list[idx][0]
+        mask_path = self.dataset_annotation_list[idx][1]["maskpath"]
 
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -86,23 +85,28 @@ class SegmentationDataset(Dataset):
 
 
 class SegmentationDataModule(L.LightningDataModule):
-    def __init__(self, train_dir, val_dir, size=(256, 256), batch_size=32):
+    def __init__(self, dataset_dir, size=(256, 256), batch_size=32, val_split_ratio=0.2):
         super().__init__()
-        self.train_dir = train_dir
-        self.val_dir = val_dir
+        self.dataset_dir = dataset_dir
+        dataset_annotation_path = os.path.join(dataset_dir, "dataset_annotation.json")
+        dataset_annotation = json.load(open(dataset_annotation_path))
+        # select only those that has a ball
+        dataset_annotation = list(filter(lambda x: x[1]["has_ball"]=="ball", dataset_annotation.items()))
+        # split for train and validation
+        pivot_idx = len(dataset_annotation) * (1 - val_split_ratio)
+        self.dataset_annotation_train, self.dataset_annotation_val = dataset_annotation[:int(pivot_idx)], dataset_annotation[int(pivot_idx):]
+
         self.size = size
         self.batch_size = batch_size
 
     def setup(self, stage):
         self.train_dataset = SegmentationDataset(
-            os.path.join(self.train_dir, "images_rgb"),
-            os.path.join(self.train_dir, "masks"),
+            self.dataset_annotation_train,
             size=self.size,
             transform=get_train_transform(),
         )
         self.val_dataset = SegmentationDataset(
-            os.path.join(self.val_dir, "images_rgb"),
-            os.path.join(self.val_dir, "masks"),
+            self.dataset_annotation_val,
             size=self.size,
             transform=get_val_transform(),
         )
