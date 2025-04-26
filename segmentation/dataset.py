@@ -1,0 +1,135 @@
+import os
+import random
+
+import albumentations as A
+import cv2
+import json
+import lightning as L
+import numpy as np
+import torch
+import torch.utils
+from albumentations.pytorch import ToTensorV2
+from torch.utils.data import Dataset
+
+
+def get_non_empty_mask_crop(image, mask, size=(256, 256)):
+    non_empty_col = np.argwhere(np.any(mask, axis=0)).ravel()
+    non_empty_row = np.argwhere(np.any(mask, axis=1)).ravel()
+
+    x_min, x_max = non_empty_row[0], non_empty_row[-1]
+    y_min, y_max = non_empty_col[0], non_empty_col[-1]
+
+    if x_max - size[0] + 1 >= x_min or y_max - size[1] + 1 >= y_min:
+        x = random.randint(0, image.shape[0] - size[0])
+        y = random.randint(0, image.shape[1] - size[1])
+    else:
+        x = random.randint(
+            max(x_max - size[0], 0), min(x_min, image.shape[0] - size[0])
+        )
+        y = random.randint(
+            max(y_max - size[1], 0), min(y_min, image.shape[1] - size[1])
+        )
+
+    return image[x : x + size[0], y : y + size[1]], mask[
+        x : x + size[0], y : y + size[1]
+    ]
+
+
+def get_train_transform():
+    return A.Compose(
+        [
+            A.HorizontalFlip(p=0.5),
+            A.ToGray(p=0.5),
+            A.RandomBrightnessContrast(p=0.3),
+            A.Normalize(mean=(0.077, 0.092, 0.142), std=(0.068, 0.079, 0.108)),
+            ToTensorV2(p=1.0),
+        ]
+    )
+
+
+def get_val_transform():
+    return A.Compose(
+        [
+            A.Normalize(mean=(0.077, 0.092, 0.142), std=(0.068, 0.079, 0.108)),
+            ToTensorV2(p=1.0),
+        ]
+    )
+
+
+class SegmentationDataset(Dataset):
+    def __init__(self, dataset_annotation, size=(256, 256), transform=None):
+        self.dataset_annotation_list = dataset_annotation
+        self.size = size
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.dataset_annotation_list)
+
+    def __getitem__(self, idx):
+        image_path = self.dataset_annotation_list[idx][0]
+        mask_path = self.dataset_annotation_list[idx][1]["maskpath"]
+
+        image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+        mask = np.clip(mask, 0, 1)
+        image, mask = get_non_empty_mask_crop(image, mask)
+
+        if self.transform:
+            transformed = self.transform(image=image, mask=mask)
+            image = transformed["image"]
+            mask = transformed["mask"]
+
+        return image, mask
+
+
+class SegmentationDataModule(L.LightningDataModule):
+    def __init__(self, dataset_dir, size=(256, 256), batch_size=32, val_split_ratio=0.2):
+        super().__init__()
+        self.dataset_dir = dataset_dir
+        dataset_annotation_path = os.path.join(dataset_dir, "dataset_annotation.json")
+        dataset_annotation = json.load(open(dataset_annotation_path))
+        # select only those that has a ball
+        dataset_annotation = list(filter(lambda x: x[1]["has_ball"]=="ball", dataset_annotation.items()))
+        # split for train and validation
+        pivot_idx = len(dataset_annotation) * (1 - val_split_ratio)
+        self.dataset_annotation_train, self.dataset_annotation_val = dataset_annotation[:int(pivot_idx)], dataset_annotation[int(pivot_idx):]
+
+        self.size = size
+        self.batch_size = batch_size
+
+    def setup(self, stage):
+        self.train_dataset = SegmentationDataset(
+            self.dataset_annotation_train,
+            size=self.size,
+            transform=get_train_transform(),
+        )
+        self.val_dataset = SegmentationDataset(
+            self.dataset_annotation_val,
+            size=self.size,
+            transform=get_val_transform(),
+        )
+
+    def train_dataloader(self):
+        return torch.utils.data.DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=4,
+            pin_memory=True,
+            persistent_workers=True,
+        )
+
+    def val_dataloader(self):
+        return torch.utils.data.DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=4,
+            pin_memory=True,
+            persistent_workers=True,
+        )
+
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        return batch[0].to(device), batch[1].to(device)

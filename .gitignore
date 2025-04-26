@@ -2,9 +2,14 @@
 *.png
 *.bin
 *.db3
+*.pyc
 
 #ROS2 builds
 **/build
 **/install
 **/log
 **/Camera
+
+#training
+/wandb
+/checkpoints
