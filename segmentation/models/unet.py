@@ -1,5 +1,6 @@
-import torch.nn as nn
 import torch
+import torch.nn as nn
+
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -10,9 +11,9 @@ class ConvBlock(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
             nn.ReLU(inplace=True),
-            nn.BatchNorm2d(out_channels)
+            nn.BatchNorm2d(out_channels),
         )
-    
+
     def forward(self, x):
         return self.conv(x)
 
@@ -20,7 +21,7 @@ class ConvBlock(nn.Module):
 class UNet(nn.Module):
     def __init__(self, in_channels, out_channels, features_dim):
         super().__init__()
-        
+
         self.encoder1 = ConvBlock(in_channels, features_dim)
         self.pull1 = nn.MaxPool2d(kernel_size=2, stride=2)
 
@@ -35,16 +36,24 @@ class UNet(nn.Module):
 
         self.bottleneck = ConvBlock(features_dim * 8, features_dim * 16)
 
-        self.upconv4 = nn.ConvTranspose2d(features_dim * 16, features_dim * 8, kernel_size=2, stride=2)
+        self.upconv4 = nn.ConvTranspose2d(
+            features_dim * 16, features_dim * 8, kernel_size=2, stride=2
+        )
         self.decoder4 = ConvBlock(features_dim * 16, features_dim * 8)
 
-        self.upconv3 = nn.ConvTranspose2d(features_dim * 8, features_dim * 4, kernel_size=2, stride=2)
+        self.upconv3 = nn.ConvTranspose2d(
+            features_dim * 8, features_dim * 4, kernel_size=2, stride=2
+        )
         self.decoder3 = ConvBlock(features_dim * 8, features_dim * 4)
 
-        self.upconv2 = nn.ConvTranspose2d(features_dim * 4, features_dim * 2, kernel_size=2, stride=2)
+        self.upconv2 = nn.ConvTranspose2d(
+            features_dim * 4, features_dim * 2, kernel_size=2, stride=2
+        )
         self.decoder2 = ConvBlock(features_dim * 4, features_dim * 2)
 
-        self.upconv1 = nn.ConvTranspose2d(features_dim * 2, features_dim, kernel_size=2, stride=2)
+        self.upconv1 = nn.ConvTranspose2d(
+            features_dim * 2, features_dim, kernel_size=2, stride=2
+        )
         self.decoder1 = ConvBlock(features_dim * 2, features_dim)
 
         self.out = nn.Conv2d(features_dim, out_channels, kernel_size=1)

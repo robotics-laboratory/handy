@@ -1,19 +1,17 @@
 import os
-import cv2
+import random
+
 import albumentations as A
+import cv2
 import lightning as L
 import numpy as np
-import random
 import torch
-import torchvision.transforms as T
-
 import torch.utils
-from torch.utils.data import Dataset
 from albumentations.pytorch import ToTensorV2
+from torch.utils.data import Dataset
 
 
 def get_non_empty_mask_crop(image, mask, size=(256, 256)):
-
     non_empty_col = np.argwhere(np.any(mask, axis=0)).ravel()
     non_empty_row = np.argwhere(np.any(mask, axis=1)).ravel()
 
@@ -24,27 +22,37 @@ def get_non_empty_mask_crop(image, mask, size=(256, 256)):
         x = random.randint(0, image.shape[0] - size[0])
         y = random.randint(0, image.shape[1] - size[1])
     else:
-        x = random.randint(max(x_max - size[0], 0), min(x_min, image.shape[0] - size[0]))
-        y = random.randint(max(y_max - size[1], 0), min(y_min, image.shape[1] - size[1]))
+        x = random.randint(
+            max(x_max - size[0], 0), min(x_min, image.shape[0] - size[0])
+        )
+        y = random.randint(
+            max(y_max - size[1], 0), min(y_min, image.shape[1] - size[1])
+        )
 
-    return image[x:x+size[0], y:y+size[1]], mask[x:x+size[0], y:y+size[1]]
+    return image[x : x + size[0], y : y + size[1]], mask[
+        x : x + size[0], y : y + size[1]
+    ]
 
 
 def get_train_transform():
-    return A.Compose([
-        A.HorizontalFlip(p=0.5),
-        A.ToGray(p=0.5),
-        A.RandomBrightnessContrast(p=0.3),
-        A.Normalize(mean=(0.077, 0.092, 0.142), std=(0.068, 0.079, 0.108)),
-        ToTensorV2(p=1.0)
-    ])
+    return A.Compose(
+        [
+            A.HorizontalFlip(p=0.5),
+            A.ToGray(p=0.5),
+            A.RandomBrightnessContrast(p=0.3),
+            A.Normalize(mean=(0.077, 0.092, 0.142), std=(0.068, 0.079, 0.108)),
+            ToTensorV2(p=1.0),
+        ]
+    )
 
 
 def get_val_transform():
-    return A.Compose([
-        A.Normalize(mean=(0.077, 0.092, 0.142), std=(0.068, 0.079, 0.108)),
-        ToTensorV2(p=1.0)
-    ])
+    return A.Compose(
+        [
+            A.Normalize(mean=(0.077, 0.092, 0.142), std=(0.068, 0.079, 0.108)),
+            ToTensorV2(p=1.0),
+        ]
+    )
 
 
 class SegmentationDataset(Dataset):
@@ -57,11 +65,11 @@ class SegmentationDataset(Dataset):
 
     def __len__(self):
         return len(self.images)
-    
+
     def __getitem__(self, idx):
         image_path = os.path.join(self.image_dir, self.images[idx])
         mask_path = os.path.join(self.mask_dir, self.images[idx])
-        
+
         image = cv2.imread(image_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -71,9 +79,9 @@ class SegmentationDataset(Dataset):
 
         if self.transform:
             transformed = self.transform(image=image, mask=mask)
-            image = transformed['image']
-            mask = transformed['mask']
-        
+            image = transformed["image"]
+            mask = transformed["mask"]
+
         return image, mask
 
 
@@ -84,32 +92,40 @@ class SegmentationDataModule(L.LightningDataModule):
         self.val_dir = val_dir
         self.size = size
         self.batch_size = batch_size
-    
+
     def setup(self, stage):
         self.train_dataset = SegmentationDataset(
-            os.path.join(self.train_dir, 'images_rgb'),
-            os.path.join(self.train_dir, 'masks'),
+            os.path.join(self.train_dir, "images_rgb"),
+            os.path.join(self.train_dir, "masks"),
             size=self.size,
-            transform=get_train_transform()
+            transform=get_train_transform(),
         )
         self.val_dataset = SegmentationDataset(
-            os.path.join(self.val_dir, 'images_rgb'),
-            os.path.join(self.val_dir, 'masks'),
+            os.path.join(self.val_dir, "images_rgb"),
+            os.path.join(self.val_dir, "masks"),
             size=self.size,
-            transform=get_val_transform()
+            transform=get_val_transform(),
         )
-    
+
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=self.batch_size, shuffle=True,
-            num_workers=4, pin_memory=True, persistent_workers=True
+            self.train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=4,
+            pin_memory=True,
+            persistent_workers=True,
         )
-    
+
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
-            self.val_dataset, batch_size=self.batch_size, shuffle=False,
-            num_workers=4, pin_memory=True, persistent_workers=True
+            self.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=4,
+            pin_memory=True,
+            persistent_workers=True,
         )
-    
+
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         return batch[0].to(device), batch[1].to(device)
