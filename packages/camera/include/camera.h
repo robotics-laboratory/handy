@@ -147,5 +147,7 @@ class CameraRecorder {
 
     mcap::McapWriter mcap_writer_;
     MappedFileManager file_manager_;
+
+    std::function<void(SynchronizedFrameBuffers*)> deleter_;
 };
 }  // namespace handy::camera
