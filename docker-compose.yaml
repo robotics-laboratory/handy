@@ -4,6 +4,7 @@ services:
     container_name: "${CONTAINER_NAME:-handy-${USER}}"
     networks: [default]
     privileged: true
+    runtime: nvidia
     ports:
       - "${FOXGLOVE_PORT:-8765}:8765"
     volumes:

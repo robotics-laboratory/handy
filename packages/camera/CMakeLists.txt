@@ -4,6 +4,8 @@ project(camera)
 add_compile_options(-Wall -Wextra -Werror=unused-variable -Wpedantic)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -O3")
 
+set(Torch_DIR "/usr/local/lib/python3.8/dist-packages/torch/share/cmake/Torch")
+find_package(Torch REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
 find_package(ament_cmake REQUIRED)
