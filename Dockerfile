@@ -2,7 +2,7 @@
 # Platform arm64 means nvidia jetson arm64v8.
 # Image may be not compatible with other arm machines.
 
-FROM --platform=linux/arm64v8 nvcr.io/nvidia/l4t-base:r35.1.0 AS handy-base-arm64
+FROM --platform=linux/arm64v8 nvcr.io/nvidia/l4t-base:r36.2.0 AS handy-base-arm64
 
 ### INSTALL NVIDIA PACKAGES
 
@@ -105,7 +105,7 @@ RUN apt-get update && \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
-ENV TORCHVISION_VERSION=0.14.0
+ENV TORCHVISION_VERSION=0.17.0
 
 FROM handy-common AS handy-cuda-arm64
 
@@ -162,19 +162,26 @@ RUN pip3 install --no-cache-dir \
     numpy \
     pillow
 
-ENV PYTORCH_WHL="torch-1.13.0a0+340c4120.nv22.06-cp38-cp38-linux_aarch64.whl"
-ENV PYTORCH_URL="https://developer.download.nvidia.com/compute/redist/jp/v50/pytorch/${PYTORCH_WHL}"
+ENV PYTORCH_WHL="torch-2.2.0a0+81ea7a4.nv24.01-cp310-cp310-linux_aarch64.whl"
+ENV PYTORCH_URL="https://developer.download.nvidia.com/compute/redist/jp/v60dp/pytorch/${PYTORCH_WHL}"
 
 RUN wget --no-check-certificate -qO ${PYTORCH_WHL} ${PYTORCH_URL} \
     && pip3 install --no-cache-dir ${PYTORCH_WHL} \
     && rm -rf /tmp/*
 
-RUN wget -qO - https://github.com/pytorch/vision/archive/refs/tags/v${TORCHVISION_VERSION}.tar.gz | tar -xz \
-    && cd vision-${TORCHVISION_VERSION} \
-    && python3 setup.py install \
-    && rm -rf /tmp/*
+RUN pip3 install torchvision==${TORCHVISION_VERSION}
 
-ENV PYTORCH_PATH="/usr/local/lib/python3.8/dist-packages/torch"
+# RUN apt-get update && \
+#     apt-get install -y cuda-command-line-tools-12-2 libcupti-dev && \
+#     echo "/usr/local/cuda-12.2/extras/CUPTI/lib64" \
+#       > /etc/ld.so.conf.d/cupti.conf && ldconfig
+
+# RUN wget -qO - https://github.com/pytorch/vision/archive/refs/tags/v${TORCHVISION_VERSION}.tar.gz | tar -xz \
+#     && cd vision-${TORCHVISION_VERSION} \
+#     && python3 setup.py install \
+#     && rm -rf /tmp/*
+
+ENV PYTORCH_PATH="/usr/local/lib/python3.10/dist-packages/torch"
 ENV LD_LIBRARY_PATH="${PYTORCH_PATH}/lib:${LD_LIBRARY_PATH}"
 
 FROM handy-common AS handy-cuda-amd64
@@ -215,13 +222,13 @@ RUN wget -qO - https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSI
         -DBUILD_TESTS=OFF \
     && make -j$(nproc) install && rm -rf /tmp/*
 
-ENV TORCH_VERSION=1.13.0
+ENV TORCH_VERSION=2.2.0
 
 RUN pip3 install --no-cache-dir \
     torch==${TORCH_VERSION} \
     torchvision==${TORCHVISION_VERSION}
 
-ENV PYTORCH_PATH="/usr/local/lib/python3.8/dist-packages/torch"
+ENV PYTORCH_PATH="/usr/local/lib/python3.10/dist-packages/torch"
 ENV LD_LIBRARY_PATH="${PYTORCH_PATH}/lib:${LD_LIBRARY_PATH}"
 
 FROM handy-cuda-${TARGETARCH} AS handy-ros
@@ -295,6 +302,11 @@ RUN mkdir -p ${ROS_ROOT} \
     > ${ROS_ROOT}/ros2.rosinstall \
     && vcs import ${ROS_TMP} < ${ROS_ROOT}/ros2.rosinstall
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+       ca-certificates curl gnupg2 lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update -q \
     && rosdep init \
     && rosdep update \
@@ -311,11 +323,13 @@ RUN apt-get update -q \
         --skip-keys python3-opencv \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
+ENV CMAKE_TLS_VERIFY=0
+
 RUN cd ${ROS_TMP} \
     && colcon build \
         --merge-install \
         --install-base ${ROS_ROOT} \
-        --cmake-args -DBUILD_TESTING=OFF \
+        --cmake-args -DBUILD_TESTING=OFF -DCMAKE_TLS_VERIFY=OFF \
     && rm -rf /tmp/*
 
 RUN printf "export ROS_ROOT=${ROS_ROOT}\n" >> ${HOME}/.bashrc \

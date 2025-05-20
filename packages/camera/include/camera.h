@@ -11,7 +11,7 @@
 #include <cstdint>
 
 #include <boost/lockfree/queue.hpp>
-#include "mcap_vendor/mcap/writer.hpp"
+#include "mcap/writer.hpp"
 
 using namespace std::chrono_literals;
 
@@ -147,5 +147,7 @@ class CameraRecorder {
 
     mcap::McapWriter mcap_writer_;
     MappedFileManager file_manager_;
+
+    std::function<void(SynchronizedFrameBuffers*)> deleter_;
 };
 }  // namespace handy::camera
