@@ -11,7 +11,7 @@
 #include <cstdint>
 
 #include <boost/lockfree/queue.hpp>
-#include "mcap_vendor/mcap/writer.hpp"
+#include "mcap/writer.hpp"
 
 using namespace std::chrono_literals;
 

@@ -1,5 +1,4 @@
 #include "params.h"
-#include "params.h"
 
 #include <opencv2/core/core.hpp>
 #include <string>

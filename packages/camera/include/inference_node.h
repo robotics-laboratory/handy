@@ -79,9 +79,9 @@ class BallInferenceNode {
         int window_size = 5;
         Size input_size{320, 192};
         const at::Tensor means =
-            torch::tensor({0.077, 0.092, 0.142}).view({1, 3, 1, 1}).to(at::kFloat);
+            torch::tensor({0.077, 0.092, 0.142}).view({1, 3, 1, 1}).to(at::kFloat).to(at::kCUDA);
         const at::Tensor stds =
-            torch::tensor({0.068, 0.079, 0.108}).view({1, 3, 1, 1}).to(at::kFloat);
+            torch::tensor({0.068, 0.079, 0.108}).view({1, 3, 1, 1}).to(at::kFloat).to(at::kCUDA);
     } param_;
 
     struct State {
@@ -89,6 +89,8 @@ class BallInferenceNode {
 
         // protected by ring_mutex_
         std::array<std::deque<at::Tensor>, kMaxCameraNum> ring_buffer;
+        std::vector<at::Tensor> pinned_pool;
+        std::atomic<size_t> pool_idx = 0;
         std::mutex ring_mutex;
 
         // === intermediate queues ===

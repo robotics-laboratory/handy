@@ -1,6 +1,6 @@
 services:
   handy:
-    image: "registry.robotics-lab.ru/handy:0.7.3"
+    image: "registry.robotics-lab.ru/handy:0.7.4"
     container_name: "${CONTAINER_NAME:-handy-${USER}}"
     networks: [default]
     privileged: true
@@ -10,6 +10,7 @@ services:
     volumes:
       - "/home/bakind/handy:/handy"
       - "/dev:/dev"
+      # - "/tmp/.X11-unix/:/tmp/.X11-unix"
     deploy:
       resources:
         limits:
@@ -23,10 +24,10 @@ services:
       x-bake:
         platforms:
           - linux/arm64
-          - linux/amd64
+          # - linux/amd64
         cache-from:
           - type=registry,ref=registry.robotics-lab.ru/handy:cache-arm64
-          - type=registry,ref=registry.robotics-lab.ru/handy:cache-amd64
+          # - type=registry,ref=registry.robotics-lab.ru/handy:cache-amd64
         cache-to:
           # [!!!] Warning: https://github.com/docker/buildx/discussions/1382
           # - type=registry,mode=max,ref=registry.robotics-lab.ru/handy:cache-arm64

@@ -23,6 +23,15 @@ BallInferenceNode::BallInferenceNode(
     param_.input_size = input_size;
     param_.window_size = window_size;
     buffer_deleter_ = deleter;
+
+    for (int i = 0; i < param_.window_size * kMaxCameraNum; ++i) {
+        // Allocate an empty pinned tensor of shape [1, C, H, W]
+        at::Tensor t = torch::empty(
+                           {1, 3, param_.input_size.height, param_.input_size.width},
+                           at::TensorOptions().dtype(torch::kUInt8))
+                           .pin_memory();
+        state_.pinned_pool.push_back(std::move(t));
+    }
 }
 
 BallInferenceNode::~BallInferenceNode() { stop(); }
@@ -66,12 +75,11 @@ void BallInferenceNode::detectSingleCamera(
     const std::deque<at::Tensor>& frames, DetectionOutput& detect_result, int camera_idx,
     c10::cuda::CUDAStream& infer_stream) {
     std::vector<at::Tensor> frames_vec(frames.begin(), frames.end());
-    at::Tensor batch = at::cat(frames_vec, 0);  // dim=0
-    at::Tensor gpu_in = batch.to(at::Device(at::kCUDA), /*non_blocking=*/true);
+    at::Tensor batch = at::cat(frames_vec, 1);  // dim=1
 
     torch::NoGradGuard no_grad;
     at::cuda::CUDAStreamGuard guard(infer_stream);
-    auto out_tuple = det_model_.forward({gpu_in}).toTuple();
+    auto out_tuple = det_model_.forward({batch}).toTuple();
 
     // Unpack model outputs
     //    out_tuple[0]: prob distribution (1, width + height)
@@ -93,7 +101,6 @@ void BallInferenceNode::detectSingleCamera(
     int64_t pred_y = prob_y.argmax(1).item<int64_t>();
     detect_result.centers[camera_idx] = {pred_x, pred_y};
 
-    // 4. Determine flag from presence logits
     int64_t pres_idx = success_detection_distr.argmax(1).item<int64_t>();
     detect_result.flags[camera_idx] = (pres_idx == 1);  // class 1 means object present
 }
@@ -108,14 +115,19 @@ void BallInferenceNode::detectionLoop() {
             std::this_thread::sleep_for(1ms);
             continue;
         }
+        std::cout << "recieved buffer for detection\n";
 
         DetectionOutput detection_out;
         bool any_successful_detection = false;
+        auto start = std::chrono::steady_clock::now();
+
         // Preprocess each camera image
         for (size_t cam = 0; cam < sync->images.size(); ++cam) {
             uint8_t* raw = sync->images[cam];
             Size sz = sync->image_sizes[cam];
             cv::Mat bayer(sz.height, sz.width, CV_8UC1, raw);
+
+            
 
             static thread_local cv::Mat rgb;
             cv::cvtColor(bayer, rgb, cv::COLOR_BayerBG2RGB);
@@ -123,14 +135,16 @@ void BallInferenceNode::detectionLoop() {
             static thread_local cv::Mat resized;
             cv::resize(rgb, resized, cv::Size(param_.input_size.width, param_.input_size.height));
             // To tensor  of shape (1, height, width, channel) and perform all the preprocessing
-            at::Tensor t =
-                torch::from_blob(resized.data, {1, resized.rows, resized.cols, 3}, at::kByte)
-                    .permute({0, 3, 1, 2})  // (1, height, width, channel)
-                    .toType(at::kFloat)
-                    .div_(255.0)  // normalize
-                    .sub_(param_.means)
-                    .div_(param_.stds)
-                    .pin_memory();  // for async copy
+            at::Tensor t_uint8 = state_.pinned_pool[state_.pool_idx++ % state_.pinned_pool.size()];
+            std::memcpy(
+                t_uint8.data_ptr<uint8_t>(),  // pinned host memory
+                resized.data,                 // OpenCV RGB data
+                3 * param_.input_size.area());
+            at::Tensor t = t_uint8.to(at::kCUDA, true)
+                               .toType(at::kFloat)
+                               .div_(255.0)
+                               .sub_(param_.means)
+                               .div_(param_.stds);
 
             rollBuf[cam].push_back(t);
             if (rollBuf[cam].size() > (size_t)param_.window_size) {
@@ -142,6 +156,11 @@ void BallInferenceNode::detectionLoop() {
             detectSingleCamera(rollBuf[cam], detection_out, cam, infer_stream);
             any_successful_detection |= detection_out.flags[cam];
         }
+        auto end = std::chrono::steady_clock::now();
+
+        std::cout << "elapsed: "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+                  << '\n';
         detection_out.images_to_segment = nullptr;
         detection_out.timestamp = sync->timestamp;
 
@@ -192,14 +211,13 @@ void BallInferenceNode::segmentationLoop() {
         // Process each flagged camera
         for (size_t cam = 0; cam < det.flags.size(); ++cam) {
             if (!det.flags[cam]) continue;
-            // 1) Convert Bayer to RGB
+
             uint8_t* raw = sync->images[cam];
             Size sz = sync->image_sizes[cam];
             cv::Mat bayer(sz.height, sz.width, CV_8UC1, raw);
             cv::Mat rgb;
             cv::cvtColor(bayer, rgb, cv::COLOR_BayerBG2RGB);
 
-            // 2) Crop centered square of size cropSize
             const int cropSize = 128;
             int half = cropSize / 2;
             cv::Point pt = det.centers[cam];
@@ -210,14 +228,13 @@ void BallInferenceNode::segmentationLoop() {
             cv::Rect cropRect(x0, y0, cropSize, cropSize);
             cv::Mat crop = rgb(cropRect);
 
-            at::Tensor t =
-                torch::from_blob(crop.data, {1, crop.rows, crop.cols, 3}, at::kByte)
-                    .permute({0, 3, 1, 2})
-                    .toType(at::kFloat)
-                    .div_(255.0)
-                    .sub_(param_.means)
-                    .div_(param_.stds)
-                    .pin_memory();
+            at::Tensor t = torch::from_blob(crop.data, {1, crop.rows, crop.cols, 3}, at::kByte)
+                               .permute({0, 3, 1, 2})
+                               .toType(at::kFloat)
+                               .div_(255.0)
+                               .sub_(param_.means)
+                               .div_(param_.stds)
+                               .pin_memory();
 
             at::Tensor gpu_in = t.to(at::kCUDA, /*non_blocking=*/true);
             torch::NoGradGuard ndg;
@@ -236,13 +253,12 @@ void BallInferenceNode::segmentationLoop() {
                 centroid =
                     torch::tensor({cropSize / 2.0, cropSize / 2.0}, at::kFloat).to(at::kCUDA);
             } else {
-                // convert coords to float and take mean over dim=0 → {mean_row, mean_col}
+                // convert coords to float and take mean over dim=0 -> {mean_row, mean_col}
                 centroid = coords.to(at::kFloat).mean(0);
             }
 
             centroid = centroid.to(at::kCPU);
 
-            // 5) Extract values
             float centroid_y = centroid[0].item<float>() + y0;
             float centroid_x = centroid[1].item<float>() + x0;
 
@@ -265,12 +281,3 @@ void BallInferenceNode::segmentationLoop() {
 }
 
 }  // namespace handy::camera
-
-int main() {
-    handy::camera::BallInferenceNode node(
-        "detection.pt",
-        "segmentation.pt",
-        {320, 192},
-        [](handy::camera::SynchronizedFrameBuffers* buf) { std::cout << buf << '\n'; });
-    return 0;
-}

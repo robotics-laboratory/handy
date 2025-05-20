@@ -407,18 +407,7 @@ void CameraRecorder::synchronizeQueues() {
         };
 
         // make single structure as a shared ptr
-        // deleter is expected to push buffers back to the queue and then free the structure
-        // auto custom_deleter = [this](SynchronizedFrameBuffers* sync_buffers_ptr) {
-        //     for (size_t i = 0; i < sync_buffers_ptr->images.size(); ++i) {
-        //         if (!sync_buffers_ptr->images[i]) {
-        //             continue;
-        //         }
-        //         while (!this->state_.free_buffers[i]->push(sync_buffers_ptr->images[i])) {
-        //         }
-        //         state_.free_buffer_cnts[i]++;
-        //     }
-        //     delete sync_buffers_ptr;
-        // };
+        // deleter_ is expected to push buffers back to the queue and then free the structure
         std::shared_ptr<SynchronizedFrameBuffers> sync_buffers(
             new SynchronizedFrameBuffers, deleter_);
         sync_buffers->images.resize(state_.camera_num, nullptr);
