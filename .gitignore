@@ -1,4 +1,5 @@
 .vscode
+.venv
 *.png
 *.bin
 *.db3

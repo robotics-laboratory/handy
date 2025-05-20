@@ -1,0 +1,106 @@
+intrinsics:
+    image_size: [1920, 1200]
+    1:
+        camera_matrix: [672.2824725267757, 0, 984.0472159818853, 0, 672.6886411532304, 602.96669930345, 0, 0, 1]
+        distortion_coefs: [-0.09715103386082896, 0.06788948036532018, -0.0007157453506997161, 0.0003048354358359307, -0.003636308978789861]
+    2:
+        camera_matrix: [685.7143789189881, 0, 991.0247637161314, 0, 686.3020333004097, 601.2442243349392, 0, 0, 1]
+        distortion_coefs: [-0.09781628655937251, 0.07153618281495966, -0.001066517414175782, 0.0004679942401339674, -0.003645360450147547]
+
+camera_positions:
+    0:
+        1:
+            rotation: [-135, 0, 90]
+            translation: [1.3, -0.6, 1]
+        2:
+            rotation: [-135, 0, -90]
+            translation: [-1.3, -0.6, 1]
+
+    1:
+        1:
+            rotation: [-110, 0, 90]
+            translation: [1.3, -0.6, 1]
+        2:
+            rotation: [-110, 0, -90]
+            translation: [-1.3, -0.6, 1]
+
+    2:
+        1:
+            rotation: [-110, 0, 90]
+            translation: [1, -0.6, 1]
+        2:
+            rotation: [-110, 0, -90]
+            translation: [-1, -0.6, 1]
+
+    3:
+        1:
+            rotation: [-100, 0, 60]
+            translation: [1.6, -0.6, 0.7]
+        2:
+            rotation: [-100, 0, -60]
+            translation: [-1.6, -0.6, 0.7]
+
+    4:
+        1:
+            rotation: [-110, 0, 45]
+            translation: [1.3, -1.3, 1]
+        2:
+            rotation: [-110, 0, -45]
+            translation: [-1.3, -1.3, 1]
+
+
+    5:
+        1:
+            rotation: [-110, 0, 45]
+            translation: [1.3, -1.3, 1]
+        2:
+            rotation: [-110, 0, -45]
+            translation: [-1.3, -1.3, 1]
+
+    6:
+        1:
+            rotation: [-110, 0, 45]
+            translation: [1, -1.3, 1]
+        2:
+            rotation: [-110, 0, -45]
+            translation: [-1, -1.3, 1]
+
+    7:
+        1:
+            rotation: [-110, 0, 90]
+            translation: [1.3, 0, 1]
+        2:
+            rotation: [-100, 0, -30]
+            translation: [-0.8, -1.6, 0.7]
+
+    8: # stereopair with 20cm gap
+        1:
+            rotation: [-90, 0, 0]
+            translation: [0.1, -1.7, 0.2]
+        2:
+            rotation: [-90, 0, 0]
+            translation: [-0.1, -1.7, 0.2]
+
+    9: # stereopair with 10cm gap
+        1:
+            rotation: [-90, 0, 0]
+            translation: [0.05, -1.7, 0.2]
+        2:
+            rotation: [-90, 0, 0]
+            translation: [-0.05, -1.7, 0.2]
+
+    10: # stereopair with 20cm gap facing slightly up
+        1:
+            rotation: [-80, 0, 0]
+            translation: [0.1, -1.9, 0.2]
+        2:
+            rotation: [-80, 0, 0]
+            translation: [-0.1, -1.9, 0.2]
+
+    11: # stereopair with 10cm gap facing slightly up
+        1:
+            rotation: [-80, 0, 0]
+            translation: [0.05, -1.9, 0.2]
+        2:
+            rotation: [-80, 0, 0]
+            translation: [-0.05, -1.9, 0.2]
