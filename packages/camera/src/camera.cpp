@@ -282,6 +282,18 @@ CameraRecorder::CameraRecorder(
         }
     }
 
+    deleter_ = [this](SynchronizedFrameBuffers* sync_buffers_ptr) {
+        for (size_t i = 0; i < sync_buffers_ptr->images.size(); ++i) {
+            if (!sync_buffers_ptr->images[i]) {
+                continue;
+            }
+            while (!this->state_.free_buffers[i]->push(sync_buffers_ptr->images[i])) {
+            }
+            state_.free_buffer_cnts[i]++;
+        }
+        delete sync_buffers_ptr;
+    };
+
     for (int i = 0; i < state_.camera_num; ++i) {
         abortIfNot("reset timestamp", i, CameraRstTimeStamp(state_.camera_handles[i]));
     }
@@ -395,20 +407,9 @@ void CameraRecorder::synchronizeQueues() {
         };
 
         // make single structure as a shared ptr
-        // deleter is expected to push buffers back to the queue and then free the structure
-        auto custom_deleter = [this](SynchronizedFrameBuffers* sync_buffers_ptr) {
-            for (size_t i = 0; i < sync_buffers_ptr->images.size(); ++i) {
-                if (!sync_buffers_ptr->images[i]) {
-                    continue;
-                }
-                while (!this->state_.free_buffers[i]->push(sync_buffers_ptr->images[i])) {
-                }
-                state_.free_buffer_cnts[i]++;
-            }
-            delete sync_buffers_ptr;
-        };
+        // deleter_ is expected to push buffers back to the queue and then free the structure
         std::shared_ptr<SynchronizedFrameBuffers> sync_buffers(
-            new SynchronizedFrameBuffers, custom_deleter);
+            new SynchronizedFrameBuffers, deleter_);
         sync_buffers->images.resize(state_.camera_num, nullptr);
         sync_buffers->image_sizes.resize(state_.camera_num);
 
@@ -440,7 +441,7 @@ void CameraRecorder::synchronizeQueues() {
             // creating new structure
             sync_buffers = std::shared_ptr<SynchronizedFrameBuffers>(
                 new SynchronizedFrameBuffers,
-                custom_deleter);  // custom deleter adds buffer pointer back to the queue
+                deleter_);  // custom deleter adds buffer pointer back to the queue
             sync_buffers->images.resize(state_.camera_num, nullptr);
             sync_buffers->image_sizes.resize(state_.camera_num);
         } while (next());
